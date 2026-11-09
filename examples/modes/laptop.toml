@@ -1,0 +1,8 @@
+# Laptop alone (the external screen is skipped when not connected).
+description = "Laptop only, power saver"
+power_profile = "power-saver"
+
+[[monitor]]
+match = "AU Optronics 0x7EAD"
+mode = "preferred"
+position = "0x0"

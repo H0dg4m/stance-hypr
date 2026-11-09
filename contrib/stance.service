@@ -1,0 +1,18 @@
+[Unit]
+Description=stance hotplug rules for Hyprland
+Documentation=https://github.com/H0dg4m/stance-hypr
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/stance daemon
+Restart=on-failure
+RestartSec=3
+# Hardening that does not get in the way of ~/.config and ~/.local/state.
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=32M
+
+[Install]
+WantedBy=graphical-session.target

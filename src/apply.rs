@@ -46,6 +46,9 @@ pub struct Pending {
     pub session: String,
     pub generation: u64,
     pub deadline_ms: u64,
+    /// Length of the current confirmation window (for progress bars).
+    #[serde(default)]
+    pub timeout_ms: u64,
     pub label: String,
     /// State before the first unconfirmed change (oldest wins).
     pub snapshot: State,
@@ -322,6 +325,7 @@ impl Ctx<'_> {
                 session: self.backend.session_id().to_string(),
                 generation,
                 deadline_ms: now_ms() + timeout_s * 1000,
+                timeout_ms: timeout_s * 1000,
                 label: label.to_string(),
                 snapshot,
                 active_mode_before,
@@ -359,10 +363,19 @@ impl Ctx<'_> {
     /// Restores a snapshot (verifying, one retry) and clears pending.
     /// Caller holds the lock.
     fn restore(&self, p: &Pending) -> Result<()> {
-        let mut res = self.execute_inner(&p.snapshot, &mut Vec::new());
+        // A monitor unplugged during the countdown has nothing to restore;
+        // everything else still must come back.
+        let mut snap = p.snapshot.clone();
+        if let Ok(mons) = self.backend.monitors() {
+            snap.monitors
+                .retain(|s| mons.iter().any(|m| m.name == s.name));
+            snap.workspaces
+                .retain(|(_, mon)| mons.iter().any(|m| &m.name == mon));
+        }
+        let mut res = self.execute_inner(&snap, &mut Vec::new());
         if res.is_err() {
             std::thread::sleep(Duration::from_millis(300));
-            res = self.execute_inner(&p.snapshot, &mut Vec::new());
+            res = self.execute_inner(&snap, &mut Vec::new());
         }
         self.clear_pending();
         let _ = self.set_active(p.active_mode_before.clone().unwrap_or((None, false)));
@@ -685,6 +698,7 @@ pub(crate) mod tests {
             session: "fake".into(),
             generation: 1,
             deadline_ms: now_ms() + 60_000,
+            timeout_ms: 0,
             label: "one".into(),
             snapshot: before,
             active_mode_before: None,
@@ -713,6 +727,7 @@ pub(crate) mod tests {
             session: "other".into(),
             generation: 1,
             deadline_ms: 0,
+            timeout_ms: 0,
             label: "x".into(),
             snapshot: snap,
             active_mode_before: None,
@@ -738,6 +753,7 @@ pub(crate) mod tests {
             session: "fake".into(),
             generation: 3,
             deadline_ms: now_ms() + 200,
+            timeout_ms: 0,
             label: "x".into(),
             snapshot: snap,
             active_mode_before: Some((Some("work".into()), true)),
@@ -749,6 +765,29 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn revert_skips_unplugged_monitor() {
+        let b = Fake::new();
+        let c = ctx(&b, "i");
+        let mut snap = moved(&b, "B-1", 1920);
+        snap.monitors.extend(moved(&b, "A-1", 0).monitors);
+        b.mons.borrow_mut()[1].x = 42;
+        b.mons.borrow_mut()[0].x = 77;
+        c.write_pending(&Pending {
+            session: "fake".into(),
+            generation: 1,
+            deadline_ms: now_ms() + 60_000,
+            timeout_ms: 0,
+            label: "x".into(),
+            snapshot: snap,
+            active_mode_before: None,
+        })
+        .unwrap();
+        b.mons.borrow_mut().remove(1); // B-1 unplugged
+        assert!(c.revert().unwrap());
+        assert_eq!(b.mons.borrow()[0].x, 0, "A-1 still restored");
+    }
+
+    #[test]
     fn guardian_exits_when_superseded() {
         let b = Fake::new();
         let c = ctx(&b, "g");
@@ -757,6 +796,7 @@ pub(crate) mod tests {
             session: "fake".into(),
             generation: 4,
             deadline_ms: now_ms(),
+            timeout_ms: 0,
             label: "x".into(),
             snapshot: moved(&b, "B-1", 1920),
             active_mode_before: None,

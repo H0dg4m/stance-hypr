@@ -1,0 +1,19 @@
+# External screen only, effects off, performance power profile.
+description = "External only, effects off"
+power_profile = "performance"
+workspaces = { "1-5" = "JDR EPIC Q40" }
+
+[hyprland]
+animations = false
+blur = false
+allow_tearing = true
+
+[[monitor]]
+match = "JDR EPIC Q40"
+mode = "2560x1440@180"
+position = "0x0"
+vrr = 1
+
+[[monitor]]
+match = "AU Optronics 0x7EAD"
+enabled = false

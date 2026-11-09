@@ -1,0 +1,52 @@
+# Maintainer: H0dg4m <h0dg4m@proton.me>
+pkgname=stance-hypr-git
+_pkgname=stance-hypr
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="Bar-first display settings and modes for Hyprland, with confirm-or-revert"
+arch=('x86_64' 'aarch64')
+url="https://github.com/H0dg4m/stance-hypr"
+license=('MIT')
+depends=('hyprland' 'gcc-libs' 'glibc')
+optdepends=('quickshell: bar panel and confirm overlay'
+            'power-profiles-daemon: power profile in modes')
+makedepends=('cargo' 'git')
+provides=('stance-hypr')
+conflicts=('stance-hypr')
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_pkgname"
+  git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$_pkgname"
+  cargo test --frozen
+}
+
+package() {
+  cd "$_pkgname"
+  install -Dm755 target/release/stance "$pkgdir/usr/bin/stance"
+  install -Dm644 contrib/stance.service "$pkgdir/usr/lib/systemd/user/stance.service"
+  install -dm755 "$pkgdir/usr/share/stance"
+  cp -r quickshell/stance "$pkgdir/usr/share/stance/quickshell"
+  cp -r quickshell/integrations "$pkgdir/usr/share/stance/integrations"
+  cp -r examples "$pkgdir/usr/share/stance/examples"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 docs/quickshell.md "$pkgdir/usr/share/doc/$pkgname/quickshell.md"
+}

@@ -526,6 +526,24 @@ enabled = false
     }
 
     #[test]
+    fn shipped_examples_parse() {
+        for text in [
+            include_str!("../examples/modes/gaming.toml"),
+            include_str!("../examples/modes/desk.toml"),
+            include_str!("../examples/modes/laptop.toml"),
+        ] {
+            parse_mode(text).unwrap();
+        }
+        assert_eq!(
+            parse_rules(include_str!("../examples/rules.toml"))
+                .unwrap()
+                .rules
+                .len(),
+            2
+        );
+    }
+
+    #[test]
     fn rules_match_exact_set() {
         let r = parse_rules(
             "[[rule]]\nmonitors = [\"Desc A-1\"]\nmode = \"laptop\"\n\n[[rule]]\nmonitors = [\"Desc A-1\", \"B-1\"]\nmode = \"desk\"\nallow_extras = true\n",

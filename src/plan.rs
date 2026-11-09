@@ -351,6 +351,20 @@ pub fn check_result(mons: &[Monitor], changes: &[MonitorSpec]) -> Result<Vec<Str
         }
     }
     let mut warnings = Vec::new();
+    for c in changes.iter().filter(|c| c.enabled && c.mirror.is_none()) {
+        let clean = |px: u32| {
+            let v = f64::from(px) / c.scale;
+            (v - v.round()).abs() < 0.01
+        };
+        if !clean(c.width) || !clean(c.height) {
+            warnings.push(format!(
+                "scale {} does not divide {}x{} evenly; Hyprland will snap it to the nearest scale that does",
+                crate::spec::fmt_num(c.scale),
+                c.width,
+                c.height
+            ));
+        }
+    }
     for (i, a) in active.iter().enumerate() {
         for b in &active[i + 1..] {
             let (aw, ah) = a.logical_size();
@@ -533,5 +547,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(check_result(&m, &s).unwrap().len(), 1);
+        // 2560x1440 at 1.5 → 1706.67: not clean.
+        let s = plan_set(
+            &m,
+            "DP-1",
+            &SetArgs {
+                scale: Some(1.5),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            check_result(&m, &s)
+                .unwrap()
+                .iter()
+                .any(|w| w.contains("snap"))
+        );
+        let s = plan_set(
+            &m,
+            "DP-1",
+            &SetArgs {
+                scale: Some(1.25),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(check_result(&m, &s).unwrap().is_empty());
     }
 }

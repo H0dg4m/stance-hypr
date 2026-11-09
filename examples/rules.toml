@@ -1,0 +1,11 @@
+# ~/.config/stance/rules.toml – used by `stance daemon`.
+# A rule applies when the connected monitors are exactly this set.
+
+[[rule]]
+monitors = ["AU Optronics 0x7EAD"]
+mode = "laptop"
+allow_extras = true
+
+[[rule]]
+monitors = ["AU Optronics 0x7EAD", "JDR EPIC Q40"]
+mode = "desk"

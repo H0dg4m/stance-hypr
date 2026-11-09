@@ -1,0 +1,23 @@
+# Laptop left, external right, normal effects.
+description = "Laptop + external"
+power_profile = "balanced"
+workspaces = { "1-5" = "JDR EPIC Q40", "6-10" = "AU Optronics 0x7EAD" }
+
+[hyprland]
+animations = true
+blur = true
+allow_tearing = false
+gaps_in = 4
+gaps_out = [8, 8, 8, 8]
+
+[[monitor]]
+match = "AU Optronics 0x7EAD"
+mode = "preferred"
+position = "0x360"
+scale = 1.0
+
+[[monitor]]
+match = "JDR EPIC Q40"
+mode = "2560x1440@180"
+position = "1920x0"
+scale = 1.0
