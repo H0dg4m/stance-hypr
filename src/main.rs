@@ -1,33 +1,158 @@
+mod apply;
 mod backend;
+mod daemon;
 mod doctor;
 mod error;
 mod hypr;
 mod model;
+mod modes;
+mod persist;
+mod plan;
+mod power;
+mod spec;
+mod store;
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::Serialize;
 use serde_json::json;
 
+use apply::{Ctx, DEFAULT_TIMEOUT, Outcome, State};
+use backend::{Backend, Hyprland};
 use error::{Error, Result};
 use model::Monitor;
+use plan::{Layout, SetArgs};
 
 const USAGE: &str = "\
 stance — bar-first display settings and modes for Hyprland
 
 Usage:
-  stance monitors [--json]   List monitors
-  stance doctor [--json]     Check the environment (read-only)
-  stance --version
-  stance --help
+  stance monitors                      List monitors
+  stance status                        Pending change and active mode
+  stance set <monitor> [options]       Change one monitor
+      --res WxH  --hz N  --scale S  --pos XxY  --vrr 0|1|2
+      --transform 0-7  --on | --off  --custom (allow unadvertised modes)
+  stance layout <kind> <monitor> [<reference>]
+      kind: left-of | right-of | above | below | mirror | single
+  stance confirm                       Keep the last change
+  stance revert                        Undo the last change now
+  stance persist [--print]             Save the current setup to your Hyprland config dir
+  stance mode list
+  stance mode show <name>
+  stance mode apply <name> [--no-extras]
+  stance mode save <name> [--description TEXT] [--force]
+  stance mode rm <name>
+  stance daemon                        Hotplug rules (optional, long-running)
+  stance doctor                        Check the environment (read-only)
 
-Planned: set, layout, confirm, revert, persist, mode, daemon.";
+<monitor> is a description (\"JDR EPIC Q40\"), \"make model\" or a connector (DP-1).
+Changes revert after 12 s unless confirmed: --timeout S to change, --no-confirm to skip.
+Every command accepts --json.";
+
+const VALUE_FLAGS: &[&str] = &[
+    "--res",
+    "--hz",
+    "--scale",
+    "--pos",
+    "--vrr",
+    "--transform",
+    "--timeout",
+    "--description",
+];
+const BOOL_FLAGS: &[&str] = &[
+    "--json",
+    "--on",
+    "--off",
+    "--custom",
+    "--no-confirm",
+    "--print",
+    "--force",
+    "--no-extras",
+    "--help",
+    "-h",
+    "--version",
+    "-V",
+];
+
+struct Args {
+    pos: Vec<String>,
+    flags: HashMap<String, Option<String>>,
+}
+
+impl Args {
+    fn parse(raw: Vec<String>) -> Result<Self> {
+        let mut pos = Vec::new();
+        let mut flags = HashMap::new();
+        let mut it = raw.into_iter();
+        while let Some(a) = it.next() {
+            if let Some((k, v)) = a.split_once('=').filter(|(k, _)| VALUE_FLAGS.contains(k)) {
+                flags.insert(k.to_string(), Some(v.to_string()));
+            } else if VALUE_FLAGS.contains(&a.as_str()) {
+                let v = it
+                    .next()
+                    .ok_or_else(|| Error::new("usage", format!("{a} needs a value")))?;
+                flags.insert(a, Some(v));
+            } else if BOOL_FLAGS.contains(&a.as_str()) {
+                flags.insert(a, None);
+            } else if a.starts_with("--") {
+                return Err(Error::new("usage", format!("unknown option `{a}`")));
+            } else {
+                pos.push(a);
+            }
+        }
+        Ok(Self { pos, flags })
+    }
+
+    fn has(&self, f: &str) -> bool {
+        self.flags.contains_key(f)
+    }
+
+    fn val(&self, f: &str) -> Option<&str> {
+        self.flags.get(f).and_then(|v| v.as_deref())
+    }
+
+    fn num<T: std::str::FromStr>(&self, f: &str) -> Result<Option<T>> {
+        self.val(f)
+            .map(|v| {
+                v.parse()
+                    .map_err(|_| Error::new("usage", format!("{f}: `{v}` is not a valid number")))
+            })
+            .transpose()
+    }
+
+    fn arg(&self, i: usize, what: &str) -> Result<&str> {
+        self.pos
+            .get(i)
+            .map(String::as_str)
+            .ok_or_else(|| Error::new("usage", format!("missing {what}; see `stance --help`")))
+    }
+
+    fn max_pos(&self, n: usize) -> Result<()> {
+        match self.pos.get(n) {
+            Some(a) => Err(Error::new("usage", format!("unexpected argument `{a}`"))),
+            None => Ok(()),
+        }
+    }
+
+    fn timeout(&self) -> Result<u64> {
+        if self.has("--no-confirm") {
+            return Ok(0);
+        }
+        let t = self.num::<u64>("--timeout")?.unwrap_or(DEFAULT_TIMEOUT);
+        if t > 600 {
+            return Err(Error::new("usage", "--timeout is at most 600 seconds"));
+        }
+        Ok(t)
+    }
+}
 
 fn main() -> ExitCode {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let json = take_flag(&mut args, "--json");
-
-    match run(&args, json) {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let json = raw.iter().any(|a| a == "--json");
+    let res = Args::parse(raw).and_then(|a| run(&a));
+    match res {
         Ok(code) => code,
         Err(e) => {
             if json {
@@ -42,73 +167,347 @@ fn main() -> ExitCode {
     }
 }
 
-fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
-    let before = args.len();
-    args.retain(|a| a != flag);
-    args.len() != before
-}
-
-fn run(args: &[String], json: bool) -> Result<ExitCode> {
-    match args.first().map(String::as_str) {
-        None | Some("-h" | "--help" | "help") => {
-            println!("{USAGE}");
-            Ok(ExitCode::SUCCESS)
-        }
-        Some("-V" | "--version") => {
-            println!("stance {}", env!("CARGO_PKG_VERSION"));
-            Ok(ExitCode::SUCCESS)
-        }
-        Some("monitors") => {
-            no_extra(args)?;
-            let mons = backend::detect()?.monitors()?;
-            if json {
-                ok_json(&mons)
-            } else {
-                print_monitors(&mons)
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        Some("doctor") => {
-            no_extra(args)?;
-            let checks = doctor::run();
-            let failed = checks.iter().any(|c| c.status == doctor::Status::Fail);
-            if json {
-                print_json(&json!({ "ok": !failed, "data": checks }));
-            } else {
-                for c in &checks {
-                    let tag = match c.status {
-                        doctor::Status::Ok => "  ok ",
-                        doctor::Status::Info => "info ",
-                        doctor::Status::Warn => "warn ",
-                        doctor::Status::Fail => "FAIL ",
-                    };
-                    println!("{tag} {:<15} {}", c.id, c.message);
-                }
-            }
-            Ok(if failed {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            })
-        }
-        Some(
-            cmd @ ("set" | "layout" | "confirm" | "revert" | "persist" | "mode" | "daemon"
-            | "guardian"),
-        ) => Err(Error::new(
-            "not_implemented",
-            format!("`{cmd}` is not implemented yet"),
-        )),
-        Some(other) => Err(Error::new(
-            "usage",
-            format!("unknown command `{other}`; see `stance --help`"),
-        )),
+fn state_dir() -> Result<PathBuf> {
+    match std::env::var_os("STANCE_STATE_DIR").map(PathBuf::from) {
+        Some(p) if p.is_absolute() => Ok(p),
+        _ => store::state_dir(),
     }
 }
 
-fn no_extra(args: &[String]) -> Result<()> {
-    match args.get(1) {
-        Some(a) => Err(Error::new("usage", format!("unexpected argument `{a}`"))),
-        None => Ok(()),
+fn run(a: &Args) -> Result<ExitCode> {
+    let json = a.has("--json");
+    if a.has("--version") || a.has("-V") {
+        println!("stance {}", env!("CARGO_PKG_VERSION"));
+        return Ok(ExitCode::SUCCESS);
+    }
+    let cmd = a.pos.first().map(String::as_str);
+    if a.has("--help") || a.has("-h") || matches!(cmd, None | Some("help")) {
+        println!("{USAGE}");
+        return Ok(ExitCode::SUCCESS);
+    }
+    let cmd = cmd.unwrap_or_default();
+
+    if cmd == "doctor" {
+        a.max_pos(1)?;
+        return Ok(doctor_cmd(json));
+    }
+
+    let hypr = Hyprland::connect()?;
+    let ctx = Ctx {
+        backend: &hypr,
+        state_dir: state_dir()?,
+    };
+
+    match cmd {
+        "monitors" => {
+            a.max_pos(1)?;
+            let mons = hypr.monitors()?;
+            if json {
+                ok_json(&mons);
+            } else {
+                print_monitors(&mons);
+            }
+        }
+        "status" => {
+            a.max_pos(1)?;
+            let warnings = {
+                let _l = ctx.lock()?;
+                ctx.sweep()
+            };
+            let pending = ctx.pending_info();
+            let active = ctx.active_mode();
+            if json {
+                ok_json(
+                    &json!({ "pending": pending, "active_mode": active, "warnings": warnings }),
+                );
+            } else {
+                match &pending {
+                    Some(p) => println!(
+                        "pending: {} (reverts in {:.0} s unless `stance confirm`)",
+                        p.label,
+                        p.remaining_ms as f64 / 1000.0
+                    ),
+                    None => println!("pending: none"),
+                }
+                println!("active mode: {}", active.as_deref().unwrap_or("none"));
+                for w in warnings {
+                    println!("note: {w}");
+                }
+            }
+        }
+        "set" => {
+            let target = a.arg(1, "monitor")?;
+            a.max_pos(2)?;
+            if a.has("--on") && a.has("--off") {
+                return Err(Error::new("usage", "--on and --off together"));
+            }
+            let args = SetArgs {
+                res: a.val("--res").map(plan::parse_res).transpose()?,
+                hz: a.num("--hz")?,
+                scale: a.num("--scale")?,
+                pos: a.val("--pos").map(plan::parse_pos).transpose()?,
+                vrr: a.num("--vrr")?,
+                transform: a.num("--transform")?,
+                on: if a.has("--on") {
+                    Some(true)
+                } else if a.has("--off") {
+                    Some(false)
+                } else {
+                    None
+                },
+                custom: a.has("--custom"),
+            };
+            let mons = hypr.monitors()?;
+            let specs = plan::plan_set(&mons, target, &args)?;
+            let warnings = plan::check_result(&mons, &specs)?;
+            let label = format!("set {}", specs[0].name);
+            let st = State {
+                monitors: specs,
+                ..Default::default()
+            };
+            let mut out = ctx.apply(&label, &st, a.timeout()?, Some((None, false)))?;
+            out.warnings.extend(warnings);
+            report(json, out);
+        }
+        "layout" => {
+            let kind_s = a.arg(1, "layout kind")?;
+            let kind = Layout::parse(kind_s)
+                .ok_or_else(|| Error::new("usage", format!("unknown layout `{kind_s}`")))?;
+            let target = a.arg(2, "monitor")?;
+            let reference = if kind.needs_reference() {
+                a.max_pos(4)?;
+                Some(a.arg(3, "reference monitor")?)
+            } else {
+                a.max_pos(3)?;
+                None
+            };
+            let mons = hypr.monitors()?;
+            let specs = plan::plan_layout(&mons, kind, target, reference)?;
+            let warnings = plan::check_result(&mons, &specs)?;
+            let st = State {
+                monitors: specs,
+                ..Default::default()
+            };
+            let mut out = ctx.apply(
+                &format!("layout {kind_s}"),
+                &st,
+                a.timeout()?,
+                Some((None, false)),
+            )?;
+            out.warnings.extend(warnings);
+            report(json, out);
+        }
+        "confirm" => {
+            a.max_pos(1)?;
+            let had = ctx.confirm()?;
+            simple(
+                json,
+                if had {
+                    "confirmed"
+                } else {
+                    "nothing to confirm"
+                },
+                had,
+            );
+        }
+        "revert" => {
+            a.max_pos(1)?;
+            let had = ctx.revert()?;
+            simple(
+                json,
+                if had { "reverted" } else { "nothing to revert" },
+                had,
+            );
+        }
+        "persist" => {
+            a.max_pos(1)?;
+            persist_cmd(&ctx, &hypr, a.has("--print"), json)?;
+        }
+        "mode" => mode_cmd(a, &ctx, &hypr, json)?,
+        "daemon" => {
+            a.max_pos(1)?;
+            daemon::run(&hypr, ctx.state_dir.clone())?;
+        }
+        "guardian" => {
+            let generation: u64 = a
+                .arg(1, "generation")?
+                .parse()
+                .map_err(|_| Error::new("usage", "bad generation"))?;
+            ctx.guard(generation)?;
+        }
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown command `{other}`; see `stance --help`"),
+            ));
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
+    match a.arg(1, "mode subcommand (list, show, apply, save, rm)")? {
+        "list" => {
+            a.max_pos(2)?;
+            let list = modes::list()?;
+            let active = ctx.active_mode();
+            if json {
+                ok_json(&json!({ "modes": list, "active": active }));
+            } else if list.is_empty() {
+                println!("no modes yet; create one with `stance mode save <name>`");
+            } else {
+                for m in list {
+                    let mark = if active.as_deref() == Some(m.name.as_str()) {
+                        "*"
+                    } else {
+                        " "
+                    };
+                    match (m.error, m.description) {
+                        (Some(e), _) => println!("{mark} {:<16} (invalid: {e})", m.name),
+                        (None, d) => println!("{mark} {:<16} {}", m.name, d.unwrap_or_default()),
+                    }
+                }
+            }
+        }
+        "show" => {
+            let name = a.arg(2, "mode name")?;
+            a.max_pos(3)?;
+            let m = modes::load(name)?;
+            if json {
+                ok_json(&m);
+            } else {
+                print!(
+                    "{}",
+                    toml::to_string(&m).map_err(|e| Error::new("io", e.to_string()))?
+                );
+            }
+        }
+        "apply" => {
+            let name = a.arg(2, "mode name")?;
+            a.max_pos(3)?;
+            let extras = !a.has("--no-extras");
+            let m = modes::load(name)?;
+            let mons = hypr.monitors()?;
+            let (st, warnings) = modes::resolve_mode(&m, &mons, extras)?;
+            let mut out = ctx.apply(
+                &format!("mode {name}"),
+                &st,
+                a.timeout()?,
+                Some((Some(name.to_string()), extras)),
+            )?;
+            out.warnings.extend(warnings);
+            report(json, out);
+        }
+        "save" => {
+            let name = a.arg(2, "mode name")?;
+            a.max_pos(3)?;
+            let desc = a.val("--description").map(str::to_string);
+            let m = modes::from_current(hypr, desc)?;
+            let path = modes::save(name, &m, a.has("--force"))?;
+            if json {
+                ok_json(&json!({ "saved": name, "path": path }));
+            } else {
+                println!("saved mode `{name}` to {}", path.display());
+            }
+        }
+        "rm" => {
+            let name = a.arg(2, "mode name")?;
+            a.max_pos(3)?;
+            modes::remove(name)?;
+            simple(json, "removed", true);
+        }
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown mode subcommand `{other}`"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn persist_cmd(ctx: &Ctx, hypr: &Hyprland, print: bool, json: bool) -> Result<()> {
+    let parser = hypr.parser()?;
+    let _lock = ctx.lock()?;
+    ctx.sweep();
+    if !print && ctx.pending_info().is_some() {
+        return Err(Error::new(
+            "pending",
+            "a change is waiting for confirmation; run `stance confirm` first",
+        ));
+    }
+    let text = persist::render(&hypr.monitors()?, parser)?;
+    if print {
+        if json {
+            ok_json(&json!({ "text": text }));
+        } else {
+            print!("{text}");
+        }
+        return Ok(());
+    }
+    let path = persist::write(&text, parser)?;
+    let line = persist::load_line(parser);
+    if json {
+        ok_json(&json!({ "path": path, "load_line": line }));
+    } else {
+        println!("wrote {}", path.display());
+        println!(
+            "make sure your Hyprland config loads it once (after nwg-displays' monitors file, if any):"
+        );
+        println!("  {line}");
+    }
+    Ok(())
+}
+
+fn doctor_cmd(json: bool) -> ExitCode {
+    let checks = doctor::run();
+    let failed = checks.iter().any(|c| c.status == doctor::Status::Fail);
+    if json {
+        print_json(&json!({ "ok": !failed, "data": checks }));
+    } else {
+        for c in &checks {
+            let tag = match c.status {
+                doctor::Status::Ok => "  ok ",
+                doctor::Status::Info => "info ",
+                doctor::Status::Warn => "warn ",
+                doctor::Status::Fail => "FAIL ",
+            };
+            println!("{tag} {:<15} {}", c.id, c.message);
+        }
+    }
+    if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn report(json: bool, o: Outcome) {
+    if json {
+        ok_json(&o);
+        return;
+    }
+    if o.changed.is_empty() {
+        println!("{}: already in place, nothing changed", o.label);
+    } else {
+        println!("{}: changed {}", o.label, o.changed.join(", "));
+    }
+    if let Some(p) = &o.pending {
+        println!(
+            "keep it with `stance confirm` within {:.0} s, otherwise it reverts",
+            p.remaining_ms as f64 / 1000.0
+        );
+    }
+    for w in &o.warnings {
+        println!("note: {w}");
+    }
+}
+
+fn simple(json: bool, msg: &str, did: bool) {
+    if json {
+        ok_json(&json!({ "message": msg, "done": did }));
+    } else {
+        println!("{msg}");
     }
 }
 
@@ -132,10 +531,10 @@ fn print_monitors(mons: &[Monitor]) {
                 "{}x{}@{} at {},{} scale {}{}{}",
                 m.width,
                 m.height,
-                m.refresh,
+                spec::fmt_num(m.refresh),
                 m.x,
                 m.y,
-                m.scale,
+                spec::fmt_num(m.scale),
                 if m.transform != 0 {
                     format!(" rot {}", m.transform)
                 } else {

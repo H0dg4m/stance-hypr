@@ -26,11 +26,10 @@ pub fn valid_signature(sig: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// Effective UID of this process, without libc: `/proc/self` is owned by it.
+/// Effective UID of this process.
 pub fn current_uid() -> Result<u32> {
-    fs::metadata("/proc/self")
-        .map(|m| m.uid())
-        .map_err(|e| Error::new("uid", format!("cannot read /proc/self: {e}")))
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    Ok(unsafe { libc::geteuid() })
 }
 
 /// Checks that `dir` is a real directory owned by `uid` and not writable
@@ -59,6 +58,13 @@ pub fn check_private_dir(dir: &Path, uid: u32) -> Result<()> {
     Ok(())
 }
 
+pub fn runtime_dir() -> Result<PathBuf> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .ok_or_else(|| Error::new("runtime_dir", "XDG_RUNTIME_DIR is not set or not absolute"))
+}
+
 #[derive(Debug, Clone)]
 pub struct Instance {
     pub signature: String,
@@ -80,16 +86,51 @@ impl Instance {
                 "HYPRLAND_INSTANCE_SIGNATURE contains unexpected characters",
             ));
         }
-        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .ok_or_else(|| {
-                Error::new("runtime_dir", "XDG_RUNTIME_DIR is not set or not absolute")
-            })?;
+        let runtime = runtime_dir()?;
         Ok(Self {
             dir: runtime.join("hypr").join(&sig),
             signature: sig,
         })
+    }
+
+    /// Like [`Instance::from_env`], but when the variable is missing (e.g. a
+    /// systemd user unit started before Hyprland exported it) picks the
+    /// newest instance directory owned by this user.
+    pub fn discover() -> Result<Self> {
+        match Self::from_env() {
+            Err(e) if e.code == "not_hyprland" => {}
+            other => return other,
+        }
+        let runtime = runtime_dir()?;
+        let uid = current_uid()?;
+        let newest = fs::read_dir(runtime.join("hypr"))
+            .map_err(|_| Error::new("not_hyprland", "Hyprland does not seem to be running"))?
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let meta = fs::symlink_metadata(e.path()).ok()?;
+                (valid_signature(&name)
+                    && meta.is_dir()
+                    && meta.uid() == uid
+                    && e.path().join(".socket.sock").exists())
+                .then(|| (meta.mtime(), name))
+            })
+            .max();
+        let (_, sig) = newest
+            .ok_or_else(|| Error::new("not_hyprland", "Hyprland does not seem to be running"))?;
+        Ok(Self {
+            dir: runtime.join("hypr").join(&sig),
+            signature: sig,
+        })
+    }
+
+    /// Opens socket2 for line-based events (`name>>data`).
+    pub fn events(&self) -> Result<std::io::BufReader<UnixStream>> {
+        let path = self.socket2();
+        self.check_socket(&path)?;
+        let s = UnixStream::connect(&path)
+            .map_err(|e| Error::new("connect", format!("{}: {e}", path.display())))?;
+        Ok(std::io::BufReader::new(s))
     }
 
     pub fn socket1(&self) -> PathBuf {

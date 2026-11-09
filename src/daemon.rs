@@ -1,0 +1,203 @@
+//! `stance daemon`: optional. Blocks on Hyprland's event socket (no
+//! polling) and applies hotplug rules; re-applies the active mode after a
+//! config reload (which wipes runtime changes).
+
+use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::{BufRead, ErrorKind};
+use std::os::unix::fs::OpenOptionsExt;
+use std::time::{Duration, Instant};
+
+use crate::apply::Ctx;
+use crate::backend::{Backend, Hyprland, Notice};
+use crate::error::{Error, Result};
+use crate::modes;
+
+const DEBOUNCE: Duration = Duration::from_millis(1500);
+const RELOAD_DEBOUNCE: Duration = Duration::from_millis(400);
+const BURST: usize = 3;
+const BURST_WINDOW: Duration = Duration::from_secs(30);
+const PAUSE: Duration = Duration::from_secs(60);
+
+fn log(msg: &str) {
+    eprintln!("stance daemon: {msg}");
+}
+
+/// Which events we care about.
+#[derive(Debug, PartialEq)]
+pub enum Event {
+    Hotplug,
+    Reload,
+    Other,
+}
+
+pub fn classify(line: &str) -> Event {
+    let name = line.split_once(">>").map_or(line, |(n, _)| n);
+    match name {
+        "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => Event::Hotplug,
+        "configreloaded" => Event::Reload,
+        _ => Event::Other,
+    }
+}
+
+pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
+    let ctx = Ctx {
+        backend: hypr,
+        state_dir: state_dir.clone(),
+    };
+    crate::store::ensure_private_dir(&state_dir)?;
+    // One daemon per user.
+    let lockf = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(state_dir.join("daemon.lock"))
+        .map_err(|e| Error::new("io", format!("daemon lock: {e}")))?;
+    if lockf.try_lock().is_err() {
+        return Err(Error::new(
+            "running",
+            "another stance daemon is already running",
+        ));
+    }
+
+    let mut events = hypr.instance.events()?;
+    log(&format!("watching Hyprland {}", hypr.session_id()));
+
+    let mut hotplug_at: Option<Instant> = None;
+    let mut reload_at: Option<Instant> = None;
+    let mut history: VecDeque<Instant> = VecDeque::new();
+    let mut paused_until: Option<Instant> = None;
+    // Apply the matching rule once at start, like a hotplug.
+    hotplug_at = hotplug_at.or(Some(Instant::now()));
+
+    let mut line = String::new();
+    loop {
+        let next = [hotplug_at, reload_at].into_iter().flatten().min();
+        let wait = next.map(|t| {
+            t.saturating_duration_since(Instant::now())
+                .max(Duration::from_millis(1))
+        });
+        events
+            .get_ref()
+            .set_read_timeout(wait)
+            .map_err(|e| Error::new("io", e.to_string()))?;
+
+        line.clear();
+        match events.read_line(&mut line) {
+            Ok(0) => {
+                log("Hyprland closed the event socket, exiting");
+                return Ok(());
+            }
+            Ok(_) => match classify(line.trim_end()) {
+                Event::Hotplug => hotplug_at = Some(Instant::now() + DEBOUNCE),
+                Event::Reload => reload_at = Some(Instant::now() + RELOAD_DEBOUNCE),
+                Event::Other => {}
+            },
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+            Err(e) => return Err(Error::new("ipc", format!("event socket: {e}"))),
+        }
+
+        let now = Instant::now();
+        if hotplug_at.is_some_and(|t| t <= now) {
+            hotplug_at = None;
+            if paused_until.is_some_and(|p| p > now) {
+                log("hotplug ignored (paused after a burst of changes)");
+            } else if let Some(changed) = on_hotplug(&ctx)
+                && changed
+            {
+                history.push_back(now);
+                while history
+                    .front()
+                    .is_some_and(|t| now.duration_since(*t) > BURST_WINDOW)
+                {
+                    history.pop_front();
+                }
+                if history.len() >= BURST {
+                    paused_until = Some(now + PAUSE);
+                    history.clear();
+                    hypr.notify(Notice::AutoPaused);
+                    log("too many automatic changes, pausing rules for 60 s");
+                }
+            }
+        }
+        if reload_at.is_some_and(|t| t <= now) {
+            reload_at = None;
+            on_reload(&ctx);
+        }
+    }
+}
+
+/// Returns Some(changed?) if a rule was applied.
+fn on_hotplug(ctx: &Ctx) -> Option<bool> {
+    if ctx.pending_info().is_some() {
+        log("hotplug: a user change is awaiting confirmation, rules skipped");
+        return None;
+    }
+    let rules = match modes::rules_path().and_then(|p| modes::load_rules(&p)) {
+        Ok(r) => r,
+        Err(e) => {
+            log(&format!("rules: {}", e.message));
+            return None;
+        }
+    };
+    let mons = ctx.backend.monitors().map_err(|e| log(&e.message)).ok()?;
+    let Some(rule) = modes::matching_rule(&rules, &mons) else {
+        log("hotplug: no rule matches the connected monitors, doing nothing");
+        return None;
+    };
+    apply_mode(ctx, &rule.mode, rule.allow_extras, "rule")
+}
+
+fn on_reload(ctx: &Ctx) {
+    let Some((mode, extras)) = ctx.active() else {
+        return;
+    };
+    log(&format!("config reloaded, re-applying mode `{mode}`"));
+    apply_mode(ctx, &mode, extras, "reload");
+}
+
+fn apply_mode(ctx: &Ctx, name: &str, extras: bool, why: &str) -> Option<bool> {
+    let res = modes::load(name).and_then(|m| {
+        let mons = ctx.backend.monitors()?;
+        let (st, warnings) = modes::resolve_mode(&m, &mons, extras)?;
+        for w in warnings {
+            log(&w);
+        }
+        ctx.apply(
+            &format!("{why}: {name}"),
+            &st,
+            0,
+            Some((Some(name.to_string()), extras)),
+        )
+    });
+    match res {
+        Ok(o) => {
+            if !o.changed.is_empty() {
+                log(&format!(
+                    "{why}: applied `{name}` ({})",
+                    o.changed.join(", ")
+                ));
+            }
+            Some(!o.changed.is_empty())
+        }
+        Err(e) => {
+            log(&format!("{why}: `{name}` failed: {}", e.message));
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_events() {
+        assert_eq!(classify("monitoraddedv2>>2,DP-2,desc"), Event::Hotplug);
+        assert_eq!(classify("monitorremoved>>DP-2"), Event::Hotplug);
+        assert_eq!(classify("configreloaded>>"), Event::Reload);
+        assert_eq!(classify("workspace>>2"), Event::Other);
+        assert_eq!(classify("monitoraddedfake>>x"), Event::Other);
+    }
+}

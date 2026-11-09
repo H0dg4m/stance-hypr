@@ -285,8 +285,7 @@ fn dir_checks() -> Vec<Check> {
             }
         }
     }
-    let pp = std::env::var_os("PATH")
-        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("powerprofilesctl").is_file()));
+    let pp = crate::power::available();
     out.push(check(
         "power_profiles",
         if pp { Status::Ok } else { Status::Info },
