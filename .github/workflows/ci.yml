@@ -11,6 +11,20 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+  android-core:
+    # The phone's Noise/protocol core against test vectors and a real
+    # `stance deck serve` on loopback.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: ./gradlew :core:test -Dstance.binary=$GITHUB_WORKSPACE/target/debug/stance
+        working-directory: android
   audit:
     runs-on: ubuntu-latest
     steps:
