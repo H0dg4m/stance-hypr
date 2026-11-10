@@ -291,6 +291,60 @@ fn touching(a: &MonitorSpec, b: &MonitorSpec) -> bool {
     (v && (a.x + aw == b.x || b.x + bw == a.x)) || (h && (a.y + ah == b.y || b.y + bh == a.y))
 }
 
+/// Lid closed: turn the laptop panel(s) off, but only when another screen
+/// stays on. Lid open: turn them back on (at their remembered place when
+/// `recall` knows it). Returns the changes and a note for the log.
+pub fn plan_lid(
+    mons: &[Monitor],
+    close: bool,
+    recall: &dyn Fn(&Monitor) -> Option<MonitorSpec>,
+) -> Result<(Vec<MonitorSpec>, Option<String>)> {
+    let internal = |m: &&Monitor| crate::brightness::is_internal(&m.name);
+    if close {
+        let panels: Vec<&Monitor> = mons.iter().filter(internal).filter(|m| m.enabled).collect();
+        if panels.is_empty() {
+            return Ok((vec![], Some("no laptop panel is on".into())));
+        }
+        let others = mons
+            .iter()
+            .filter(|m| {
+                !crate::brightness::is_internal(&m.name) && m.enabled && m.mirror_of.is_none()
+            })
+            .count();
+        if others == 0 {
+            return Ok((
+                vec![],
+                Some("kept the laptop panel on: it is the only screen".into()),
+            ));
+        }
+        let specs = panels
+            .into_iter()
+            .map(|m| {
+                let mut s = MonitorSpec::from_monitor(m);
+                s.enabled = false;
+                s
+            })
+            .collect();
+        return Ok((specs, None));
+    }
+    let mut specs = Vec::new();
+    for m in mons.iter().filter(internal).filter(|m| !m.enabled) {
+        specs.extend(plan_set(
+            mons,
+            &m.name,
+            &SetArgs {
+                on: Some(true),
+                ..Default::default()
+            },
+            recall(m),
+        )?);
+    }
+    let note = specs
+        .is_empty()
+        .then(|| "laptop panel is already on".to_string());
+    Ok((specs, note))
+}
+
 pub fn parse_pair(s: &str) -> Result<(String, (i32, i32))> {
     let (name, pos) = s.rsplit_once('=').ok_or_else(|| {
         Error::new(
@@ -481,6 +535,29 @@ mod tests {
 
     fn set3(m: &[Monitor], t: &str, a: &SetArgs) -> Result<Vec<MonitorSpec>> {
         plan_set(m, t, a, None)
+    }
+
+    #[test]
+    fn lid_rules() {
+        use crate::apply::tests::mon;
+        let mut lap = mon("eDP-1", 0);
+        let ext = mon("DP-1", 1920);
+        let none = |_: &Monitor| None;
+        // Closing with an external screen turns the panel off.
+        let (s, n) = plan_lid(&[lap.clone(), ext.clone()], true, &none).unwrap();
+        assert!(n.is_none() && s.len() == 1 && !s[0].enabled && s[0].name == "eDP-1");
+        // Alone: never turn off the last screen.
+        let (s, n) = plan_lid(std::slice::from_ref(&lap), true, &none).unwrap();
+        assert!(s.is_empty() && n.is_some());
+        // Opening turns it back on, at the remembered place if known.
+        lap.enabled = false;
+        let mut at = MonitorSpec::from_monitor(&mon("eDP-1", -1920));
+        at.enabled = true;
+        let rec = move |_: &Monitor| Some(at.clone());
+        let (s, _) = plan_lid(&[lap.clone(), ext.clone()], false, &rec).unwrap();
+        assert!(s[0].enabled && s[0].x == -1920);
+        let (s, n) = plan_lid(&[mon("eDP-1", 0), ext], false, &none).unwrap();
+        assert!(s.is_empty() && n.is_some());
     }
 
     #[test]

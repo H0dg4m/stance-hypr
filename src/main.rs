@@ -17,6 +17,7 @@ mod power;
 mod spec;
 mod store;
 mod tool;
+mod uevent;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -43,6 +44,9 @@ Usage:
   stance layout <kind> <monitor> [<reference>]
       kind: left-of | right-of | above | below | mirror | single
   stance arrange NAME=XxY [NAME=XxY…]  Move several monitors at once (panel drag)
+  stance lid close | open             Laptop lid (bind to Hyprland's lid switch; no confirm timer)
+  stance power                         AC or battery, and the hotplug rule that applies
+  stance waybar                        One status line for a Waybar custom module
   stance confirm                       Keep the last change
   stance revert                        Undo the last change now
   stance persist [--print]             Save the current setup to your Hyprland config dir
@@ -361,6 +365,55 @@ fn run(a: &Args) -> Result<ExitCode> {
             report(json, out);
         }
         "rules" => rules_cmd(a, json)?,
+        "lid" => {
+            let what = a.arg(1, "close or open")?;
+            a.max_pos(2)?;
+            let close = match what {
+                "close" => true,
+                "open" => false,
+                other => {
+                    return Err(Error::new(
+                        "usage",
+                        format!("lid {other}: use close or open"),
+                    ));
+                }
+            };
+            let mons = hypr.monitors()?;
+            let (specs, note) =
+                plan::plan_lid(&mons, close, &|m| memory::recall(&ctx.state_dir, m, &mons))?;
+            let st = State {
+                monitors: specs,
+                ..Default::default()
+            };
+            // Nobody can confirm with the lid shut: no timer, mode kept.
+            let mut out = ctx.apply(&format!("lid {what}"), &st, 0, None)?;
+            out.warnings.extend(note);
+            report(json, out);
+        }
+        "power" => {
+            a.max_pos(1)?;
+            let source = modes::PowerSource::from_ac(power::on_ac());
+            let rules = modes::load_rules(&modes::rules_path()?)?;
+            let mons = hypr.monitors()?;
+            let rule = modes::matching_rule(&rules, &mons, source).map(|r| r.mode.clone());
+            if json {
+                ok_json(&json!({ "source": source, "rule_mode": rule }));
+            } else {
+                println!(
+                    "power: {}",
+                    match source {
+                        Some(modes::PowerSource::Ac) => "ac",
+                        Some(modes::PowerSource::Battery) => "battery",
+                        None => "no battery (power rules never apply)",
+                    }
+                );
+                println!("matching rule: {}", rule.as_deref().unwrap_or("none"));
+            }
+        }
+        "waybar" => {
+            a.max_pos(1)?;
+            waybar_line(&ctx, &hypr);
+        }
         "confirm" => {
             a.max_pos(1)?;
             let had = ctx.confirm()?;
@@ -528,6 +581,48 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `{"text","tooltip","class","alt"}` for a Waybar custom module
+/// (`return-type: json`). Never fails: a broken line would blank the bar.
+fn waybar_line(ctx: &Ctx, hypr: &Hyprland) {
+    let mons = hypr.monitors().unwrap_or_default();
+    let active: Vec<&Monitor> = mons
+        .iter()
+        .filter(|m| m.enabled && m.mirror_of.is_none())
+        .collect();
+    let mode = ctx.active_mode();
+    let pending = ctx.pending_info();
+    let text = match (&pending, &mode) {
+        (Some(p), _) => format!("keep? {}s", p.remaining_ms.div_ceil(1000)),
+        (None, Some(m)) => m.clone(),
+        (None, None) => format!(
+            "{} screen{}",
+            active.len(),
+            if active.len() == 1 { "" } else { "s" }
+        ),
+    };
+    let tooltip = active
+        .iter()
+        .map(|m| {
+            format!(
+                "{} {}x{}@{}",
+                m.name,
+                m.width,
+                m.height,
+                spec::fmt_num(m.refresh.round())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let class = if pending.is_some() {
+        "pending"
+    } else if mode.is_some() {
+        "mode"
+    } else {
+        "idle"
+    };
+    print_json(&json!({ "text": text, "tooltip": tooltip, "class": class, "alt": class }));
 }
 
 fn deck_cmd(a: &Args, json: bool) -> Result<()> {

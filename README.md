@@ -50,8 +50,11 @@ experimental.
 
 - **Quickshell** (end-4 / illogical-impulse and forks, or your own shell):
   drop-in components – see [docs/quickshell.md](docs/quickshell.md).
-- **Any other bar** (Waybar, …): run the bundled standalone shell once,
-  then bind a click to `qs -p /usr/share/stance/quickshell ipc call stance toggle`.
+- **Waybar**: `stance waybar` prints a status line (mode, screens, a
+  "keep?" countdown); see [contrib/waybar](contrib/waybar) for the module
+  and click actions. The popup comes from the bundled standalone shell.
+- **Any other bar**: run the bundled standalone shell once, then bind a
+  click to `qs -p /usr/share/stance/quickshell ipc call stance toggle`.
 - **No bar**: everything works from the CLI.
 
 ## CLI
@@ -160,6 +163,26 @@ stance keeps the last position, mode and scale of every screen it has seen
 back there; with the daemon running, so does unplugging and re-plugging it
 when no hotplug rule matches. Use `stance persist` to make a layout survive
 Hyprland restarts.
+
+### Laptop lid and power
+
+```lua
+-- hyprland.lua: lid closed → laptop panel off (only if another screen is on),
+-- lid open → back where it was. No confirm timer: nobody can see one.
+hl.bind("switch:on:Lid Switch", hl.dsp.exec_cmd("stance lid close"), { locked = true })
+hl.bind("switch:off:Lid Switch", hl.dsp.exec_cmd("stance lid open"), { locked = true })
+```
+
+Hotplug rules can depend on the power source; with the daemon running,
+plugging the charger in or out re-checks them (`stance power` shows the
+current source and the rule that applies):
+
+```toml
+[[rule]]
+monitors = ["AU Optronics 0x7EAD"]
+mode = "battery-saver"
+on_power = "battery"     # ac | battery; a matching one wins over a rule without
+```
 
 ### Persisting
 

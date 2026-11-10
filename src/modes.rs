@@ -533,6 +533,29 @@ pub struct Rule {
     /// Also apply the mode's Hyprland options and power profile.
     #[serde(default)]
     pub allow_extras: bool,
+    /// Only on mains (`ac`) or only on `battery`. A rule with a matching
+    /// `on_power` wins over one without.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_power: Option<PowerSource>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PowerSource {
+    Ac,
+    Battery,
+}
+
+impl PowerSource {
+    pub fn from_ac(ac: Option<bool>) -> Option<Self> {
+        ac.map(|on| {
+            if on {
+                PowerSource::Ac
+            } else {
+                PowerSource::Battery
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -568,9 +591,15 @@ pub fn load_rules(path: &Path) -> Result<Rules> {
     parse_rules(&store::read_checked(path)?)
 }
 
-/// First rule whose monitor set equals the connected set exactly.
-pub fn matching_rule<'a>(rules: &'a Rules, mons: &[Monitor]) -> Option<&'a Rule> {
-    rules.rules.iter().find(|r| {
+/// The rule for the connected monitor set (exact set equality). Among
+/// those, one whose `on_power` equals the current source wins; otherwise
+/// the first without `on_power`.
+pub fn matching_rule<'a>(
+    rules: &'a Rules,
+    mons: &[Monitor],
+    power: Option<PowerSource>,
+) -> Option<&'a Rule> {
+    let set_matches = |r: &&Rule| {
         if r.monitors.len() != mons.len() {
             return false;
         }
@@ -582,7 +611,13 @@ pub fn matching_rule<'a>(rules: &'a Rules, mons: &[Monitor]) -> Option<&'a Rule>
             }
             _ => false,
         })
-    })
+    };
+    let candidates: Vec<&Rule> = rules.rules.iter().filter(set_matches).collect();
+    candidates
+        .iter()
+        .find(|r| r.on_power.is_some() && r.on_power == power)
+        .or_else(|| candidates.iter().find(|r| r.on_power.is_none()))
+        .copied()
 }
 
 #[cfg(test)]
@@ -727,9 +762,29 @@ enabled = false
         let one = vec![mon("A-1", 0)];
         let two = vec![mon("A-1", 0), mon("B-1", 1920)];
         let three = vec![mon("A-1", 0), mon("B-1", 1920), mon("C-1", 3840)];
-        assert_eq!(matching_rule(&r, &one).unwrap().mode, "laptop");
-        assert_eq!(matching_rule(&r, &two).unwrap().mode, "desk");
-        assert!(matching_rule(&r, &three).is_none());
+        assert_eq!(matching_rule(&r, &one, None).unwrap().mode, "laptop");
+        assert_eq!(matching_rule(&r, &two, None).unwrap().mode, "desk");
+        assert!(matching_rule(&r, &three, None).is_none());
+        // Power-specific rules win when the source matches.
+        let p = parse_rules(
+            "[[rule]]\nmonitors = [\"Desc A-1\"]\nmode = \"laptop\"\n\n[[rule]]\nmonitors = [\"Desc A-1\"]\nmode = \"battery\"\non_power = \"battery\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            matching_rule(&p, &one, Some(PowerSource::Battery))
+                .unwrap()
+                .mode,
+            "battery"
+        );
+        assert_eq!(
+            matching_rule(&p, &one, Some(PowerSource::Ac)).unwrap().mode,
+            "laptop"
+        );
+        assert_eq!(matching_rule(&p, &one, None).unwrap().mode, "laptop");
+        assert!(
+            parse_rules("[[rule]]\nmonitors = [\"a\"]\nmode = \"x\"\non_power = \"solar\"")
+                .is_err()
+        );
         assert!(parse_rules("[[rule]]\nmonitors = []\nmode = \"x\"").is_err());
         assert!(parse_rules("[[rule]]\nmonitors = [\"a\"]\nmode = \"../x\"").is_err());
     }

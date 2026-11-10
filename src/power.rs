@@ -76,3 +76,46 @@ pub fn get() -> Result<PowerProfile> {
 pub fn set(p: PowerProfile) -> Result<()> {
     run(&["set", p.as_str()]).map(|_| ())
 }
+
+/// Is the machine on mains power? `None` when there is no mains supply to
+/// ask (a desktop): power rules then never apply.
+pub fn on_ac() -> Option<bool> {
+    on_ac_in(std::path::Path::new("/sys/class/power_supply"))
+}
+
+pub fn on_ac_in(dir: &std::path::Path) -> Option<bool> {
+    let mut seen = false;
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = e.path();
+        let kind = std::fs::read_to_string(p.join("type")).unwrap_or_default();
+        if kind.trim() != "Mains" {
+            continue;
+        }
+        seen = true;
+        if std::fs::read_to_string(p.join("online")).is_ok_and(|v| v.trim() == "1") {
+            return Some(true);
+        }
+    }
+    seen.then_some(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mains_detection() {
+        let d = std::env::temp_dir().join(format!("stance-ps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("BAT1")).unwrap();
+        std::fs::write(d.join("BAT1/type"), "Battery\n").unwrap();
+        assert_eq!(on_ac_in(&d), None);
+        std::fs::create_dir_all(d.join("ACAD")).unwrap();
+        std::fs::write(d.join("ACAD/type"), "Mains\n").unwrap();
+        std::fs::write(d.join("ACAD/online"), "0\n").unwrap();
+        assert_eq!(on_ac_in(&d), Some(false));
+        std::fs::write(d.join("ACAD/online"), "1\n").unwrap();
+        assert_eq!(on_ac_in(&d), Some(true));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

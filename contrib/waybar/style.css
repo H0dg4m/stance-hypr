@@ -1,0 +1,3 @@
+/* classes: idle | mode | pending */
+#custom-stance.pending { color: #f9e2af; }
+#custom-stance.mode { color: #89b4fa; }

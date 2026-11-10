@@ -123,6 +123,20 @@ daemon çalışıyorsa ve hiçbir kural eşleşmiyorsa çıkarıp yeniden takıl
 Panelde ekranlar haritada sürüklenerek taşınır (kenarlar yapışır), modlar
 panelden eklenip düzenlenir, ayarlar sayfasından gösterilecek bölümler seçilir.
 
+### Dizüstü kapağı ve güç
+
+```lua
+-- hyprland.lua: kapak kapanınca dahili ekran kapanır (başka ekran açıksa),
+-- açılınca eski yerine döner. Onay sayacı yok: kapak kapalıyken görülmez.
+hl.bind("switch:on:Lid Switch", hl.dsp.exec_cmd("stance lid close"), { locked = true })
+hl.bind("switch:off:Lid Switch", hl.dsp.exec_cmd("stance lid open"), { locked = true })
+```
+
+Tak-çalıştır kuralları güç kaynağına bağlanabilir (`on_power = "ac" | "battery"`);
+daemon açıksa şarj takılıp çıkarılınca kurallar yeniden değerlendirilir
+(`stance power` mevcut kaynağı ve geçerli kuralı gösterir). Waybar için
+`stance waybar` ve [contrib/waybar](contrib/waybar).
+
 ### Kalıcı yapmak
 
 Çalışma anı değişiklikleri bilerek geçicidir (projektör ayarı kalıcı olmasın).

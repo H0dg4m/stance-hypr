@@ -1,0 +1,11 @@
+// Add "custom/stance" to one of your modules-* lists, then this block.
+"custom/stance": {
+  "exec": "stance waybar",
+  "return-type": "json",
+  "interval": 3,
+  "format": "󰍹 {}",
+  "tooltip": true,
+  // Run the bundled panel once at login: qs -p /usr/share/stance/quickshell
+  "on-click": "qs -p /usr/share/stance/quickshell ipc call stance toggle",
+  "on-click-right": "stance revert"
+}

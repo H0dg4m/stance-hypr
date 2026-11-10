@@ -38,8 +38,13 @@ fn log(msg: &str) {
     eprintln!("stance deck: {msg}");
 }
 
+/// `$XDG_RUNTIME_DIR/stance`, or `STANCE_DECK_DIR` (absolute) so a second
+/// server (tests) can run next to the real one.
 pub fn runtime_dir() -> Result<PathBuf> {
-    Ok(crate::hypr::runtime_dir()?.join("stance"))
+    match std::env::var_os("STANCE_DECK_DIR").map(PathBuf::from) {
+        Some(p) if p.is_absolute() => Ok(p),
+        _ => Ok(crate::hypr::runtime_dir()?.join("stance")),
+    }
 }
 
 pub fn control_path() -> Result<PathBuf> {
@@ -244,7 +249,8 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
     });
     shared.refresh_devices();
     log(&format!(
-        "listening on {addr} (fingerprint {}), {} paired device(s)",
+        "listening on {} (fingerprint {}), {} paired device(s)",
+        listener.local_addr().map_or_else(|_| addr.to_string(), |a| a.to_string()),
         noise::fingerprint(&shared.key.public),
         shared
             .devices
@@ -303,6 +309,16 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
             } else {
                 return Err(Error::new("unsafe_path", "deck.sock is a symlink"));
             }
+        }
+        // sockaddr_un holds 107 bytes of path.
+        if path.as_os_str().len() > 100 {
+            return Err(Error::new(
+                "deck",
+                format!(
+                    "control socket path is too long ({}): use a shorter XDG_RUNTIME_DIR",
+                    path.display()
+                ),
+            ));
         }
         let ul = UnixListener::bind(&path)
             .map_err(|e| Error::new("deck", format!("control socket: {e}")))?;

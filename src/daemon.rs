@@ -14,6 +14,7 @@ use crate::error::{Error, Result};
 use crate::modes;
 
 const DEBOUNCE: Duration = Duration::from_millis(1500);
+const POWER_POLL: Duration = Duration::from_secs(1);
 const RELOAD_DEBOUNCE: Duration = Duration::from_millis(400);
 const BURST: usize = 3;
 const BURST_WINDOW: Duration = Duration::from_secs(30);
@@ -93,16 +94,27 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
     let mut history: VecDeque<Instant> = VecDeque::new();
     let mut paused_until: Option<Instant> = None;
     let mut added: Vec<String> = Vec::new();
+    // Charger in/out re-runs the rules (rules may have `on_power`).
+    let power_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let power_watch = crate::uevent::watch_power(power_flag.clone());
+    let mut last_ac = crate::power::on_ac();
+    if !power_watch {
+        log("power-supply events unavailable; power rules apply on monitor changes only");
+    }
     // Apply the matching rule once at start, like a hotplug.
     hotplug_at = hotplug_at.or(Some(Instant::now()));
 
     let mut line = String::new();
     loop {
         let next = [hotplug_at, reload_at].into_iter().flatten().min();
-        let wait = next.map(|t| {
+        let mut wait = next.map(|t| {
             t.saturating_duration_since(Instant::now())
                 .max(Duration::from_millis(1))
         });
+        // Wake now and then to look at the power flag (set by a thread).
+        if power_watch {
+            wait = Some(wait.map_or(POWER_POLL, |w| w.min(POWER_POLL)));
+        }
         events
             .get_ref()
             .set_read_timeout(wait)
@@ -128,6 +140,18 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
             },
             Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
             Err(e) => return Err(Error::new("ipc", format!("event socket: {e}"))),
+        }
+
+        if power_flag.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            let ac = crate::power::on_ac();
+            if ac != last_ac {
+                last_ac = ac;
+                log(&format!(
+                    "power: now on {}",
+                    if ac == Some(true) { "ac" } else { "battery" }
+                ));
+                hotplug_at = Some(Instant::now() + DEBOUNCE);
+            }
         }
 
         let now = Instant::now();
@@ -175,7 +199,8 @@ fn on_hotplug(ctx: &Ctx, night: &crate::night::Night, added: &[String]) -> Optio
         }
     };
     let mons = ctx.backend.monitors().map_err(|e| log(&e.message)).ok()?;
-    let Some(rule) = modes::matching_rule(&rules, &mons) else {
+    let power = modes::PowerSource::from_ac(crate::power::on_ac());
+    let Some(rule) = modes::matching_rule(&rules, &mons, power) else {
         return restore_remembered(ctx, &mons, added);
     };
     apply_mode(ctx, &rule.mode, rule.allow_extras, "rule", Some(night))

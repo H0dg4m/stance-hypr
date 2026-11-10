@@ -257,11 +257,30 @@ EOF
   kill_sunsets
 fi
 
+# Lid / power / waybar ---------------------------------------------------
+hc output create headless eDP-7 >/dev/null; sleep 0.5
+run set eDP-7 --pos 0x1080 --no-confirm
+E7=$(q "(m['eDP-7']['x'], m['eDP-7']['y'])")
+run lid close && ok "lid close runs" || bad "lid close runs" "$(cat "$WORK/last.out")"
+expect "lid close turns the panel off" "not m['eDP-7']['enabled'] and m['TEST-1']['enabled']"
+"$BIN" status --json | grep -q '"pending":null' && ok "lid close has no timer" || bad "lid close has no timer"
+run lid open && ok "lid open runs" || bad "lid open runs" "$(cat "$WORK/last.out")"
+expect "lid open restores place" "m['eDP-7']['enabled'] and (m['eDP-7']['x'], m['eDP-7']['y'])==$E7"
+run lid sideways && bad "lid rejects junk" || ok "lid rejects junk"
+"$BIN" waybar | python3 -c "import json,sys; d=json.load(sys.stdin); assert {'text','tooltip','class'}<=set(d)" && ok "waybar line is JSON" || bad "waybar line is JSON"
+"$BIN" power --json | grep -q '"ok":true' && ok "power reports" || bad "power reports"
+r=$(hc eval 'hl.bind("switch:on:Lid Switch", hl.dsp.exec_cmd("stance lid close"), { locked = true })')
+[ "$r" = ok ] && ok "documented lid bind parses" || bad "documented lid bind parses" "$r"
+hc output remove eDP-7 >/dev/null; sleep 0.3
+
 # Phone deck (loopback only, nested instance) ------------------------------
 # Never presses brightness/audio buttons: those would hit real devices.
-if "$BIN" deck devices --json 2>/dev/null | grep -q '"server":{' || [ -z "$NWL" ]; then
-  echo "  skip deck (a real deck server runs, or no nested display)"
+if [ -z "$NWL" ]; then
+  echo "  skip deck (no nested display)"
 else
+  # Own control socket dir: the user's real deck server may be running.
+  export STANCE_DECK_DIR=$WORK/deck
+  mkdir -m 700 -p "$STANCE_DECK_DIR"
   cat > "$XDG_CONFIG_HOME/stance/deck.toml" <<'EOF'
 [[button]]
 id = "night"
@@ -297,7 +316,7 @@ EOF
   sleep 1.2
   run deck test buttons && bad "unpaired phone refused" || ok "unpaired phone refused"
   kill $DECK; wait $DECK 2>/dev/null
-  rm -f "$XDG_RUNTIME_DIR/stance/deck.sock" "$XDG_RUNTIME_DIR/stance/deck-pair.svg"
+  unset STANCE_DECK_DIR
   kill_sunsets
   run layout right-of TEST-2 TEST-1 --no-confirm
 fi

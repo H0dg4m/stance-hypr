@@ -41,6 +41,12 @@ Quick controls.
   `deck.toml` run whitelisted stance actions only (modes, night light,
   brightness, audio, layout, keep / revert). Noise IK sessions, XXpsk3
   pairing, rate limits; see docs/deck.md. The Android app comes next.
+- `lid close|open` for Hyprland's lid switch (panel off only when another
+  screen is on; back at its remembered place); hotplug rules gain
+  `on_power = "ac" | "battery"` and the daemon re-checks them when the
+  charger is plugged in or out (kernel uevents, no D-Bus); `power` shows the
+  source and matching rule
+- `waybar`: a JSON status line for a Waybar custom module (contrib/waybar)
 - `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
 - External tools run with a hard timeout (kill + reap)
 
