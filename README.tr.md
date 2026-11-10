@@ -45,6 +45,9 @@ stance doctor
 
 Hyprland **0.55+** ve Lua config gerekir (0.57 ile test edildi; 0.57 hyprlang
 `.conf` desteğini kaldırdı). 0.55/0.56 için `.conf` desteği deneyseldir.
+Test edilenden yeni bir Hyprland'de ekranı değiştiren komutlar stance
+güncellenene kadar çalışmaz; denemek için `--force-version` (servisler için
+`STANCE_FORCE_VERSION=1`).
 
 ## Bara ekleme
 

@@ -92,7 +92,7 @@ server picks the change up and sends a new `hello` to connected phones.
 
 | Threat | Handling |
 | --- | --- |
-| Attacker on the same LAN | Everything is Noise-encrypted and authenticated. Without a paired key or the QR PSK the handshake fails; pre-auth frames are capped at 1 KiB, handshake time 5 s, handshakes rate-limited per IP and globally, connections capped. |
+| Attacker on the same LAN | Everything is Noise-encrypted and authenticated. Without a paired key or the QR PSK the handshake fails; pre-auth frames are capped at 1 KiB, handshake time 5 s, at most 4 handshakes in flight and 8 sessions. Failed handshakes are limited (10 per IP and 40 overall per minute; the overall limit only blocks IPs that failed themselves, so a flood cannot lock out a paired phone). |
 | Replay | Per-session ephemeral keys plus Noise nonces; any decrypt failure ends the session (no resync). Old recordings fail in a new session. |
 | Eavesdropping on pairing | The QR is the out-of-band channel; anyone who sees the QR during the window can pair, so it is shown only while asked, expires in 120 s, is single use and its file is removed at expiry. |
 | Stolen phone | `stance deck unpair NAME` (or the panel) revokes at once and drops live sessions. The reach of a stolen phone is limited to the buttons in `deck.toml`. Keep dangerous buttons out of the file; display changes still ask for confirmation and revert on their own. |
@@ -115,6 +115,16 @@ PC screen is open; there is no background service. Strings from the PC are
 shown as plain text, shortened and stripped of control characters. See
 [../android/README.md](../android/README.md) for building, signing and the
 tests (Noise vectors, live interop, screenshots, an optional emulator run).
+
+## Running and checking the server
+
+- `stance deck status` (or `--json`): port, hosts, PC key fingerprint,
+  whether a pairing window is open, paired phones with connected / last seen.
+- Every new pairing raises a desktop notification with the phone's name and
+  key fingerprint, so an unexpected pairing does not go unnoticed.
+- `STANCE_DECK_DIR=/abs/path` moves the control socket and pairing QR out
+  of `$XDG_RUNTIME_DIR/stance`, so a second server (tests) can run next to
+  the real one.
 
 ## Testing without a phone
 

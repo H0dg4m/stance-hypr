@@ -105,6 +105,19 @@ fine; do not poll the CLI per frame.
 known place of each screen. `night.json`: remembered warm temperature.
 Their layout may change between minor versions; use the CLI instead.
 
+### Deck CLI data
+
+| command | `data` |
+| --- | --- |
+| `deck status` | `{port, loopback, hosts[], fingerprint, pairing, devices:[{name, paired_at, connected, last_seen}]}` (`last_seen` is null until the phone has connected; error `deck_not_running` without a server) |
+| `deck devices` | `{devices:[{name, key, paired_at}], server: <deck status data> or null}` |
+| `deck pair` | `{payload, expires_ms, svg, fingerprint}` |
+| `deck buttons` | `{custom, button:[{id, label, icon?, action, …action fields}]}` (same keys as `deck.toml`) |
+| `deck put --data '{"button":[…]}'` / `deck reset` | `{message, done}` |
+
+`STANCE_DECK_DIR` (absolute path) replaces `$XDG_RUNTIME_DIR/stance` for the
+control socket and the pairing QR.
+
 ## 3. Phone deck wire format (schema 1)
 
 ### 3.1 Transport and framing

@@ -18,8 +18,10 @@ All green, and `stance doctor` on a real machine shows no FAIL.
 
 ## 2. Version and changelog
 
-- `Cargo.toml` `version`, `android/app/build.gradle.kts` `versionName` /
-  `versionCode`, `packaging/aur/stance-hypr/PKGBUILD` `pkgver`
+- `Cargo.toml` `version`, `android/app/build.gradle.kts` `versionName` and
+  `versionCode` (increment it on every release: Android refuses to install
+  a lower one over a higher one), `packaging/aur/stance-hypr/PKGBUILD`
+  `pkgver`
 - `CHANGELOG.md`: replace "unreleased" with the date
 
 Commit: `git commit -am "stance X.Y.Z"` and push.
@@ -55,6 +57,10 @@ gh release create vX.Y.Z --title "stance X.Y.Z" --notes-file dist/notes.md \
 ```
 
 ## 6. AUR
+
+`stance-hypr-git`'s `pkgver()` needs at least one tag in the repo (it has
+`v0.1.0`). After the first upload, drop "AUR upload pending" from both
+READMEs.
 
 ```sh
 cd packaging/aur/stance-hypr

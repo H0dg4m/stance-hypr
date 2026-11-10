@@ -46,7 +46,9 @@ stance doctor
 
 Requires Hyprland **0.55+** with a Lua config (0.57 is tested; 0.57 removed
 hyprlang `.conf` support). Legacy `.conf` support for 0.55/0.56 exists but is
-experimental.
+experimental. On a Hyprland newer than the tested versions, commands that
+change screens refuse to run until stance is updated, unless you pass
+`--force-version` (`STANCE_FORCE_VERSION=1` for the services).
 
 ## Bar integration
 

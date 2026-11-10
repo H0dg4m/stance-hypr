@@ -63,6 +63,13 @@ controls, a full panel and a phone remote.
   never locks out a paired phone; buttons from `deck.toml` run whitelisted
   stance actions only; protocol and test vectors in docs/protocol.md
 
+### Known limits
+- The Android app was verified on an emulator and with screenshot tests,
+  not yet on a real phone
+- `deck serve` listens on all interfaces unless `--loopback`; allow TCP
+  47800 from your LAN only (doctor checks ufw)
+- The hyprlang `.conf` path (Hyprland 0.55/0.56) is still untested
+
 ### Integrations and packaging
 - `waybar` status line and contrib/waybar module
 - `doctor`: hyprsunset, brightness tools, audio tools, deck server and ufw,
