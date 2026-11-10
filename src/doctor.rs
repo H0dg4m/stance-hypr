@@ -11,7 +11,19 @@ use crate::hypr::{Instance, check_private_dir, current_uid};
 use crate::model::Parser;
 
 /// Hyprland releases stance has been tested against.
-const TESTED: &[&str] = &["0.55", "0.56", "0.57"];
+pub const TESTED: &[&str] = &["0.55", "0.56", "0.57"];
+
+/// Is `version` (e.g. "0.57.1") newer than every tested major.minor?
+/// Older or unparsable versions are not "newer": the parser checks catch
+/// what really matters there.
+pub fn newer_than_tested(version: &str) -> bool {
+    let mm = |s: &str| -> Option<(u32, u32)> {
+        let mut it = s.trim().trim_start_matches('v').split('.');
+        Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+    };
+    let newest = TESTED.iter().filter_map(|t| mm(t)).max();
+    matches!((mm(version), newest), (Some(v), Some(n)) if v > n)
+}
 const PERSIST_NAME: &str = "stance-monitors";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -377,6 +389,16 @@ fn deck_check() -> Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_guard() {
+        assert!(!newer_than_tested("0.57.1"));
+        assert!(!newer_than_tested("0.55.0"));
+        assert!(!newer_than_tested("0.49.0"));
+        assert!(newer_than_tested("0.58.0"));
+        assert!(newer_than_tested("1.0.0"));
+        assert!(!newer_than_tested("git"));
+    }
 
     #[test]
     fn detects_lua_require() {

@@ -250,7 +250,9 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
     shared.refresh_devices();
     log(&format!(
         "listening on {} (fingerprint {}), {} paired device(s)",
-        listener.local_addr().map_or_else(|_| addr.to_string(), |a| a.to_string()),
+        listener
+            .local_addr()
+            .map_or_else(|_| addr.to_string(), |a| a.to_string()),
         noise::fingerprint(&shared.key.public),
         shared
             .devices

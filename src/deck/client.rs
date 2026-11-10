@@ -170,7 +170,7 @@ fn fetch() -> Result<(String, Vec<super::proto::Button>, State)> {
 
 fn out(json: bool, text: String, data: serde_json::Value) {
     if json {
-        println!("{}", serde_json::json!({ "ok": true, "data": data }));
+        println!("{}", serde_json::json!({ "ok": true, "schema": 1, "data": data }));
     } else {
         println!("{text}");
     }

@@ -72,6 +72,9 @@ Usage:
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
 
+On a Hyprland newer than the tested versions, commands that change screens
+refuse to run unless --force-version is given.
+
 <monitor> is a description (\"JDR EPIC Q40\"), \"make model\" or a connector (DP-1).
 Changes revert after 12 s unless confirmed: --timeout S to change, --no-confirm to skip.
 Every command accepts --json.";
@@ -100,6 +103,7 @@ const BOOL_FLAGS: &[&str] = &[
     "--no-extras",
     "--with-quick",
     "--loopback",
+    "--force-version",
     "--help",
     "-h",
     "--version",
@@ -187,7 +191,7 @@ fn main() -> ExitCode {
         Err(e) => {
             if json {
                 print_json(
-                    &json!({ "ok": false, "error": { "code": e.code, "message": e.message } }),
+                    &json!({ "ok": false, "schema": SCHEMA, "error": { "code": e.code, "message": e.message } }),
                 );
             } else {
                 eprintln!("stance: {}", e.message);
@@ -234,6 +238,27 @@ fn run(a: &Args) -> Result<ExitCode> {
         backend: &hypr,
         state_dir: state_dir()?,
     };
+
+    // A Hyprland newer than any tested one may have changed the IPC or the
+    // config API under us: refuse to change the screens unless asked to.
+    // Reading, confirming and reverting always work.
+    let mutating = matches!(cmd, "set" | "layout" | "arrange" | "lid" | "daemon")
+        || (cmd == "mode" && a.pos.get(1).map(String::as_str) == Some("apply"));
+    if mutating
+        && !a.has("--force-version")
+        && std::env::var_os("STANCE_FORCE_VERSION").is_none()
+        && let Ok(v) = hypr.version()
+        && doctor::newer_than_tested(&v)
+    {
+        return Err(Error::new(
+            "untested_version",
+            format!(
+                "Hyprland {v} is newer than the versions stance was tested with ({}); \
+                 check for a stance update, or pass --force-version (STANCE_FORCE_VERSION=1 for the daemon) to try anyway",
+                doctor::TESTED.join(", ")
+            ),
+        ));
+    }
 
     match cmd {
         "monitors" => {
@@ -1017,7 +1042,7 @@ fn doctor_cmd(json: bool) -> ExitCode {
     let checks = doctor::run();
     let failed = checks.iter().any(|c| c.status == doctor::Status::Fail);
     if json {
-        print_json(&json!({ "ok": !failed, "data": checks }));
+        print_json(&json!({ "ok": !failed, "schema": SCHEMA, "data": checks }));
     } else {
         for c in &checks {
             let tag = match c.status {
@@ -1070,8 +1095,11 @@ fn print_json(v: &impl Serialize) {
     println!("{}", serde_json::to_string(v).unwrap_or_default());
 }
 
+/// JSON envelope version (see docs/protocol.md); bumped on breaking changes.
+const SCHEMA: u32 = 1;
+
 fn ok_json(data: &impl Serialize) {
-    print_json(&json!({ "ok": true, "data": data }));
+    print_json(&json!({ "ok": true, "schema": SCHEMA, "data": data }));
 }
 
 fn print_monitors(mons: &[Monitor]) {

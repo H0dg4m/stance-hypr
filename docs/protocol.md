@@ -10,13 +10,19 @@ purpose, actions and threat model are in [deck.md](deck.md).
 Every command accepts `--json` and prints one line:
 
 ```json
-{"ok":true,"data":{...}}
-{"ok":false,"error":{"code":"usage","message":"unknown option `--x`"}}
+{"ok":true,"schema":1,"data":{...}}
+{"ok":false,"schema":1,"error":{"code":"usage","message":"unknown option `--x`"}}
 ```
 
-`code` is stable (`usage`, `io`, `env`, `deck`, `deck_auth`, `deck_proto`,
-`deck_closed`, ...), `message` is for humans. Exit status is 0 on `ok`.
-Unknown fields may appear in future versions: ignore them.
+`schema` is bumped only on breaking changes to these shapes. `code` is
+stable (`usage`, `io`, `env`, `untested_version`, `deck`, `deck_auth`,
+`deck_proto`, `deck_closed`, ...), `message` is for humans. Exit status is
+0 on `ok`. Unknown fields may appear in future versions: ignore them.
+
+`untested_version`: Hyprland is newer than every version stance was tested
+with; commands that change screens (`set`, `layout`, `arrange`, `lid`,
+`mode apply`, `daemon`) refuse unless `--force-version` is passed or
+`STANCE_FORCE_VERSION` is set. Reading, `confirm` and `revert` always work.
 
 `stance status --json` data:
 
