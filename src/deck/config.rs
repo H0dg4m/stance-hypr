@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::proto::{MAX_BUTTONS, MAX_ID, MAX_LABEL};
 use crate::error::{Error, Result};
@@ -17,7 +17,7 @@ const MAX_ARG: usize = 64;
 #[cfg(test)]
 pub const EXAMPLE: &str = include_str!("../../examples/deck.toml");
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeckFile {
     #[serde(default, rename = "button")]
@@ -26,28 +26,37 @@ pub struct DeckFile {
 
 /// One button. The fields that apply depend on `action`; the others must
 /// be absent (checked by `validate`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ButtonCfg {
     pub id: String,
     pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     pub action: String,
     /// mode: mode name.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// night: toggle | on | off | set.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
     /// night on/set: temperature in K.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kelvin: Option<u32>,
     /// brightness / layout: monitor.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub monitor: Option<String>,
     /// brightness: `N`, `+N` or `-N` (percent).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
     /// audio: sink id, node name or unique text.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sink: Option<String>,
     /// layout: left-of | right-of | above | below | mirror | single.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     /// layout: reference monitor for kinds that need one.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
 }
 
@@ -265,6 +274,65 @@ impl ButtonCfg {
     }
 }
 
+impl Button {
+    /// Back to the file form (for editors: `stance deck buttons --json`).
+    pub fn to_cfg(&self) -> ButtonCfg {
+        let mut c = ButtonCfg {
+            id: self.id.clone(),
+            label: self.label.clone(),
+            icon: self.icon.clone(),
+            ..Default::default()
+        };
+        let s = |v: &str| Some(v.to_string());
+        match &self.action {
+            Action::Mode(n) => (c.action, c.name) = ("mode".into(), Some(n.clone())),
+            Action::Night(op) => {
+                c.action = "night".into();
+                (c.op, c.kelvin) = match op {
+                    NightOp::Toggle => (s("toggle"), None),
+                    NightOp::Off => (s("off"), None),
+                    NightOp::On(k) => (s("on"), *k),
+                    NightOp::Set(k) => (s("set"), Some(*k)),
+                };
+            }
+            Action::Brightness { monitor, value } => {
+                (c.action, c.monitor, c.value) = (
+                    "brightness".into(),
+                    Some(monitor.clone()),
+                    Some(value.clone()),
+                )
+            }
+            Action::Audio(sink) => (c.action, c.sink) = ("audio".into(), Some(sink.clone())),
+            Action::Layout {
+                kind,
+                monitor,
+                reference,
+            } => {
+                c.action = "layout".into();
+                (c.kind, c.monitor, c.reference) =
+                    (Some(kind.clone()), Some(monitor.clone()), reference.clone());
+            }
+            Action::Confirm => c.action = "confirm".into(),
+            Action::Revert => c.action = "revert".into(),
+        }
+        c
+    }
+}
+
+/// An editor's JSON (same keys as the file) → validated TOML text.
+pub fn from_json(data: &str) -> Result<String> {
+    if data.len() > 64 * 1024 {
+        return Err(Error::new("deck_config", "deck data is too large"));
+    }
+    let f: DeckFile = serde_json::from_str(data)
+        .map_err(|e| Error::new("deck_config", format!("invalid deck data: {e}")))?;
+    let text = toml::to_string(&f).map_err(|e| Error::new("deck_config", e.to_string()))?;
+    parse(&text)?;
+    Ok(format!(
+        "# Phone deck buttons (see examples/deck.toml; edited from the panel or `stance deck put`)\n{text}"
+    ))
+}
+
 /// Parses and validates a whole file.
 pub fn parse(text: &str) -> Result<Vec<Button>> {
     let f: DeckFile = toml::from_str(text)
@@ -376,5 +444,26 @@ mod tests {
         assert!(
             parse("surprise = 1\n[[button]]\nid=\"a\"\nlabel=\"A\"\naction=\"confirm\"").is_err()
         );
+    }
+
+    #[test]
+    fn json_round_trip() {
+        let buttons = parse(EXAMPLE).unwrap();
+        let f = DeckFile {
+            buttons: buttons.iter().map(Button::to_cfg).collect(),
+        };
+        let text = from_json(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(parse(&text).unwrap(), buttons);
+        assert!(
+            from_json(r#"{"button":[{"id":"x","label":"X","action":"exec","name":"rm"}]}"#)
+                .is_err()
+        );
+        assert!(
+            from_json(
+                r#"{"button":[{"id":"x","label":"X","action":"mode","name":"a","cmd":"x"}]}"#
+            )
+            .is_err()
+        );
+        assert!(from_json(r#"{"button":[]}"#).is_err());
     }
 }

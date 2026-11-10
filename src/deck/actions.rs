@@ -78,6 +78,15 @@ impl Deck {
 
     /// deck.toml (or, with the default set, the modes folder) changed since
     /// loading: the caller reloads.
+    /// The buttons in file form, and whether they come from deck.toml
+    /// (false: the default set).
+    pub fn configs(&self) -> (Vec<config::ButtonCfg>, bool) {
+        (
+            self.buttons.iter().map(|b| b.to_cfg()).collect(),
+            self.stamp.file.is_some(),
+        )
+    }
+
     pub fn changed_on_disk(&self) -> bool {
         let file = mtime(&self.stamp.path);
         let modes = if file.is_none() {

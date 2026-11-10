@@ -316,6 +316,13 @@ EOF
   sleep 1.2
   run deck test buttons && bad "unpaired phone refused" || ok "unpaired phone refused"
   kill $DECK; wait $DECK 2>/dev/null
+  run deck put --data '{"button":[{"id":"w","label":"Work","action":"mode","name":"base"}]}' \
+    && ok "deck put" || bad "deck put" "$(cat "$WORK/last.out")"
+  "$BIN" deck buttons --json | grep -q '"custom":true' && ok "deck buttons from file" || bad "deck buttons from file"
+  run deck put --data '{"button":[{"id":"x","label":"X","action":"exec","name":"rm"}]}' \
+    && bad "deck put rejects unknown actions" || ok "deck put rejects unknown actions"
+  run deck reset && "$BIN" deck buttons --json | grep -q '"custom":false' \
+    && ok "deck reset to defaults" || bad "deck reset to defaults"
   unset STANCE_DECK_DIR
   kill_sunsets
   run layout right-of TEST-2 TEST-1 --no-confirm

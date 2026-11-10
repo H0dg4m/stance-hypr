@@ -68,6 +68,7 @@ Usage:
   stance deck serve [--port N] [--loopback]   Phone deck server (Wi-Fi; --loopback for USB/adb)
   stance deck pair                     Show a pairing QR (valid 120 s, one phone)
   stance deck status | devices | unpair NAME   Server state, paired phones
+  stance deck buttons | put --data JSON | reset   The phone's buttons (deck.toml)
   stance deck test …                   Reference client (pair PAYLOAD, buttons, press ID)
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
@@ -758,6 +759,55 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
                     );
                 }
             }
+            Ok(())
+        }
+        "buttons" => {
+            a.max_pos(2)?;
+            let d = deck::actions::Deck::load()?;
+            let (buttons, custom) = d.configs();
+            if json {
+                ok_json(&json!({ "custom": custom, "button": buttons }));
+            } else {
+                println!(
+                    "{} buttons ({})",
+                    buttons.len(),
+                    if custom { "deck.toml" } else { "default set" }
+                );
+                for b in &buttons {
+                    println!("  {:<16} {:<20} {}", b.id, b.label, b.action);
+                }
+            }
+            Ok(())
+        }
+        "put" => {
+            a.max_pos(2)?;
+            let text = deck::config::from_json(
+                a.val("--data")
+                    .ok_or_else(|| Error::new("usage", "deck put needs --data JSON"))?,
+            )?;
+            store::ensure_private_dir(&store::config_dir()?)?;
+            let path = store::config_dir()?.join("deck.toml");
+            store::atomic_write(&path, text.as_bytes(), true)?;
+            simple(json, "saved", true);
+            Ok(())
+        }
+        "reset" => {
+            a.max_pos(2)?;
+            let path = store::config_dir()?.join("deck.toml");
+            let had = path.exists();
+            if had {
+                std::fs::rename(&path, path.with_extension("toml.bak"))
+                    .map_err(|e| Error::new("io", e.to_string()))?;
+            }
+            simple(
+                json,
+                if had {
+                    "back to the default buttons (old file kept as deck.toml.bak)"
+                } else {
+                    "already the default buttons"
+                },
+                had,
+            );
             Ok(())
         }
         "unpair" => {
