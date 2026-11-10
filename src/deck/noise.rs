@@ -83,8 +83,8 @@ pub fn encode_key(k: &[u8]) -> String {
 /// before pairing is trusted: the first 8 base64url characters in two
 /// groups. Trivial to compute on Android, identical everywhere.
 pub fn fingerprint(public_b64: &str) -> String {
-    let t: String = public_b64.chars().take(8).collect();
-    let (a, b) = t.split_at(t.len().min(4));
+    let a: String = public_b64.chars().take(4).collect();
+    let b: String = public_b64.chars().skip(4).take(4).collect();
     format!("{a}-{b}")
 }
 

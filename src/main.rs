@@ -63,7 +63,7 @@ Usage:
   stance quick                         Night light, brightness and audio at once
   stance deck serve [--port N] [--loopback]   Phone deck server (Wi-Fi; --loopback for USB/adb)
   stance deck pair                     Show a pairing QR (valid 120 s, one phone)
-  stance deck devices | unpair NAME    Paired phones
+  stance deck status | devices | unpair NAME   Server state, paired phones
   stance deck test …                   Reference client (pair PAYLOAD, buttons, press ID)
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
@@ -602,6 +602,40 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
                                 .any(|x| x["name"] == d.name.as_str() && x["connected"] == true)
                         });
                     println!("{} {}", if on { "*" } else { " " }, d.name);
+                }
+            }
+            Ok(())
+        }
+        "status" => {
+            a.max_pos(2)?;
+            let s = deck::net::ask("status")?;
+            if json {
+                ok_json(&s);
+            } else {
+                println!(
+                    "listening on port {} ({}), PC key {}{}",
+                    s["port"],
+                    s["hosts"]
+                        .as_array()
+                        .map(|h| h
+                            .iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "))
+                        .unwrap_or_default(),
+                    s["fingerprint"].as_str().unwrap_or("?"),
+                    if s["pairing"] == true {
+                        ", pairing open"
+                    } else {
+                        ""
+                    }
+                );
+                for d in s["devices"].as_array().into_iter().flatten() {
+                    println!(
+                        "{} {}",
+                        if d["connected"] == true { "*" } else { " " },
+                        d["name"].as_str().unwrap_or("?")
+                    );
                 }
             }
             Ok(())

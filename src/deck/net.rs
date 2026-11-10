@@ -22,8 +22,14 @@ use crate::error::{Error, Result};
 use crate::store;
 
 const MAX_SESSIONS: usize = 8;
-const PER_IP_PER_MIN: usize = 20;
-const GLOBAL_PER_MIN: usize = 60;
+/// Connections still in their handshake; kept apart from sessions so idle
+/// strangers cannot take the slots of paired phones.
+const MAX_HANDSHAKES: usize = 4;
+/// Failed handshakes per minute: per IP, and overall (the overall limit
+/// only blocks IPs that failed themselves, so a flood from elsewhere never
+/// locks out a paired phone).
+const FAILS_PER_IP: usize = 10;
+const FAILS_GLOBAL: usize = 40;
 const PRESSES_PER_S: usize = 10;
 const PAIR_MSG_TIMEOUT: Duration = Duration::from_secs(10);
 const TICK: Duration = Duration::from_millis(500);
@@ -65,6 +71,10 @@ struct Shared {
     devices: Mutex<(Option<SystemTime>, pair::Devices)>,
     connected: Mutex<Vec<String>>,
     sessions: AtomicUsize,
+    handshakes: AtomicUsize,
+    limit: Mutex<RateLimit>,
+    /// Device name → last connection (unix seconds), kept in the state dir.
+    seen: Mutex<HashMap<String, u64>>,
     /// Bumped when deck.toml is reloaded: sessions resend their hello.
     deck_gen: AtomicUsize,
     state: Mutex<State>,
@@ -151,7 +161,7 @@ impl Shared {
     }
 }
 
-/// Sliding one-minute windows per peer IP and overall.
+/// Sliding one-minute windows of failed handshakes, per peer IP and overall.
 #[derive(Default)]
 struct RateLimit {
     per_ip: HashMap<IpAddr, VecDeque<Instant>>,
@@ -159,7 +169,7 @@ struct RateLimit {
 }
 
 impl RateLimit {
-    fn allow(&mut self, ip: IpAddr) -> bool {
+    fn prune(&mut self) {
         let now = Instant::now();
         let minute = Duration::from_secs(60);
         let prune = |q: &mut VecDeque<Instant>| {
@@ -172,13 +182,19 @@ impl RateLimit {
             prune(q);
             !q.is_empty()
         });
-        let q = self.per_ip.entry(ip).or_default();
-        if q.len() >= PER_IP_PER_MIN || self.all.len() >= GLOBAL_PER_MIN {
-            return false;
-        }
-        q.push_back(now);
+    }
+
+    fn allow(&mut self, ip: IpAddr) -> bool {
+        self.prune();
+        let mine = self.per_ip.get(&ip).map_or(0, VecDeque::len);
+        mine < FAILS_PER_IP && (mine == 0 || self.all.len() < FAILS_GLOBAL)
+    }
+
+    fn fail(&mut self, ip: IpAddr) {
+        let now = Instant::now();
+        self.per_ip.entry(ip).or_default().push_back(now);
         self.all.push_back(now);
-        true
+        self.prune();
     }
 }
 
@@ -219,6 +235,9 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
         devices: Mutex::new((None, pair::Devices::default())),
         connected: Mutex::new(Vec::new()),
         sessions: AtomicUsize::new(0),
+        handshakes: AtomicUsize::new(0),
+        limit: Mutex::new(RateLimit::default()),
+        seen: Mutex::new(load_seen()),
         deck_gen: AtomicUsize::new(0),
         state: Mutex::new(State::default()),
         deck: Mutex::new(Deck::load()?),
@@ -298,14 +317,14 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
         });
     }
 
-    let limit = Mutex::new(RateLimit::default());
     for conn in listener.incoming() {
         let Ok(stream) = conn else { continue };
         let Ok(peer) = stream.peer_addr() else {
             continue;
         };
-        if shared.sessions.load(Ordering::Relaxed) >= MAX_SESSIONS
-            || !limit
+        if shared.handshakes.load(Ordering::Relaxed) >= MAX_HANDSHAKES
+            || !shared
+                .limit
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .allow(peer.ip())
@@ -314,14 +333,13 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
             continue;
         }
         let sh = shared.clone();
-        sh.sessions.fetch_add(1, Ordering::Relaxed);
+        sh.handshakes.fetch_add(1, Ordering::Relaxed);
         std::thread::spawn(move || {
-            if let Err(e) = connection(&sh, stream)
+            if let Err(e) = connection(&sh, stream, peer.ip())
                 && e.code != "deck_closed"
             {
                 log(&format!("{}: {}", peer.ip(), e.message));
             }
-            sh.sessions.fetch_sub(1, Ordering::Relaxed);
         });
     }
     Ok(())
@@ -366,7 +384,10 @@ fn control(sh: &Shared, c: UnixStream) -> Result<()> {
                 .1
                 .devices
                 .iter()
-                .map(|d| json!({ "name": d.name, "paired_at": d.paired_at, "connected": connected.contains(&d.name) }))
+                .map(|d| {
+                    let last_seen = sh.seen.lock().ok().and_then(|m| m.get(&d.name).copied());
+                    json!({ "name": d.name, "paired_at": d.paired_at, "connected": connected.contains(&d.name), "last_seen": last_seen })
+                })
                 .collect();
             json!({
                 "ok": true,
@@ -427,11 +448,19 @@ pub fn ask(cmd: &str) -> Result<serde_json::Value> {
     serde_json::from_str(&line).map_err(|_| Error::new("deck", "bad reply from deck serve"))
 }
 
-fn connection(sh: &Shared, stream: TcpStream) -> Result<()> {
+fn connection(sh: &Shared, stream: TcpStream, ip: IpAddr) -> Result<()> {
     stream.set_nodelay(true).ok();
     let inc = noise::accept(stream, &sh.key, &|k| sh.device_name(k).is_some(), &|| {
         sh.take_psk()
-    })?;
+    });
+    sh.handshakes.fetch_sub(1, Ordering::Relaxed);
+    let inc = match inc {
+        Ok(i) => i,
+        Err(e) => {
+            sh.limit.lock().unwrap_or_else(|e| e.into_inner()).fail(ip);
+            return Err(e);
+        }
+    };
     let (mut s, name, key) = match inc {
         Incoming::Device(s, key) => {
             let name = sh.device_name(&key).unwrap_or_default();
@@ -445,9 +474,18 @@ fn connection(sh: &Shared, stream: TcpStream) -> Result<()> {
             let dev = pair::add_device(&name, &key)?;
             sh.refresh_devices();
             log(&format!("paired `{}`", dev.name));
+            notify_paired(&dev.name, &key);
             (s, dev.name, key)
         }
     };
+    if sh.sessions.fetch_add(1, Ordering::Relaxed) >= MAX_SESSIONS {
+        sh.sessions.fetch_sub(1, Ordering::Relaxed);
+        let _ = s.send(&ServerMsg::Bye {
+            reason: "too many phones connected".into(),
+        });
+        return Ok(());
+    }
+    sh.mark_seen(&name);
     sh.connected
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -458,7 +496,58 @@ fn connection(sh: &Shared, stream: TcpStream) -> Result<()> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|n| n != &name);
+    sh.mark_seen(&name);
+    sh.sessions.fetch_sub(1, Ordering::Relaxed);
     res
+}
+
+/// A desktop notice for every new pairing, so a pairing nobody expected
+/// (a photographed QR) does not go unnoticed.
+fn notify_paired(name: &str, key: &str) {
+    let Some(tool) = crate::tool::find("notify-send") else {
+        return;
+    };
+    let body = format!(
+        "{name} (key {}). Not you? Unpair it in the panel (Settings, Phone) or with: stance deck unpair \"{name}\"",
+        noise::fingerprint(key)
+    );
+    std::thread::spawn(move || {
+        let _ = crate::tool::run_tool(
+            &tool,
+            &["-a", "stance", "stance: phone paired", &body],
+            Duration::from_secs(3),
+        );
+    });
+}
+
+fn seen_path() -> Option<PathBuf> {
+    crate::store::state_dir()
+        .ok()
+        .map(|d| d.join("deck-seen.json"))
+}
+
+fn load_seen() -> HashMap<String, u64> {
+    seen_path()
+        .and_then(|p| store::read_checked(&p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+impl Shared {
+    fn mark_seen(&self, name: &str) {
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        seen.insert(name.to_string(), crate::apply::now_ms() / 1000);
+        // Forget devices that were unpaired.
+        let known: Vec<String> = self
+            .devices
+            .lock()
+            .map(|d| d.1.devices.iter().map(|x| x.name.clone()).collect())
+            .unwrap_or_default();
+        seen.retain(|n, _| known.contains(n));
+        if let (Some(p), Ok(data)) = (seen_path(), serde_json::to_vec(&*seen)) {
+            let _ = store::atomic_write(&p, &data, false);
+        }
+    }
 }
 
 fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
@@ -561,13 +650,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_limit_windows() {
+    fn rate_limit_counts_failures_only() {
         let mut r = RateLimit::default();
-        let ip: IpAddr = [10, 0, 0, 1].into();
-        for _ in 0..PER_IP_PER_MIN {
-            assert!(r.allow(ip));
+        let bad: IpAddr = [10, 0, 0, 1].into();
+        let phone: IpAddr = [10, 0, 0, 9].into();
+        for _ in 0..FAILS_PER_IP {
+            assert!(r.allow(bad));
+            r.fail(bad);
         }
-        assert!(!r.allow(ip));
-        assert!(r.allow([10, 0, 0, 2].into()));
+        assert!(!r.allow(bad));
+        // A global flood of failures from many IPs...
+        for i in 0..FAILS_GLOBAL {
+            r.fail([10, 1, (i / 200) as u8, (i % 200) as u8].into());
+        }
+        // ...never locks out an IP that has not failed.
+        assert!(r.allow(phone));
+        r.fail(phone);
+        assert!(!r.allow(phone));
     }
 }
