@@ -379,6 +379,14 @@ fn shell_checks() -> Vec<Check> {
     let mut out = Vec::new();
     let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
     dirs.sort();
+    // Only talk about the shell config that is actually running, if any.
+    let running = running_qs_configs();
+    if !running.is_empty() {
+        dirs.retain(|d| {
+            d.file_name()
+                .is_some_and(|n| running.iter().any(|r| r == &n.to_string_lossy()))
+        });
+    }
     for dir in dirs {
         let bar = dir.join("modules/ii/bar");
         let util = bar.join("UtilButtons.qml");
@@ -438,6 +446,67 @@ fn shell_checks() -> Vec<Check> {
     out
 }
 
+/// Names passed to `qs -c NAME` / `quickshell -c NAME` by running
+/// processes of this user (read from /proc, nothing is executed).
+fn running_qs_configs() -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(rd) = fs::read_dir("/proc") else {
+        return out;
+    };
+    for e in rd.flatten() {
+        if !e
+            .file_name()
+            .to_string_lossy()
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+        {
+            continue;
+        }
+        let Ok(raw) = fs::read(e.path().join("cmdline")) else {
+            continue;
+        };
+        let args: Vec<String> = raw
+            .split(|b| *b == 0)
+            .map(|a| String::from_utf8_lossy(a).into_owned())
+            .collect();
+        let is_qs = args.first().is_some_and(|a| {
+            a.rsplit('/')
+                .next()
+                .is_some_and(|b| b == "qs" || b == "quickshell")
+        });
+        if !is_qs {
+            continue;
+        }
+        if let Some(i) = args.iter().position(|a| a == "-c" || a == "--config")
+            && let Some(name) = args.get(i + 1)
+            && !out.contains(name)
+        {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
+/// Does a ufw `user.rules` file accept TCP on `port`? Looks for the
+/// `### tuple ### allow tcp <port> …` comments ufw writes for each rule.
+pub fn ufw_allows(rules: &str, port: u64) -> bool {
+    rules.lines().any(|l| {
+        let f: Vec<&str> = l.split_whitespace().collect();
+        f.len() >= 6
+            && f[0] == "###"
+            && f[1] == "tuple"
+            && f[3] == "allow"
+            && (f[4] == "tcp" || f[4] == "any")
+            && f[5].split(',').any(|p| {
+                p == port.to_string()
+                    || p.split_once(':').is_some_and(|(a, b)| {
+                        a.parse::<u64>().is_ok_and(|a| a <= port)
+                            && b.parse::<u64>().is_ok_and(|b| port <= b)
+                    })
+            })
+    })
+}
+
 /// Phone deck: is the server running, and would a firewall drop phones?
 fn deck_check() -> Check {
     let port = crate::deck::pair::DEFAULT_PORT;
@@ -447,10 +516,18 @@ fn deck_check() -> Check {
         Ok(s) => {
             let port = s["port"].as_u64().unwrap_or(u64::from(port));
             let n = s["devices"].as_array().map_or(0, |v| v.len());
-            if ufw_on && s["loopback"] != true {
+            // user.rules is world-readable on Arch; when it already allows
+            // the port, say nothing. Unreadable: remind, but only as info.
+            let rules = fs::read_to_string("/etc/ufw/user.rules").ok();
+            let allowed = rules.as_deref().is_some_and(|r| ufw_allows(r, port));
+            if ufw_on && s["loopback"] != true && !allowed {
                 check(
                     "deck",
-                    Status::Warn,
+                    if rules.is_some() {
+                        Status::Warn
+                    } else {
+                        Status::Info
+                    },
                     format!(
                         "deck server on port {port}, {n} paired phone(s); ufw is enabled, allow your LAN: sudo ufw allow from 192.168.0.0/16 to any port {port} proto tcp"
                     ),
@@ -474,6 +551,21 @@ fn deck_check() -> Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ufw_rule_detection() {
+        let r = "### tuple ### allow tcp 47800 0.0.0.0/0 any 192.168.0.0/24 in\n-A ufw-user-input -p tcp --dport 47800 -s 192.168.0.0/24 -j ACCEPT\n";
+        assert!(ufw_allows(r, 47800));
+        assert!(!ufw_allows(r, 47801));
+        assert!(ufw_allows(
+            "### tuple ### allow tcp 47000:48000 0.0.0.0/0 any 0.0.0.0/0 in",
+            47800
+        ));
+        assert!(!ufw_allows(
+            "### tuple ### deny tcp 47800 0.0.0.0/0 any 0.0.0.0/0 in",
+            47800
+        ));
+    }
 
     #[test]
     fn version_guard() {
