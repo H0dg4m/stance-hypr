@@ -33,7 +33,7 @@ arka planda profil değiştirir. stance bar için yapıldı:
 
 ## Kurulum
 
-Arch (AUR): `stance-hypr-git` (`packaging/aur`). Kaynaktan:
+Arch: `stance-hypr` / `stance-hypr-git` (`packaging/aur` içinde PKGBUILD; AUR yüklemesi bekliyor). Kaynaktan:
 
 ```sh
 cargo build --release

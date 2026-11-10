@@ -1,0 +1,26 @@
+pkgbase = stance-hypr
+	pkgdesc = Bar-first display settings and modes for Hyprland, with confirm-or-revert
+	pkgver = 0.2.0
+	pkgrel = 1
+	url = https://github.com/H0dg4m/stance-hypr
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	depends = hyprland
+	depends = gcc-libs
+	depends = glibc
+	optdepends = quickshell: bar panel and confirm overlay
+	optdepends = power-profiles-daemon: power profile in modes
+	optdepends = hyprsunset: night light
+	optdepends = brightnessctl: laptop panel brightness
+	optdepends = ddcutil: external screen brightness (DDC/CI)
+	optdepends = pipewire: audio output list (pw-dump)
+	optdepends = wireplumber: audio output switching (wpctl)
+	optdepends = libnotify: desktop notices (notify-send)
+	optdepends = android-tools: phone deck over USB (adb reverse)
+	conflicts = stance-hypr-git
+	source = stance-hypr-0.2.0.tar.gz::https://github.com/H0dg4m/stance-hypr/archive/refs/tags/v0.2.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = stance-hypr

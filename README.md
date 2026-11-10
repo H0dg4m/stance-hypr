@@ -34,7 +34,7 @@ switchers. stance is built for the bar:
 
 ## Install
 
-Arch (AUR): `stance-hypr-git` (see `packaging/aur`). From source:
+Arch: `stance-hypr` / `stance-hypr-git` (PKGBUILDs in `packaging/aur`; AUR upload pending). From source:
 
 ```sh
 cargo build --release
