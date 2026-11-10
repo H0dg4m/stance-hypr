@@ -16,6 +16,14 @@ Item {
     property string lastError: ""
     property string lastNote: ""
     property bool busy: actProc.running
+    // `stance quick` result: { night, brightness, sinks, errors } or null.
+    property var quick: null
+    property string quickError: ""
+    property bool quickBusy: quickActProc.running
+    // A refresh asked for while one runs, and one write queued behind the
+    // running one (two sliders, or a wheel commit during a night click).
+    property bool quickDirty: false
+    property var quickQueued: null
 
     // { label, deadline_ms, generation } or null
     property var pending: null
@@ -29,6 +37,18 @@ Item {
     function refresh() {
         listProc.running = true;
         modesProc.running = true;
+        quickProc.running = true;
+    }
+
+    // Night light / brightness / audio: no confirm timer, so they run on
+    // their own process and never block display changes.
+    function runQuick(args) {
+        if (quickActProc.running) {
+            quickQueued = args;
+            return;
+        }
+        quickActProc.command = [svc.bin].concat(args).concat(["--json"]);
+        quickActProc.running = true;
     }
 
     function run(args) {
@@ -74,6 +94,46 @@ Item {
                     svc.modes = r.data.modes;
                     svc.activeMode = r.data.active || "";
                 }
+            }
+        }
+    }
+
+    Process {
+        id: quickProc
+        command: [svc.bin, "quick", "--json"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const r = svc.parse(text);
+                if (r && r.ok)
+                    svc.quick = r.data;
+                if (svc.quickDirty) {
+                    svc.quickDirty = false;
+                    quickProc.running = true;
+                }
+            }
+        }
+    }
+
+    Process {
+        id: quickActProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const r = svc.parse(text);
+                if (!r)
+                    svc.quickError = "stance returned no output";
+                else if (!r.ok)
+                    svc.quickError = r.error.message;
+                else
+                    svc.quickError = (r.data && r.data.warnings && r.data.warnings.length) ? r.data.warnings.join("\n") : "";
+                if (svc.quickQueued) {
+                    const next = svc.quickQueued;
+                    svc.quickQueued = null;
+                    Qt.callLater(() => svc.runQuick(next));
+                }
+                if (quickProc.running)
+                    svc.quickDirty = true;
+                else
+                    quickProc.running = true;
             }
         }
     }

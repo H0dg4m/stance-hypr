@@ -35,14 +35,7 @@ impl PowerProfile {
 }
 
 fn tool() -> Option<PathBuf> {
-    let fixed = PathBuf::from("/usr/bin/powerprofilesctl");
-    if fixed.is_file() {
-        return Some(fixed);
-    }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|d| d.join("powerprofilesctl"))
-        .find(|p| p.is_absolute() && p.is_file())
+    crate::tool::find("powerprofilesctl")
 }
 
 pub fn available() -> bool {

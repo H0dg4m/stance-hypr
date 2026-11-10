@@ -294,6 +294,12 @@ ColumnLayout {
         }
     }
 
+    StanceQuick {
+        Layout.fillWidth: true
+        service: panel.service
+        theme: panel.theme
+    }
+
     // ---- modes -----------------------------------------------------------
     Rectangle {
         Layout.fillWidth: true

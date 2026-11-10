@@ -2,6 +2,7 @@
 description = "Laptop + external"
 power_profile = "balanced"
 workspaces = { "1-5" = "JDR EPIC Q40", "6-10" = "AU Optronics 0x7EAD" }
+audio_sink = "EPIC Q40"                 # sink id, node name or unique text
 
 [hyprland]
 animations = true

@@ -61,6 +61,7 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
         ));
     }
 
+    let night = crate::night::Night::new(&hypr.instance, &state_dir);
     let mut events = hypr.instance.events()?;
     log(&format!("watching Hyprland {}", hypr.session_id()));
 
@@ -103,7 +104,7 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
             hotplug_at = None;
             if paused_until.is_some_and(|p| p > now) {
                 log("hotplug ignored (paused after a burst of changes)");
-            } else if let Some(changed) = on_hotplug(&ctx)
+            } else if let Some(changed) = on_hotplug(&ctx, &night)
                 && changed
             {
                 history.push_back(now);
@@ -129,7 +130,7 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
 }
 
 /// Returns Some(changed?) if a rule was applied.
-fn on_hotplug(ctx: &Ctx) -> Option<bool> {
+fn on_hotplug(ctx: &Ctx, night: &crate::night::Night) -> Option<bool> {
     if ctx.pending_info().is_some() {
         log("hotplug: a user change is awaiting confirmation, rules skipped");
         return None;
@@ -146,7 +147,7 @@ fn on_hotplug(ctx: &Ctx) -> Option<bool> {
         log("hotplug: no rule matches the connected monitors, doing nothing");
         return None;
     };
-    apply_mode(ctx, &rule.mode, rule.allow_extras, "rule")
+    apply_mode(ctx, &rule.mode, rule.allow_extras, "rule", Some(night))
 }
 
 fn on_reload(ctx: &Ctx) {
@@ -154,22 +155,51 @@ fn on_reload(ctx: &Ctx) {
         return;
     };
     log(&format!("config reloaded, re-applying mode `{mode}`"));
-    apply_mode(ctx, &mode, extras, "reload");
+    // A config reload resets compositor options, not night light, audio or
+    // brightness: re-apply only what Hyprland forgot.
+    apply_mode(ctx, &mode, extras, "reload", None);
 }
 
-fn apply_mode(ctx: &Ctx, name: &str, extras: bool, why: &str) -> Option<bool> {
+fn apply_mode(
+    ctx: &Ctx,
+    name: &str,
+    extras: bool,
+    why: &str,
+    night: Option<&crate::night::Night>,
+) -> Option<bool> {
     let res = modes::load(name).and_then(|m| {
         let mons = ctx.backend.monitors()?;
         let (st, warnings) = modes::resolve_mode(&m, &mons, extras)?;
         for w in warnings {
             log(&w);
         }
-        ctx.apply(
+        let out = ctx.apply(
             &format!("{why}: {name}"),
             &st,
             0,
             Some((Some(name.to_string()), extras)),
-        )
+        )?;
+        // Night light, audio and brightness follow a real display change
+        // only, so a manual slider is not overridden on every event. They
+        // run on their own thread: a slow ddcutil must not stall events.
+        if let Some(n) = night
+            && !out.changed.is_empty()
+        {
+            let (q, w) = modes::resolve_quick(&m, &ctx.backend.monitors()?, extras);
+            w.iter().for_each(|w| log(w));
+            if !q.is_empty() {
+                let (inst, dir) = (n.instance().clone(), n.state_dir().to_path_buf());
+                std::thread::spawn(move || {
+                    let n = crate::night::Night::new(&inst, &dir);
+                    let (changed, w) = modes::apply_quick(&q, Some(&n));
+                    w.iter().for_each(|w| log(w));
+                    if !changed.is_empty() {
+                        log(&format!("quick settings: {}", changed.join(", ")));
+                    }
+                });
+            }
+        }
+        Ok(out)
     });
     match res {
         Ok(o) => {

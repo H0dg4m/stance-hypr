@@ -46,9 +46,20 @@ EOF
 fi
 
 before=$(ls "$XDG_RUNTIME_DIR/hypr" 2>/dev/null | sort)
+wl_before=$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' | sort)
 Hyprland -c "$CONF" >"$WORK/hyprland.out" 2>&1 &
 HPID=$!
-cleanup() { kill "$HPID" 2>/dev/null; wait "$HPID" 2>/dev/null; rm -rf "$WORK"; }
+# Only hyprsunsets whose environment carries the NESTED instance signature
+# (the user's own one has the live signature and is never matched).
+nested_sunsets() {
+  local p
+  for p in /proc/[0-9]*; do
+    [ "$(cat "$p/comm" 2>/dev/null)" = hyprsunset ] || continue
+    tr '\0' '\n' < "$p/environ" 2>/dev/null | grep -qx "HYPRLAND_INSTANCE_SIGNATURE=${SIG:-none}" && echo "${p#/proc/}"
+  done
+}
+kill_sunsets() { local p; for p in $(nested_sunsets); do kill "$p" 2>/dev/null; done; sleep 0.3; }
+cleanup() { kill_sunsets; kill "$HPID" 2>/dev/null; wait "$HPID" 2>/dev/null; rm -rf "$WORK"; }
 trap cleanup EXIT
 
 SIG=
@@ -59,6 +70,7 @@ for _ in $(seq 50); do
 done
 [ -n "$SIG" ] || { echo "nested Hyprland did not start"; cat "$WORK/hyprland.out"; exit 1; }
 export HYPRLAND_INSTANCE_SIGNATURE=$SIG
+NWL=$(comm -13 <(echo "$wl_before") <(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' | sort) | head -1)
 sleep 1
 
 hc() { python3 - "$@" <<'EOF'
@@ -128,6 +140,10 @@ run set 'TEST-1"})os.exit(1)--' --off && bad "injection refused" || ok "injectio
 
 # Modes ------------------------------------------------------------------
 run mode save base --description "baseline" && ok "mode save" || bad "mode save" "$(cat "$WORK/last.out")"
+# `mode save` records the REAL default audio sink; never let a nested test
+# switch real audio on a later `mode apply`.
+sed -i '/^audio_sink/d' "$XDG_CONFIG_HOME/stance/modes/base.toml"
+grep -q audio_sink "$XDG_CONFIG_HOME/stance/modes/base.toml" && bad "audio_sink stripped from test mode" || ok "audio_sink stripped from test mode"
 mkdir -p "$XDG_CONFIG_HOME/stance/modes"
 cat > "$XDG_CONFIG_HOME/stance/modes/focus.toml" <<'EOF'
 description = "TEST-1 only, effects off"
@@ -175,6 +191,48 @@ if [ "$PARSER" = lua ]; then
   Hyprland --verify-config -c "$F" >/dev/null 2>&1 && ok "persisted Lua verifies" || ok "persisted Lua (verify-config unavailable for fragments)"
 fi
 
+# Night light (hyprsunset, nested instance only) --------------------------
+# Never touches brightness/audio: those would hit real devices.
+if [ -z "$NWL" ] || ! command -v hyprsunset >/dev/null; then
+  echo "  skip night light (no nested WAYLAND_DISPLAY or no hyprsunset)"
+else
+  nt() { WAYLAND_DISPLAY=$NWL "$BIN" "$@"; }
+  # nq '<expr over d>' <night args...>: evaluates against data of --json output
+  nq() { local e=$1; shift; nt "$@" --json | python3 -c "
+import json,sys
+d=json.load(sys.stdin)['data']
+print(eval(sys.argv[1]))" "$e"; }
+  nexpect() { local n=$1 e=$2; shift 2; [ "$(nq "$e" "$@" 2>&1)" = True ] && ok "$n" || bad "$n" "$(nt "$@" 2>&1)"; }
+
+  kill_sunsets
+  nexpect "night status without hyprsunset: running=false" "d['running'] is False and d['temperature'] is None" night status
+  nexpect "night on 4000 starts hyprsunset" "d['running'] and d['on'] and d['temperature']==4000" night on 4000
+  [ "$(nested_sunsets | wc -l)" = 1 ] && ok "exactly one nested hyprsunset" || bad "exactly one nested hyprsunset" "$(nested_sunsets)"
+  nexpect "night toggle turns it off (6000)" "d['running'] and not d['on'] and d['temperature']==6000" night toggle
+  nexpect "night toggle again restores last warmth" "d['on'] and d['temperature']==4000" night toggle
+  nexpect "night set 5000" "d['temperature']==5000" night set 5000
+  nt night set 999 >/dev/null 2>&1 && bad "night set 999 refused" || ok "night set 999 refused"
+  nt night set 20001 >/dev/null 2>&1 && bad "night set 20001 refused" || ok "night set 20001 refused"
+  nt night set 999 --json 2>/dev/null | grep -q '"ok":false' && ok "night set 999 --json error" || bad "night set 999 --json error"
+  kill_sunsets
+  nexpect "stale socket after kill: running=false" "d['running'] is False" night status
+  # two simultaneous clicks must not spawn two daemons
+  nt night on 4200 >/dev/null 2>&1 & A=$!
+  nt night on 4200 >/dev/null 2>&1 & B=$!
+  wait $A $B
+  [ "$(nested_sunsets | wc -l)" = 1 ] && ok "concurrent night on: one hyprsunset" || bad "concurrent night on: one hyprsunset" "$(nested_sunsets | wc -l) running"
+  nexpect "night off keeps daemon, 6000" "not d['on'] and d['temperature']==6000" night off
+  kill_sunsets
+  cat > "$XDG_CONFIG_HOME/stance/modes/evening.toml" <<'EOF'
+description = "night light only"
+night_light = 3500
+EOF
+  chmod 600 "$XDG_CONFIG_HOME/stance/modes/evening.toml"
+  WAYLAND_DISPLAY=$NWL run mode apply evening --no-confirm && ok "mode with night_light applies" || bad "mode with night_light applies" "$(cat "$WORK/last.out")"
+  nexpect "mode set night light to 3500" "d['running'] and d['temperature']==3500" night status
+  kill_sunsets
+fi
+
 # Daemon -----------------------------------------------------------------
 cat > "$XDG_CONFIG_HOME/stance/rules.toml" <<EOF
 [[rule]]
@@ -191,7 +249,8 @@ sleep 3
 expect "hotplug rule applied" "not m['TEST-2']['enabled']"
 grep -q "applied" "$WORK/daemon.log" && ok "daemon logged apply" || bad "daemon logged apply" "$(cat "$WORK/daemon.log")"
 RSS=$(awk '/VmRSS/{print $2}' /proc/$DPID/status)
-[ "${RSS:-99999}" -lt 5120 ] && ok "daemon RSS ${RSS} KB < 5 MB" || bad "daemon RSS ${RSS} KB"
+case "$BIN" in */release/*) LIM=5120; KIND=release;; *) LIM=8192; KIND=debug;; esac
+[ "${RSS:-99999}" -lt "$LIM" ] && ok "daemon RSS ${RSS} KB < $((LIM/1024)) MB ($KIND build)" || bad "daemon RSS ${RSS} KB (limit $LIM, $KIND)"
 kill $DPID 2>/dev/null; wait $DPID 2>/dev/null
 
 echo "passed $PASS, failed $FAIL"

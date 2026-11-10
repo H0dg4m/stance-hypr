@@ -164,9 +164,14 @@ impl Instance {
 
     /// Sends one request on socket1 and returns the full reply.
     pub fn request(&self, req: &str) -> Result<String> {
-        let path = self.socket1();
-        self.check_socket(&path)?;
-        let mut stream = UnixStream::connect(&path)
+        self.request_on(&self.socket1(), req)
+    }
+
+    /// Same request/reply exchange on another socket in the instance dir
+    /// (hyprsunset speaks the same framing on `.hyprsunset.sock`).
+    pub fn request_on(&self, path: &Path, req: &str) -> Result<String> {
+        self.check_socket(path)?;
+        let mut stream = UnixStream::connect(path)
             .map_err(|e| Error::new("connect", format!("{}: {e}", path.display())))?;
         stream.set_read_timeout(Some(IO_TIMEOUT)).ok();
         stream.set_write_timeout(Some(IO_TIMEOUT)).ok();

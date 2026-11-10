@@ -25,6 +25,8 @@ arka planda profil değiştirir. stance bar için yapıldı:
 - **Ekranın ötesinde modlar**: bir mod çalışma alanlarını ekranlara bağlayabilir,
   animasyon / bulanıklık / tearing açıp kapatabilir, boşlukları ve güç
   profilini değiştirebilir. Yalnız beyaz liste: mod dosyası komut çalıştıramaz.
+- **Hızlı ayarlar**: gece ışığı (hyprsunset), parlaklık (dizüstü paneli ve
+  DDC/CI ile harici ekran) ve ses çıkışı aynı panelde ve modlarda.
 - **Tak-çalıştır kuralları** (isteğe bağlı daemon): dock'u tak, masa modun gelsin.
 - **Boşta sıfır maliyet**: CLI tık başına çalışıp çıkar (~1 ms, < 1 MB);
   isteğe bağlı daemon Hyprland olay soketinde bekler (~3 MB bellek).
@@ -60,7 +62,12 @@ stance layout right-of eDP-1 DP-1     left-of | right-of | above | below | mirro
 stance confirm | stance revert        bekleyen değişikliği koru / geri al
 stance persist                        ~/.config/hypr/stance-monitors.lua yaz
 stance mode save work                 mevcut düzeni mod olarak kaydet
+                                      (--with-quick: gece ışığı + ses çıkışı da)
 stance mode apply gaming
+stance night on 4500 | off | toggle   hyprsunset ile gece ışığı
+stance brightness DP-1 +10            N | +N | -N yüzde (DDC/CI ya da backlight)
+stance audio set "Razer"              varsayılan ses çıkışı: id, düğüm adı ya da tekil metin
+stance quick                          gece ışığı, parlaklık ve ses tek çağrıda
 stance daemon                         tak-çalıştır kuralları (systemd birimi contrib/ içinde)
 stance doctor                         yalnız okuyan ortam denetimi
 ```
@@ -70,7 +77,24 @@ olabilir. Değişiklik 12 sn içinde onaylanmazsa geri döner (`--timeout S`,
 betikler için `--no-confirm`). Tüm komutlar `--json` ile JSON konuşur.
 
 Mod ve kural dosyalarının biçimi için İngilizce README'deki örneklere ve
-[`examples/`](examples) klasörüne bak.
+[`examples/`](examples) klasörüne bak. Modlarda `night_light = false | true | K`,
+`audio_sink = "…"` ve `[brightness]` tablosu (`"ekran" = yüzde`) da olabilir.
+Bunlar ekran değişikliğinden sonra uygulanır, 12 sn geri alma kapsamında değildir
+(ekranı karartamazlar); biri başarısız olursa (kulaklık takılı değil, DDC/CI yok)
+mod yine uygulanır ve not düşülür. `--no-extras` bunları atlar.
+
+### Hızlı ayarlar
+
+- **Gece ışığı** hyprsunset soketiyle konuşur. Zaten çalışan bir hyprsunset varsa
+  onu kullanır ve senin gamma ayarını korur; "kapalı" nötr 6000 K'dir, sıfırlama
+  değil. Hiçbiri çalışmıyorsa `stance night on` bir tane başlatır.
+- **Parlaklık**: dizüstü paneli `/sys/class/backlight` ve `brightnessctl` ile,
+  harici ekran `ddcutil` ile (`i2c-dev` modülü ve `/dev/i2c-*` erişimi, genelde
+  `i2c` grubu gerekir). Ekran tamamen kararmasın diye %5 (backlight) ve %1 (DDC)
+  altı yükseltilir.
+- **Ses çıkışı** `pw-dump` ile okunur, `wpctl set-default` ile değiştirilir.
+
+Hangilerinin kullanılabildiğini `stance doctor` söyler.
 
 ### Kalıcı yapmak
 
@@ -82,6 +106,11 @@ kez `require("stance-monitors")` ekle (nwg-displays kullanıyorsan onun
 ## Güvenlik
 
 - Hyprland soketine doğrudan bağlanır; `hyprctl` ve kabuk hiç kullanılmaz.
+- Dış araçlar (`ddcutil`, `brightnessctl`, `wpctl`, `pw-dump`, `powerprofilesctl`,
+  `hyprsunset`) mutlak yol, argüman listesi, kesin zaman aşımı ve boş stdin ile
+  çalışır; çıktıları ayrıştırılır, asla çalıştırılmaz. Parlaklık hedefi ve ses
+  çıkışı önce canlı cihaz listesinde çözülür; mod dosyası yalnız gerçek cihazlar
+  arasından seçebilir.
 - Lua yalnız tipli ve doğrulanmış değerlerden üretilir. EDID metinleri
   compositor'a hiç gitmez, yalnız gösterilir (kontrol karakterleri temizlenir).
 - Mod/kural dosyaları: en çok 64 KiB, bilinmeyen alan reddedilir, sahibi sen

@@ -295,6 +295,44 @@ fn dir_checks() -> Vec<Check> {
             "powerprofilesctl not found; modes cannot switch power profile"
         },
     ));
+    let tool_check = |id, found: bool, yes: &str, no: &str| {
+        check(
+            id,
+            if found { Status::Ok } else { Status::Info },
+            if found { yes } else { no },
+        )
+    };
+    out.push(tool_check(
+        "night_light",
+        crate::tool::find("hyprsunset").is_some(),
+        "hyprsunset found (night light available)",
+        "hyprsunset not found; night light unavailable",
+    ));
+    out.push(tool_check(
+        "audio",
+        crate::audio::available(),
+        "pw-dump and wpctl found (audio output switching available)",
+        "pw-dump / wpctl not found; audio output switching unavailable",
+    ));
+    let ddc = crate::tool::find("ddcutil").is_some();
+    let bl = crate::tool::find("brightnessctl").is_some();
+    out.push(check(
+        "brightness",
+        if crate::brightness::available() { Status::Ok } else { Status::Info },
+        match (bl, ddc) {
+            (true, true) => "brightnessctl (laptop panel) and ddcutil (external, DDC/CI) found",
+            (true, false) => "brightnessctl found; install ddcutil for external screens",
+            (false, true) => "ddcutil found; install brightnessctl for laptop panels",
+            (false, false) => "brightnessctl / ddcutil not found; brightness unavailable",
+        },
+    ));
+    if ddc && !Path::new("/dev/i2c-0").exists() {
+        out.push(check(
+            "i2c",
+            Status::Info,
+            "no /dev/i2c-* devices: load the i2c-dev module for DDC/CI brightness",
+        ));
+    }
     out
 }
 

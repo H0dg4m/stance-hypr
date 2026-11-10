@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0 – unreleased
+
+Quick controls.
+
+- `night`: night light through hyprsunset's socket; uses a running hyprsunset
+  (keeps its gamma, "off" = neutral 6000 K) or starts one; remembers the last
+  warm temperature for `on` / `toggle`
+- `brightness`: laptop backlight (sysfs + brightnessctl) and external screens
+  over DDC/CI (ddcutil, connector → bus from ddcutil's DRM line, cached);
+  relative `+N` / `-N`, floors of 5 % / 1 % so a screen never goes dark
+- `audio`: list outputs from `pw-dump`, switch with `wpctl set-default`;
+  ambiguous matches are errors
+- `quick`: everything above in one JSON call for bars
+- Modes: `night_light`, `audio_sink`, `[brightness]` (extras, outside the
+  revert snapshot, failures are notes); `mode save --with-quick` also records
+  night light and audio output
+- Daemon: hotplug rules with `allow_extras` apply them on a separate thread,
+  only when the rule changed the screens
+- Panel: night light, brightness sliders and audio output section
+- `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
+- External tools run with a hard timeout (kill + reap)
+
 ## 0.1.0 – 2026-11-10
 
 First release.

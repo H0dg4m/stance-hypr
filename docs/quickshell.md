@@ -6,7 +6,9 @@ particular shell:
 | Component | What it is |
 |---|---|
 | `StanceService` | Runs `stance … --json`, watches the pending change (inotify, no polling) |
-| `StancePanel` | Layout map + settings for the selected screen + modes |
+| `StancePanel` | Layout map + settings for the selected screen + quick controls + modes |
+| `StanceQuick` | Night light, brightness sliders, audio output (part of the panel; hides what is unavailable) |
+| `StanceSlider` | 0–100 slider without QtQuick.Controls; commits on release (DDC/CI writes are slow) |
 | `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right |
 | `ConfirmOverlay` | "Keep these display settings?" card; create one per screen |
 | `StanceTheme` | Colours / radii / font; override to match your shell |

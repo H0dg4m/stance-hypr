@@ -1,16 +1,20 @@
 mod apply;
+mod audio;
 mod backend;
+mod brightness;
 mod daemon;
 mod doctor;
 mod error;
 mod hypr;
 mod model;
 mod modes;
+mod night;
 mod persist;
 mod plan;
 mod power;
 mod spec;
 mod store;
+mod tool;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,8 +46,15 @@ Usage:
   stance mode list
   stance mode show <name>
   stance mode apply <name> [--no-extras]
-  stance mode save <name> [--description TEXT] [--force]
+  stance mode save <name> [--description TEXT] [--force] [--with-quick]
+      --with-quick also records night light and audio output
   stance mode rm <name>
+  stance night [status|on [K]|off|toggle|set K]   Night light (hyprsunset)
+  stance brightness [list]             Brightness of screens (backlight, DDC/CI)
+  stance brightness <monitor> N|+N|-N  Set brightness in percent
+  stance audio [list]                  Audio outputs
+  stance audio set <sink>              Default output (id, node name or unique text)
+  stance quick                         Night light, brightness and audio at once
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
 
@@ -70,6 +81,7 @@ const BOOL_FLAGS: &[&str] = &[
     "--print",
     "--force",
     "--no-extras",
+    "--with-quick",
     "--help",
     "-h",
     "--version",
@@ -190,6 +202,10 @@ fn run(a: &Args) -> Result<ExitCode> {
     if cmd == "doctor" {
         a.max_pos(1)?;
         return Ok(doctor_cmd(json));
+    }
+
+    if cmd == "audio" {
+        return audio_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
 
     let hypr = Hyprland::connect()?;
@@ -324,6 +340,12 @@ fn run(a: &Args) -> Result<ExitCode> {
             persist_cmd(&ctx, &hypr, a.has("--print"), json)?;
         }
         "mode" => mode_cmd(a, &ctx, &hypr, json)?,
+        "night" => night_cmd(a, &ctx, &hypr, json)?,
+        "brightness" => brightness_cmd(a, &hypr, json)?,
+        "quick" => {
+            a.max_pos(1)?;
+            quick_cmd(&ctx, &hypr, json)?;
+        }
         "daemon" => {
             a.max_pos(1)?;
             daemon::run(&hypr, ctx.state_dir.clone())?;
@@ -389,6 +411,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
             let m = modes::load(name)?;
             let mons = hypr.monitors()?;
             let (st, warnings) = modes::resolve_mode(&m, &mons, extras)?;
+            let (quick, qwarn) = modes::resolve_quick(&m, &mons, extras);
             let mut out = ctx.apply(
                 &format!("mode {name}"),
                 &st,
@@ -396,13 +419,32 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
                 Some((Some(name.to_string()), extras)),
             )?;
             out.warnings.extend(warnings);
+            out.warnings.extend(qwarn);
+            if !quick.is_empty() {
+                let n = night::Night::new(&hypr.instance, &ctx.state_dir);
+                let (changed, w) = modes::apply_quick(&quick, Some(&n));
+                out.changed.extend(changed);
+                out.warnings.extend(w);
+            }
             report(json, out);
         }
         "save" => {
             let name = a.arg(2, "mode name")?;
             a.max_pos(3)?;
             let desc = a.val("--description").map(str::to_string);
-            let m = modes::from_current(hypr, desc)?;
+            let mut m = modes::from_current(hypr, desc)?;
+            // Opt-in: a display mode that silently switches the audio
+            // output on the next hotplug would be a surprise.
+            if a.has("--with-quick") {
+                let ns = night::Night::new(&hypr.instance, &ctx.state_dir).status();
+                if ns.running {
+                    m.night_light = Some(match ns.temperature {
+                        Some(k) if ns.on => night::NightSetting::Kelvin(k),
+                        _ => night::NightSetting::Switch(false),
+                    });
+                }
+                m.audio_sink = audio::get_default().ok().flatten().map(|s| s.name);
+            }
             let path = modes::save(name, &m, a.has("--force"))?;
             if json {
                 ok_json(&json!({ "saved": name, "path": path }));
@@ -421,6 +463,186 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
                 "usage",
                 format!("unknown mode subcommand `{other}`"),
             ));
+        }
+    }
+    Ok(())
+}
+
+fn night_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
+    let n = night::Night::new(&hypr.instance, &ctx.state_dir);
+    let kelvin = |i: usize| -> Result<u32> {
+        let v = a.arg(i, "temperature in K")?;
+        v.parse()
+            .map_err(|_| Error::new("usage", format!("`{v}` is not a temperature")))
+    };
+    let st = match a.pos.get(1).map(String::as_str).unwrap_or("status") {
+        "status" => {
+            a.max_pos(2)?;
+            n.status()
+        }
+        "on" => {
+            a.max_pos(3)?;
+            n.on(if a.pos.len() > 2 { Some(kelvin(2)?) } else { None })?
+        }
+        "off" => {
+            a.max_pos(2)?;
+            n.off()?
+        }
+        "toggle" => {
+            a.max_pos(2)?;
+            n.toggle()?
+        }
+        "set" => {
+            a.max_pos(3)?;
+            n.set(kelvin(2)?)?
+        }
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown night subcommand `{other}` (status, on, off, toggle, set)"),
+            ));
+        }
+    };
+    if json {
+        ok_json(&st);
+    } else if !st.running {
+        println!("night light: off (hyprsunset not running)");
+    } else {
+        match st.temperature {
+            Some(k) if st.on => println!("night light: on, {k} K"),
+            _ => println!("night light: off"),
+        }
+    }
+    Ok(())
+}
+
+fn connectors(hypr: &Hyprland) -> Result<Vec<String>> {
+    Ok(hypr
+        .monitors()?
+        .into_iter()
+        .filter(|m| m.enabled)
+        .map(|m| m.name)
+        .collect())
+}
+
+fn print_brightness(d: &brightness::Display) {
+    println!("{:<8} {:>3}%  ({})", d.monitor, d.percent, d.kind);
+}
+
+fn brightness_cmd(a: &Args, hypr: &Hyprland, json: bool) -> Result<()> {
+    match a.pos.get(1).map(String::as_str) {
+        None | Some("list") => {
+            a.max_pos(2)?;
+            let list = brightness::list(&connectors(hypr)?)?;
+            if json {
+                ok_json(&list);
+            } else if list.is_empty() {
+                println!("no screen with controllable brightness (see `stance doctor`)");
+            } else {
+                list.iter().for_each(print_brightness);
+            }
+        }
+        Some(q) => {
+            let mons = hypr.monitors()?;
+            let mon = plan::resolve(&mons, q)?.name.clone();
+            match a.pos.get(2) {
+                None => {
+                    let d = brightness::get(&mon)?;
+                    if json {
+                        ok_json(&d);
+                    } else {
+                        print_brightness(&d);
+                    }
+                }
+                Some(v) => {
+                    a.max_pos(3)?;
+                    let r = brightness::set(&mon, brightness::parse_change(v)?)?;
+                    if json {
+                        ok_json(&r);
+                    } else {
+                        print_brightness(&r.display);
+                        for w in &r.warnings {
+                            println!("note: {w}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn audio_cmd(a: &Args, json: bool) -> Result<()> {
+    match a.pos.get(1).map(String::as_str) {
+        None | Some("list") => {
+            a.max_pos(2)?;
+            let sinks = audio::list()?;
+            if json {
+                ok_json(&sinks);
+            } else {
+                for s in &sinks {
+                    println!(
+                        "{} {:>4}  {}{}",
+                        if s.default { "*" } else { " " },
+                        s.id,
+                        s.description,
+                        if s.virtual_ { "  (virtual)" } else { "" }
+                    );
+                }
+            }
+        }
+        Some("set") => {
+            let q = a.arg(2, "sink")?;
+            a.max_pos(3)?;
+            let s = audio::set_default(q)?;
+            if json {
+                ok_json(&s);
+            } else {
+                println!("default output: {}", s.description);
+            }
+        }
+        Some(other) => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown audio subcommand `{other}` (list, set)"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Everything the panel's quick section shows, in one call. Each part
+/// fails on its own: a missing ddcutil does not hide the night light.
+fn quick_cmd(ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
+    let mut errors = serde_json::Map::new();
+    let night = night::Night::new(&hypr.instance, &ctx.state_dir).status();
+    let bright = match connectors(hypr).and_then(|c| brightness::list(&c)) {
+        Ok(l) => l,
+        Err(e) => {
+            errors.insert("brightness".into(), e.message.into());
+            vec![]
+        }
+    };
+    let sinks = match audio::list() {
+        Ok(l) => l,
+        Err(e) => {
+            errors.insert("audio".into(), e.message.into());
+            vec![]
+        }
+    };
+    if json {
+        ok_json(&json!({ "night": night, "brightness": bright, "sinks": sinks, "errors": errors }));
+    } else {
+        match night.temperature {
+            Some(k) if night.on => println!("night light: on, {k} K"),
+            _ => println!("night light: off"),
+        }
+        bright.iter().for_each(print_brightness);
+        if let Some(s) = sinks.iter().find(|s| s.default) {
+            println!("audio: {}", s.description);
+        }
+        for (k, v) in &errors {
+            println!("note: {k}: {}", v.as_str().unwrap_or_default());
         }
     }
     Ok(())

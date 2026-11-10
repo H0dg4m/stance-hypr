@@ -25,6 +25,9 @@ switchers. stance is built for the bar:
 - **Modes beyond monitors** – a mode can also bind workspaces to screens,
   toggle animations / blur / tearing, set gaps and switch the power profile.
   Strictly whitelisted: mode files cannot run commands.
+- **Quick controls** – night light (hyprsunset), brightness (laptop
+  backlight and external screens over DDC/CI) and audio output in the same
+  popup, and in modes.
 - **Hotplug rules** (optional daemon) – plug in the dock, get your desk mode.
 - **Zero idle cost** – the CLI runs per click and exits (~1 ms, < 1 MB
   binary); the optional daemon blocks on Hyprland's event socket (~3 MB RSS).
@@ -61,7 +64,12 @@ stance layout right-of eDP-1 DP-1     left-of | right-of | above | below | mirro
 stance confirm | stance revert        keep / undo the pending change
 stance persist                        write ~/.config/hypr/stance-monitors.lua
 stance mode save work                 snapshot the current setup as a mode
+                                      (--with-quick: also night light + audio output)
 stance mode apply gaming
+stance night on 4500 | off | toggle   night light via hyprsunset
+stance brightness DP-1 +10            N | +N | -N percent (DDC/CI or backlight)
+stance audio set "Razer"              default output: id, node name or unique text
+stance quick                          night light, brightness and audio at once
 stance daemon                         hotplug rules (systemd unit in contrib/)
 stance doctor                         read-only environment check
 ```
@@ -78,6 +86,11 @@ connector. Changes revert after 12 s unless confirmed (`--timeout S`,
 description = "External only, effects off"
 power_profile = "performance"           # power-saver | balanced | performance
 workspaces = { "1-5" = "JDR EPIC Q40" }
+night_light = false                     # true | false | temperature in K
+audio_sink = "Razer"                    # default audio output
+
+[brightness]                            # monitor match = percent
+"JDR EPIC Q40" = 80
 
 [hyprland]                              # whitelist: animations, blur, allow_tearing, gaps_in, gaps_out
 animations = false
@@ -96,7 +109,11 @@ enabled = false
 ```
 
 Monitors a mode names but that are not connected are skipped, so one mode
-works docked and undocked. More in [`examples/`](examples).
+works docked and undocked. Night light, audio and brightness are applied
+after the display change and are not part of the 12 s revert (they cannot
+black out a screen); if one fails (headset unplugged, no DDC/CI) the mode
+still applies and you get a note. Like the Hyprland options and the power
+profile they are "extras": `--no-extras` skips them. More in [`examples/`](examples).
 
 ### Hotplug rules
 
@@ -107,7 +124,9 @@ list exactly; nothing matches → nothing happens.
 [[rule]]
 monitors = ["AU Optronics 0x7EAD", "JDR EPIC Q40"]
 mode = "desk"
-allow_extras = false   # true: also apply the mode's Hyprland options / power profile
+allow_extras = false   # true: also apply the mode's Hyprland options, power profile,
+                       # night light, audio and brightness (the last three only when
+                       # the rule actually changed the screens)
 ```
 
 Enable with `systemctl --user enable --now stance.service`.
@@ -119,9 +138,27 @@ Runtime changes are temporary on purpose (a projector should not stick). Run
 `require("stance-monitors")` once – after nwg-displays' `require("monitors")`
 if you use it. stance never edits your main config.
 
+### Quick controls
+
+- **Night light** talks to hyprsunset's socket. If yours is already running
+  (e.g. from your Hyprland config) stance uses it and keeps your gamma; "off"
+  is the neutral 6000 K, not a reset. If none runs, `stance night on` starts one.
+- **Brightness**: laptop panels through `/sys/class/backlight` and
+  `brightnessctl`; external screens through `ddcutil` (needs the `i2c-dev`
+  module and access to `/dev/i2c-*`, usually the `i2c` group). Values below
+  5 % (backlight) or 1 % (DDC) are raised so a screen cannot go fully dark.
+- **Audio output** reads `pw-dump` and switches with `wpctl set-default`.
+
+`stance doctor` reports which of these are available.
+
 ## Security
 
 - Talks to Hyprland's socket directly; no `hyprctl`, no shell, ever.
+- External tools (`ddcutil`, `brightnessctl`, `wpctl`, `pw-dump`,
+  `powerprofilesctl`, `hyprsunset`) run by absolute path with an argument
+  list, a hard timeout and no stdin; their output is parsed, never executed.
+  Brightness targets and audio sinks are resolved against the live device
+  list first, so a mode file can only pick among real devices.
 - Lua is generated only from typed, validated values. EDID strings never
   reach the compositor; they are only displayed (control characters removed).
 - Mode and rule files: 64 KiB max, unknown fields rejected, must be owned by

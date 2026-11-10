@@ -2,6 +2,7 @@
 description = "External only, effects off"
 power_profile = "performance"
 workspaces = { "1-5" = "JDR EPIC Q40" }
+night_light = false                     # true | false | temperature in K
 
 [hyprland]
 animations = false

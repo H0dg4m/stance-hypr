@@ -12,6 +12,7 @@ use crate::apply::State;
 use crate::backend::{Backend, OptKey, OptValue};
 use crate::error::{Error, Result};
 use crate::model::{Mode, Monitor, sanitize};
+use crate::night::NightSetting;
 use crate::plan::{parse_pos, pick_mode, resolve};
 use crate::power::PowerProfile;
 use crate::spec::MonitorSpec;
@@ -114,8 +115,34 @@ pub struct ModeFile {
     pub workspaces: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hyprland: Option<HyprSection>,
+    /// `false`, `true` or a temperature in K (hyprsunset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub night_light: Option<NightSetting>,
+    /// Default audio output: sink id, node name or a unique substring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_sink: Option<String>,
+    /// `"eDP-1" = 60`: monitor match → brightness percent.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub brightness: BTreeMap<String, u8>,
     #[serde(default, rename = "monitor", skip_serializing_if = "Vec::is_empty")]
     pub monitors: Vec<ModeMonitor>,
+}
+
+/// Settings a mode applies after the display change. They cannot black out
+/// a screen, so they are not part of the revert snapshot, and a failure
+/// (headset unplugged, no DDC) is a warning, never an error.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Quick {
+    pub night: Option<NightSetting>,
+    pub audio: Option<String>,
+    /// (connector, percent).
+    pub brightness: Vec<(String, u8)>,
+}
+
+impl Quick {
+    pub fn is_empty(&self) -> bool {
+        self.night.is_none() && self.audio.is_none() && self.brightness.is_empty()
+    }
 }
 
 pub fn modes_dir() -> Result<PathBuf> {
@@ -140,6 +167,22 @@ pub fn parse_mode(text: &str) -> Result<ModeFile> {
         return Err(Error::new("bad_mode", "description is too long"));
     }
     workspace_ids(&m.workspaces)?;
+    if let Some(n) = m.night_light {
+        n.check().map_err(|e| Error::new("bad_mode", format!("night_light: {}", e.message)))?;
+    }
+    if let Some(a) = &m.audio_sink {
+        crate::audio::validate_match(a)
+            .map_err(|e| Error::new("bad_mode", format!("audio_sink: {}", e.message)))?;
+    }
+    if m.brightness.len() > MAX_MONITORS {
+        return Err(Error::new("bad_mode", "too many [brightness] entries"));
+    }
+    if let Some((k, _)) = m.brightness.iter().find(|(_, v)| **v > 100) {
+        return Err(Error::new(
+            "bad_mode",
+            format!("brightness for `{}` must be 0-100", sanitize(k)),
+        ));
+    }
     Ok(m)
 }
 
@@ -328,6 +371,57 @@ pub fn resolve_mode(m: &ModeFile, mons: &[Monitor], extras: bool) -> Result<(Sta
     Ok((st, warnings))
 }
 
+/// The mode's quick settings (only with extras), with brightness keys
+/// resolved to connectors. Unconnected monitors are skipped with a warning.
+pub fn resolve_quick(m: &ModeFile, mons: &[Monitor], extras: bool) -> (Quick, Vec<String>) {
+    let mut q = Quick::default();
+    let mut warnings = Vec::new();
+    if !extras {
+        return (q, warnings);
+    }
+    q.night = m.night_light;
+    q.audio = m.audio_sink.clone();
+    for (k, v) in &m.brightness {
+        match resolve(mons, k) {
+            Ok(mon) => q.brightness.push((mon.name.clone(), *v)),
+            Err(_) => warnings.push(format!("brightness: `{}` not connected", sanitize(k))),
+        }
+    }
+    (q, warnings)
+}
+
+/// Applies quick settings best-effort: returns (changed, warnings).
+pub fn apply_quick(q: &Quick, night: Option<&crate::night::Night>) -> (Vec<String>, Vec<String>) {
+    let mut changed = Vec::new();
+    let mut warnings = Vec::new();
+    if let Some(n) = q.night {
+        match night.map(|nl| n.apply(nl)) {
+            Some(Ok(st)) => changed.push(match st.temperature {
+                Some(k) if st.on => format!("night light {k} K"),
+                _ => "night light off".to_string(),
+            }),
+            Some(Err(e)) => warnings.push(format!("night light: {}", e.message)),
+            None => warnings.push("night light: no Hyprland instance".to_string()),
+        }
+    }
+    if let Some(a) = &q.audio {
+        match crate::audio::set_default(a) {
+            Ok(s) => changed.push(format!("audio {}", sanitize(&s.description))),
+            Err(e) => warnings.push(format!("audio: {}", e.message)),
+        }
+    }
+    for (mon, pct) in &q.brightness {
+        match crate::brightness::set(mon, crate::brightness::Change::Abs(*pct)) {
+            Ok(r) => {
+                changed.push(format!("brightness {mon} {}%", r.display.percent));
+                warnings.extend(r.warnings.into_iter().map(|w| format!("brightness {mon}: {w}")));
+            }
+            Err(e) => warnings.push(format!("brightness {mon}: {}", e.message)),
+        }
+    }
+    (changed, warnings)
+}
+
 /// Builds a mode file from the live state.
 pub fn from_current(backend: &dyn Backend, description: Option<String>) -> Result<ModeFile> {
     let mons = backend.monitors()?;
@@ -504,6 +598,29 @@ enabled = false
         assert!(parse_mode("workspaces = { \"1-500\" = \"A\" }").is_err());
         assert!(parse_mode("power_profile = \"turbo\"").is_err());
         assert!(!valid_name("../x") && !valid_name("a b") && valid_name("work_2"));
+    }
+
+    #[test]
+    fn quick_settings() {
+        let m = parse_mode(
+            "night_light = 3500\naudio_sink = \"Razer\"\n[brightness]\n\"Desc A-1\" = 40\n\"Gone\" = 10\n",
+        )
+        .unwrap();
+        let mons = vec![mon("A-1", 0), mon("B-1", 1920)];
+        let (q, w) = resolve_quick(&m, &mons, true);
+        assert_eq!(q.night, Some(NightSetting::Kelvin(3500)));
+        assert_eq!(q.audio.as_deref(), Some("Razer"));
+        assert_eq!(q.brightness, vec![("A-1".to_string(), 40)]);
+        assert_eq!(w.len(), 1);
+        // Quick settings are extras.
+        assert!(resolve_quick(&m, &mons, false).0.is_empty());
+        assert!(parse_mode("night_light = true").is_ok());
+        assert!(parse_mode("night_light = 500").is_err());
+        assert!(parse_mode("night_light = \"warm\"").is_err());
+        assert!(parse_mode("audio_sink = \"\"").is_err());
+        assert!(parse_mode("[brightness]\n\"A\" = 101").is_err());
+        assert!(parse_mode("[brightness]\n\"A\" = -1").is_err());
+        assert!(parse_mode("[brightness]\n\"A\" = \"50; rm\"").is_err());
     }
 
     #[test]
