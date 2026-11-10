@@ -3,6 +3,8 @@
 A paired phone shows buttons; pressing one runs a stance action on this PC.
 Wi-Fi with QR pairing first; USB through `adb reverse` for those who want it.
 The buttons come from `~/.config/stance/deck.toml` (see `examples/deck.toml`).
+The Android app is in [`../android`](../android); the byte-level format is in
+[protocol.md](protocol.md) (with test vectors for other implementations).
 
 ## Transport
 
@@ -79,6 +81,13 @@ and never starting with `-` (so nothing can pass for an option). Fields that
 don't belong to the action are rejected. No file: night toggle, Keep, Revert
 and one button per mode.
 
+Edit the file by hand, in the panel (Settings, Phone buttons: add, remove,
+reorder, "Reset to defaults"), or from the CLI: `stance deck buttons [--json]`
+prints the current set (`custom` tells whether a file exists), `stance deck put
+--data '{"button":[...]}'` validates and replaces it, `stance deck reset` goes
+back to the defaults and keeps the old file as `deck.toml.bak`. A running
+server picks the change up and sends a new `hello` to connected phones.
+
 ## Threat model
 
 | Threat | Handling |
@@ -96,8 +105,24 @@ and one button per mode.
 Not covered: a compromised PC account (it owns the keys anyway), and denial
 of service by someone who can saturate the Wi-Fi.
 
+## The Android app
+
+Pairing shows the PC name and key fingerprint and waits for the user to
+compare it with the PC's before the handshake starts. The device key is
+generated per PC and wrapped by an Android Keystore key. Pairing codes are
+never put in screenshots (`FLAG_SECURE`). The connection exists only while a
+PC screen is open; there is no background service. Strings from the PC are
+shown as plain text, shortened and stripped of control characters. See
+[../android/README.md](../android/README.md) for building, signing and the
+tests (Noise vectors, live interop, screenshots, an optional emulator run).
+
 ## Testing without a phone
 
 `stance deck test pair '<payload>'`, then `list`, `press ID`, `confirm`,
 `revert`, `ping`, `watch SECONDS`. State lives in
 `~/.config/stance/deck-test-client.json`.
+
+For the real app without a phone: `tests/e2e-android.sh` runs the debug APK
+on an emulator against a nested Hyprland and a loopback server (`adb
+reverse`), pairs, presses a layout button and checks Keep, Revert and the
+automatic revert. It skips itself when adb, an AVD or the APK are missing.

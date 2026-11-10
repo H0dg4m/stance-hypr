@@ -108,11 +108,20 @@ düzenlenebilir (Ayarlar ve Modlar). Ayrıntılı örnekler İngilizce README'de
 
 Hangilerinin kullanılabildiğini `stance doctor` söyler.
 
-### Telefon kumandası (önizleme)
+### Telefon kumandası
 
 Telefonu Stream Deck benzeri bir kumandaya çevirir: modlar, gece ışığı,
 parlaklık, ses çıkışı ve ekran düzeni tuşları; ekran değişikliğinde
-Koru / Geri al. Bilgisayar tarafı hazır, Android uygulaması yazılıyor.
+Koru / Geri al. Android uygulaması [`android/`](android) içinde (Kotlin,
+Compose; QR okuma ZXing ile, Google hizmeti gerekmez; birden çok bilgisayar;
+cihaz anahtarı Android Keystore ile sarılır). Kaynaktan derle ya da APK'yı
+sürüm sayfasından kur.
+
+<p align="center">
+  <img src="docs/app-home.png" alt="eşli bilgisayarlar" width="200">
+  <img src="docs/app-pair.png" alt="eşleştirme: parmak izini karşılaştır" width="200">
+  <img src="docs/app-deck.png" alt="tuşlar ve Koru / Geri al şeridi" width="200">
+</p>
 
 ```sh
 stance deck serve            # ya da: systemctl --user enable --now stance-deck.service
@@ -120,11 +129,29 @@ stance deck pair             # uygulama için QR (tek telefon, 120 sn)
 stance deck devices          # eşli telefonlar; stance deck unpair AD
 ```
 
+1. Uygulamada **Add PC**'ye dokun, kodu tara (ya da yapıştır), parmak izini
+   bilgisayardakiyle karşılaştır, **Pair**'e dokun. Eşleşince bilgisayar bir
+   masaüstü bildirimi gösterir.
+2. Bir tuşa bas. Ekran değişikliğinde telefonda **Keep / Revert** çıkar; kimse
+   yanıt vermezse bilgisayardaki gibi kendiliğinden geri alınır.
+
 Wi-Fi + QR ile eşleştirme ya da USB (`stance deck serve --loopback` ve
-`adb reverse tcp:47800 tcp:47800`). Bağlantı şifrelidir (Noise), yalnız eşli
-telefonlar girer, tuşlar yalnız `~/.config/stance/deck.toml` içindeki eylemleri
-çalıştırır; "komut çalıştır" tuşu yoktur. Güvenlik duvarı kullanıyorsan yerel
-ağdan TCP 47800'e izin ver (`stance doctor` söyler). Ayrıntı: [docs/deck.md](docs/deck.md).
+`adb reverse tcp:47800 tcp:47800`; kodun adresi `127.0.0.1` olmalı). Bağlantı
+şifrelidir (Noise), yalnız eşli telefonlar girer, tuşlar yalnız
+`~/.config/stance/deck.toml` içindeki eylemleri çalıştırır; "komut çalıştır"
+tuşu yoktur. Güvenlik duvarı kullanıyorsan yerel ağdan TCP 47800'e izin ver
+(`stance doctor` söyler).
+
+Tuşları panelde (Ayarlar → Phone buttons) ya da `stance deck buttons`,
+`stance deck put --data JSON`, `stance deck reset` ile düzenle.
+
+<p align="center">
+  <img src="docs/phone-buttons.png" alt="Panel ayarlarında telefon tuşları" width="330">
+</p>
+
+Ayrıntı ve protokol: [docs/deck.md](docs/deck.md),
+[docs/protocol.md](docs/protocol.md); uygulama derleme ve testler:
+[android/README.md](android/README.md).
 
 ### Ekranlar yerini hatırlar
 

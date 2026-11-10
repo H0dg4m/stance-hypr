@@ -608,6 +608,13 @@ ColumnLayout {
         }
     }
 
+    // ---- phone buttons --------------------------------------------------------
+    StanceDeckButtons {
+        Layout.fillWidth: true
+        theme: page.theme
+        service: page.service
+    }
+
     // ---- health ---------------------------------------------------------------
     StanceSection {
         Layout.fillWidth: true

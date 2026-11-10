@@ -134,6 +134,9 @@ Item {
     function deckDevices(done) { call(["deck", "devices"], done); }
     function deckPair(done) { call(["deck", "pair"], done); }
     function deckUnpair(name, done) { call(["deck", "unpair", name], done); }
+    function deckButtons(done) { call(["deck", "buttons"], done); }
+    function deckPut(buttons, done) { call(["deck", "put", "--data", JSON.stringify({ button: buttons })], done); }
+    function deckReset(done) { call(["deck", "reset"], done); }
 
     Component {
         id: callComp

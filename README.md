@@ -139,11 +139,20 @@ allow_extras = false   # true: also apply the mode's Hyprland options, power pro
 
 Enable with `systemctl --user enable --now stance.service`.
 
-### Phone deck (preview)
+### Phone deck
 
 Turn a phone into a Stream Deck–style remote for stance: buttons for modes,
 night light, brightness, audio output and layouts, with Keep / Revert for
-display changes. The PC side is ready; the Android app is being written.
+display changes. The Android app lives in [`android/`](android) (Kotlin,
+Compose; QR scan with ZXing, no Google services; several PCs; the device key
+is wrapped by the Android Keystore). Build it from source or install the APK
+from the release page.
+
+<p align="center">
+  <img src="docs/app-home.png" alt="paired PCs" width="200">
+  <img src="docs/app-pair.png" alt="pairing: compare the fingerprint" width="200">
+  <img src="docs/app-deck.png" alt="buttons and the Keep / Revert banner" width="200">
+</p>
 
 ```sh
 stance deck serve            # or: systemctl --user enable --now stance-deck.service
@@ -151,12 +160,29 @@ stance deck pair             # QR for the app (one phone, 120 s)
 stance deck devices          # paired phones; stance deck unpair NAME
 ```
 
+1. Open the app, tap **Add PC**, scan the code (or paste it), compare the
+   fingerprint with the one the PC shows, tap **Pair**. The PC sends a
+   desktop notification when a phone has paired.
+2. Press a button. A display change shows **Keep / Revert** on the phone; if
+   nobody answers it reverts on its own, like on the PC.
+
 Wi-Fi with QR pairing, or USB with `stance deck serve --loopback` and
-`adb reverse tcp:47800 tcp:47800`. Everything is encrypted (Noise), only
-paired phones get in, and buttons can only run the actions listed in
-`~/.config/stance/deck.toml` – there is no "run a command" button. If you use
-a firewall, allow TCP 47800 from your LAN (`stance doctor` tells you).
-Details and the protocol: [docs/deck.md](docs/deck.md).
+`adb reverse tcp:47800 tcp:47800` (then pair with a code whose address is
+`127.0.0.1`). Everything is encrypted (Noise), only paired phones get in, and
+buttons can only run the actions listed in `~/.config/stance/deck.toml` –
+there is no "run a command" button. If you use a firewall, allow TCP 47800
+from your LAN (`stance doctor` tells you).
+
+Edit the buttons in the panel (Settings → Phone buttons) or with
+`stance deck buttons`, `stance deck put --data JSON`, `stance deck reset`.
+
+<p align="center">
+  <img src="docs/phone-buttons.png" alt="Phone buttons in the panel settings" width="330">
+</p>
+
+Details and the wire protocol: [docs/deck.md](docs/deck.md),
+[docs/protocol.md](docs/protocol.md); app build and tests:
+[android/README.md](android/README.md).
 
 ### Screens remember their place
 

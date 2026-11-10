@@ -10,6 +10,8 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo build --release
 tests/nested.sh lua target/release/stance        # needs a running Wayland session
 (cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/release/stance)
+# optional: app on an emulator against a nested Hyprland (skips itself without adb/AVD/APK)
+(cd android && ./gradlew :app:assembleDebug) && tests/e2e-android.sh target/release/stance
 ```
 
 All green, and `stance doctor` on a real machine shows no FAIL.
