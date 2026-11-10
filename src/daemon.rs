@@ -207,11 +207,18 @@ fn restore_remembered(ctx: &Ctx, mons: &[crate::model::Monitor], added: &[String
     };
     match ctx.apply("restore", &st, 0, None) {
         Ok(o) => {
-            log(&format!("hotplug: restored last position of {}", names.join(", ")));
+            log(&format!(
+                "hotplug: restored last position of {}",
+                names.join(", ")
+            ));
             Some(!o.changed.is_empty())
         }
         Err(e) => {
-            log(&format!("hotplug: restoring {} failed: {}", names.join(", "), e.message));
+            log(&format!(
+                "hotplug: restoring {} failed: {}",
+                names.join(", "),
+                e.message
+            ));
             None
         }
     }
@@ -300,8 +307,14 @@ mod tests {
         assert_eq!(classify("configreloaded>>"), Event::Reload);
         assert_eq!(classify("workspace>>2"), Event::Other);
         assert_eq!(classify("monitoraddedfake>>x"), Event::Other);
-        assert_eq!(added_name("monitoraddedv2>>2,DP-2,JDR EPIC Q40").as_deref(), Some("DP-2"));
-        assert_eq!(added_name("monitoradded>>HDMI-A-1").as_deref(), Some("HDMI-A-1"));
+        assert_eq!(
+            added_name("monitoraddedv2>>2,DP-2,JDR EPIC Q40").as_deref(),
+            Some("DP-2")
+        );
+        assert_eq!(
+            added_name("monitoradded>>HDMI-A-1").as_deref(),
+            Some("HDMI-A-1")
+        );
         assert_eq!(added_name("monitorremoved>>DP-2"), None);
         assert_eq!(added_name("monitoradded>>../x"), None);
     }

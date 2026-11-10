@@ -3,11 +3,12 @@ mod audio;
 mod backend;
 mod brightness;
 mod daemon;
+mod deck;
 mod doctor;
 mod error;
 mod hypr;
-mod model;
 mod memory;
+mod model;
 mod modes;
 mod night;
 mod persist;
@@ -60,6 +61,10 @@ Usage:
   stance audio [list]                  Audio outputs
   stance audio set <sink>              Default output (id, node name or unique text)
   stance quick                         Night light, brightness and audio at once
+  stance deck serve [--port N] [--loopback]   Phone deck server (Wi-Fi; --loopback for USB/adb)
+  stance deck pair                     Show a pairing QR (valid 120 s, one phone)
+  stance deck devices | unpair NAME    Paired phones
+  stance deck test …                   Reference client (pair PAYLOAD, buttons, press ID)
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
 
@@ -77,6 +82,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--timeout",
     "--description",
     "--data",
+    "--port",
+    "--name",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -88,6 +95,7 @@ const BOOL_FLAGS: &[&str] = &[
     "--force",
     "--no-extras",
     "--with-quick",
+    "--loopback",
     "--help",
     "-h",
     "--version",
@@ -210,6 +218,9 @@ fn run(a: &Args) -> Result<ExitCode> {
         return Ok(doctor_cmd(json));
     }
 
+    if cmd == "deck" {
+        return deck_cmd(a, json).map(|_| ExitCode::SUCCESS);
+    }
     if cmd == "audio" {
         return audio_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
@@ -257,7 +268,11 @@ fn run(a: &Args) -> Result<ExitCode> {
                 println!("active mode: {}", active.as_deref().unwrap_or("none"));
                 println!(
                     "daemon: {}",
-                    if daemon::running(&ctx.state_dir) { "running" } else { "not running" }
+                    if daemon::running(&ctx.state_dir) {
+                        "running"
+                    } else {
+                        "not running"
+                    }
                 );
                 for w in warnings {
                     println!("note: {w}");
@@ -488,9 +503,10 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
         "put" => {
             let name = a.arg(2, "mode name")?;
             a.max_pos(3)?;
-            let m = modes::from_json(a.val("--data").ok_or_else(|| {
-                Error::new("usage", "mode put needs --data JSON")
-            })?)?;
+            let m = modes::from_json(
+                a.val("--data")
+                    .ok_or_else(|| Error::new("usage", "mode put needs --data JSON"))?,
+            )?;
             let path = modes::save(name, &m, a.has("--force"))?;
             if json {
                 ok_json(&json!({ "saved": name, "path": path }));
@@ -512,6 +528,105 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn deck_cmd(a: &Args, json: bool) -> Result<()> {
+    match a.arg(1, "deck subcommand (serve, pair, devices, unpair, test)")? {
+        "serve" => {
+            a.max_pos(2)?;
+            deck::net::serve(deck::net::ServeOpts {
+                port: a.num("--port")?.unwrap_or(deck::pair::DEFAULT_PORT),
+                loopback: a.has("--loopback"),
+            })
+        }
+        "pair" => {
+            a.max_pos(2)?;
+            let r = deck::net::ask("pair")?;
+            if r["ok"] != true {
+                return Err(Error::new(
+                    "deck",
+                    r["error"].as_str().unwrap_or("pairing failed").to_string(),
+                ));
+            }
+            let payload = r["payload"].as_str().unwrap_or_default();
+            if json {
+                ok_json(&r);
+            } else {
+                println!("{}", deck::pair::render_text(payload)?);
+                println!("Scan with the stance deck app within 120 s (one phone).");
+                println!(
+                    "PC fingerprint: {}",
+                    r["fingerprint"].as_str().unwrap_or("?")
+                );
+                println!("Code: {payload}");
+            }
+            Ok(())
+        }
+        "devices" => {
+            a.max_pos(2)?;
+            // Works without a running server (then nothing shows as connected).
+            let live = deck::net::ask("status").ok();
+            let list = deck::pair::load_devices()?;
+            if json {
+                ok_json(&json!({ "devices": list.devices, "server": live }));
+            } else {
+                match &live {
+                    Some(s) => println!(
+                        "server: port {} on {}{}",
+                        s["port"],
+                        s["hosts"]
+                            .as_array()
+                            .map(|h| h
+                                .iter()
+                                .filter_map(|x| x.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "))
+                            .unwrap_or_default(),
+                        if s["loopback"] == true {
+                            " (loopback only)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    None => println!("server: not running"),
+                }
+                if list.devices.is_empty() {
+                    println!("no paired phones; run `stance deck pair`");
+                }
+                for d in &list.devices {
+                    let on = live
+                        .as_ref()
+                        .and_then(|s| s["devices"].as_array())
+                        .is_some_and(|v| {
+                            v.iter()
+                                .any(|x| x["name"] == d.name.as_str() && x["connected"] == true)
+                        });
+                    println!("{} {}", if on { "*" } else { " " }, d.name);
+                }
+            }
+            Ok(())
+        }
+        "unpair" => {
+            let name = a.arg(2, "device name")?;
+            a.max_pos(3)?;
+            let removed = deck::pair::remove_device(name)?;
+            simple(
+                json,
+                if removed {
+                    "unpaired"
+                } else {
+                    "no such device"
+                },
+                removed,
+            );
+            Ok(())
+        }
+        "test" => deck::client::run(&a.pos[2..], a.val("--name"), json),
+        other => Err(Error::new(
+            "usage",
+            format!("unknown deck subcommand `{other}`"),
+        )),
+    }
 }
 
 fn rules_cmd(a: &Args, json: bool) -> Result<()> {

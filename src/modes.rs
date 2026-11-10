@@ -273,7 +273,10 @@ pub fn rules_from_json(data: &str) -> Result<Rules> {
     // A rule for a mode that does not exist would fail on every hotplug.
     for rule in &r.rules {
         load(&rule.mode).map_err(|e| {
-            Error::new("bad_rules", format!("rule for `{}`: {}", rule.mode, e.message))
+            Error::new(
+                "bad_rules",
+                format!("rule for `{}`: {}", rule.mode, e.message),
+            )
         })?;
     }
     Ok(r)

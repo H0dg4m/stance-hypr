@@ -330,6 +330,7 @@ fn dir_checks() -> Vec<Check> {
             (false, false) => "brightnessctl / ddcutil not found; brightness unavailable",
         },
     ));
+    out.push(deck_check());
     if ddc && !Path::new("/dev/i2c-0").exists() {
         out.push(check(
             "i2c",
@@ -338,6 +339,39 @@ fn dir_checks() -> Vec<Check> {
         ));
     }
     out
+}
+
+/// Phone deck: is the server running, and would a firewall drop phones?
+fn deck_check() -> Check {
+    let port = crate::deck::pair::DEFAULT_PORT;
+    let ufw_on = fs::read_to_string("/etc/ufw/ufw.conf")
+        .is_ok_and(|t| t.lines().any(|l| l.trim() == "ENABLED=yes"));
+    match crate::deck::net::ask("status") {
+        Ok(s) => {
+            let port = s["port"].as_u64().unwrap_or(u64::from(port));
+            let n = s["devices"].as_array().map_or(0, |v| v.len());
+            if ufw_on && s["loopback"] != true {
+                check(
+                    "deck",
+                    Status::Warn,
+                    format!(
+                        "deck server on port {port}, {n} paired phone(s); ufw is enabled, allow your LAN: sudo ufw allow from 192.168.0.0/16 to any port {port} proto tcp"
+                    ),
+                )
+            } else {
+                check(
+                    "deck",
+                    Status::Ok,
+                    format!("deck server on port {port}, {n} paired phone(s)"),
+                )
+            }
+        }
+        Err(_) => check(
+            "deck",
+            Status::Info,
+            "phone deck server not running (optional: stance deck serve, or contrib/stance-deck.service)",
+        ),
+    }
 }
 
 #[cfg(test)]

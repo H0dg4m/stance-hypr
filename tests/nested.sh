@@ -257,6 +257,51 @@ EOF
   kill_sunsets
 fi
 
+# Phone deck (loopback only, nested instance) ------------------------------
+# Never presses brightness/audio buttons: those would hit real devices.
+if "$BIN" deck devices --json 2>/dev/null | grep -q '"server":{' || [ -z "$NWL" ]; then
+  echo "  skip deck (a real deck server runs, or no nested display)"
+else
+  cat > "$XDG_CONFIG_HOME/stance/deck.toml" <<'EOF'
+[[button]]
+id = "night"
+label = "Night"
+action = "night"
+
+[[button]]
+id = "below"
+label = "TEST-2 below"
+action = "layout"
+kind = "below"
+monitor = "TEST-2"
+reference = "TEST-1"
+EOF
+  chmod 600 "$XDG_CONFIG_HOME/stance/deck.toml"
+  WAYLAND_DISPLAY=$NWL "$BIN" deck serve --loopback --port 0 2>"$WORK/deck.log" & DECK=$!
+  sleep 0.8
+  PAY=$("$BIN" deck pair --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['payload'])" 2>/dev/null)
+  [ -n "$PAY" ] && ok "deck pair gives a code" || bad "deck pair gives a code" "$(cat "$WORK/deck.log")"
+  run deck test pair "$PAY" --name nested && ok "deck pairs" || bad "deck pairs" "$(cat "$WORK/last.out")"
+  run deck test pair "$PAY" --name again && bad "deck code is single use" || ok "deck code is single use"
+  "$BIN" deck test buttons --json | grep -q '"below"' && ok "deck lists buttons" || bad "deck lists buttons"
+  kill_sunsets
+  run deck test press night && ok "deck press night" || bad "deck press night" "$(cat "$WORK/last.out")"
+  [ "$(WAYLAND_DISPLAY=$NWL "$BIN" night --json | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['on'])")" = True ] \
+    && ok "deck night light is on" || bad "deck night light is on"
+  run deck test press below && ok "deck press layout" || bad "deck press layout" "$(cat "$WORK/last.out")"
+  "$BIN" status --json | grep -q '"pending":{' && ok "deck change is pending" || bad "deck change is pending" "$("$BIN" status)"
+  run deck test confirm && ok "deck confirm" || bad "deck confirm" "$(cat "$WORK/last.out")"
+  "$BIN" status --json | grep -q '"pending":null' && ok "deck confirm cleared pending" || bad "deck confirm cleared pending"
+  expect "deck layout applied (TEST-2 below TEST-1)" "m['TEST-2']['y']>m['TEST-1']['y']"
+  run deck unpair nested
+  sleep 1.2
+  run deck test buttons && bad "unpaired phone refused" || ok "unpaired phone refused"
+  kill $DECK; wait $DECK 2>/dev/null
+  rm -f "$XDG_RUNTIME_DIR/stance/deck.sock" "$XDG_RUNTIME_DIR/stance/deck-pair.svg"
+  kill_sunsets
+  run layout right-of TEST-2 TEST-1 --no-confirm
+fi
+
 # Daemon -----------------------------------------------------------------
 cat > "$XDG_CONFIG_HOME/stance/rules.toml" <<EOF
 [[rule]]

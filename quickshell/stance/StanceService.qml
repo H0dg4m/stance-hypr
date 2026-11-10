@@ -131,6 +131,9 @@ Item {
     function getRules(done) { call(["rules"], done); }
     function putRules(data, done) { call(["rules", "put", "--data", JSON.stringify(data)], done); }
     function doctor(done) { call(["doctor"], done); }
+    function deckDevices(done) { call(["deck", "devices"], done); }
+    function deckPair(done) { call(["deck", "pair"], done); }
+    function deckUnpair(name, done) { call(["deck", "unpair", name], done); }
 
     Component {
         id: callComp

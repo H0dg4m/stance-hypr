@@ -1,0 +1,66 @@
+# ~/.config/stance/deck.toml: the buttons your phone shows.
+# Each [[button]] runs one stance action on this PC. There is no way to run
+# arbitrary commands here. At most 64 buttons; ids are unique.
+#
+# action = "mode"        name
+# action = "night"       op = toggle (default) | on | off | set, kelvin (on/set)
+# action = "brightness"  monitor, value = "50" | "+10" | "-10"
+# action = "audio"       sink (id, node name or unique text)
+# action = "layout"      kind, monitor, reference (reference only for kinds that need one)
+# action = "confirm" | "revert"   keep or undo a pending display change
+
+[[button]]
+id = "night"
+label = "Night light"
+icon = "bedtime"
+action = "night"
+
+[[button]]
+id = "warm"
+label = "Warmer"
+icon = "light_mode"
+action = "night"
+op = "set"
+kelvin = 3500
+
+[[button]]
+id = "mode-work"
+label = "Work"
+icon = "desk"
+action = "mode"
+name = "work"
+
+[[button]]
+id = "bright-up"
+label = "Brighter"
+icon = "brightness_high"
+action = "brightness"
+monitor = "eDP-1"
+value = "+10"
+
+[[button]]
+id = "bright-down"
+label = "Dimmer"
+icon = "brightness_low"
+action = "brightness"
+monitor = "eDP-1"
+value = "-10"
+
+[[button]]
+id = "speakers"
+label = "Speakers"
+icon = "speaker"
+action = "audio"
+sink = "speakers"
+
+[[button]]
+id = "keep"
+label = "Keep"
+icon = "check"
+action = "confirm"
+
+[[button]]
+id = "undo"
+label = "Revert"
+icon = "undo"
+action = "revert"

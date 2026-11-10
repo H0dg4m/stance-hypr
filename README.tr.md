@@ -28,7 +28,7 @@ arka planda profil değiştirir. stance bar için yapıldı:
 - **Hızlı ayarlar**: gece ışığı (hyprsunset), parlaklık (dizüstü paneli ve
   DDC/CI ile harici ekran) ve ses çıkışı aynı panelde ve modlarda.
 - **Tak-çalıştır kuralları** (isteğe bağlı daemon): dock'u tak, masa modun gelsin.
-- **Boşta sıfır maliyet**: CLI tık başına çalışıp çıkar (~1 ms, < 1 MB);
+- **Boşta sıfır maliyet**: CLI tık başına çalışıp çıkar (~1 ms, ~1,5 MB);
   isteğe bağlı daemon Hyprland olay soketinde bekler (~3 MB bellek).
 
 ## Kurulum
@@ -96,6 +96,24 @@ mod yine uygulanır ve not düşülür. `--no-extras` bunları atlar.
 - **Ses çıkışı** `pw-dump` ile okunur, `wpctl set-default` ile değiştirilir.
 
 Hangilerinin kullanılabildiğini `stance doctor` söyler.
+
+### Telefon kumandası (önizleme)
+
+Telefonu Stream Deck benzeri bir kumandaya çevirir: modlar, gece ışığı,
+parlaklık, ses çıkışı ve ekran düzeni tuşları; ekran değişikliğinde
+Koru / Geri al. Bilgisayar tarafı hazır, Android uygulaması yazılıyor.
+
+```sh
+stance deck serve            # ya da: systemctl --user enable --now stance-deck.service
+stance deck pair             # uygulama için QR (tek telefon, 120 sn)
+stance deck devices          # eşli telefonlar; stance deck unpair AD
+```
+
+Wi-Fi + QR ile eşleştirme ya da USB (`stance deck serve --loopback` ve
+`adb reverse tcp:47800 tcp:47800`). Bağlantı şifrelidir (Noise), yalnız eşli
+telefonlar girer, tuşlar yalnız `~/.config/stance/deck.toml` içindeki eylemleri
+çalıştırır; "komut çalıştır" tuşu yoktur. Güvenlik duvarı kullanıyorsan yerel
+ağdan TCP 47800'e izin ver (`stance doctor` söyler). Ayrıntı: [docs/deck.md](docs/deck.md).
 
 ### Ekranlar yerini hatırlar
 

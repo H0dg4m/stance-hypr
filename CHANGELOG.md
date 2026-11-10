@@ -35,6 +35,12 @@ Quick controls.
   compact mode, hotplug rules editor, health from `doctor`), add-mode form
   and a mode editor (`mode put NAME --data JSON`, `rules [show|put]`)
 - `status` reports whether the daemon is running
+- Phone deck (preview, PC side): `deck serve` (Wi-Fi, or `--loopback` for
+  USB through `adb reverse`), `deck pair` (QR, one phone, 120 s),
+  `deck devices` / `unpair`, `deck test` reference client; buttons from
+  `deck.toml` run whitelisted stance actions only (modes, night light,
+  brightness, audio, layout, keep / revert). Noise IK sessions, XXpsk3
+  pairing, rate limits; see docs/deck.md. The Android app comes next.
 - `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
 - External tools run with a hard timeout (kill + reap)
 

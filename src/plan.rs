@@ -219,7 +219,10 @@ pub fn plan_set(
 /// Moves several monitors at once (`NAME=XxY` pairs, e.g. from dragging on
 /// the panel map). The result must not overlap; gaps are allowed (Hyprland
 /// copes) but reported, since they usually mean a snap was missed.
-pub fn plan_arrange(mons: &[Monitor], pairs: &[(String, (i32, i32))]) -> Result<(Vec<MonitorSpec>, Vec<String>)> {
+pub fn plan_arrange(
+    mons: &[Monitor],
+    pairs: &[(String, (i32, i32))],
+) -> Result<(Vec<MonitorSpec>, Vec<String>)> {
     if pairs.is_empty() || pairs.len() > 16 {
         return Err(Error::new("usage", "arrange needs 1-16 NAME=XxY pairs"));
     }
@@ -229,7 +232,10 @@ pub fn plan_arrange(mons: &[Monitor], pairs: &[(String, (i32, i32))]) -> Result<
         if !m.enabled || m.mirror_of.is_some() {
             return Err(Error::new(
                 "usage",
-                format!("{} is off or mirrored; it has no position of its own", m.name),
+                format!(
+                    "{} is off or mirrored; it has no position of its own",
+                    m.name
+                ),
             ));
         }
         if specs.iter().any(|s| s.name == m.name) {
@@ -286,9 +292,12 @@ fn touching(a: &MonitorSpec, b: &MonitorSpec) -> bool {
 }
 
 pub fn parse_pair(s: &str) -> Result<(String, (i32, i32))> {
-    let (name, pos) = s
-        .rsplit_once('=')
-        .ok_or_else(|| Error::new("usage", format!("`{}` is not NAME=XxY", crate::model::sanitize(s))))?;
+    let (name, pos) = s.rsplit_once('=').ok_or_else(|| {
+        Error::new(
+            "usage",
+            format!("`{}` is not NAME=XxY", crate::model::sanitize(s)),
+        )
+    })?;
     Ok((name.to_string(), parse_pos(pos)?))
 }
 
@@ -482,7 +491,9 @@ mod tests {
         assert_eq!((s[0].x, s.len()), (-1920, 1));
         assert!(w.is_empty());
         assert_eq!(
-            plan_arrange(&mons, &[("B-1".into(), (100, 0))]).unwrap_err().code,
+            plan_arrange(&mons, &[("B-1".into(), (100, 0))])
+                .unwrap_err()
+                .code,
             "overlap"
         );
         let (_, w) = plan_arrange(&mons, &[("B-1".into(), (3000, 0))]).unwrap();

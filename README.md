@@ -29,7 +29,7 @@ switchers. stance is built for the bar:
   backlight and external screens over DDC/CI) and audio output in the same
   popup, and in modes.
 - **Hotplug rules** (optional daemon) – plug in the dock, get your desk mode.
-- **Zero idle cost** – the CLI runs per click and exits (~1 ms, < 1 MB
+- **Zero idle cost** – the CLI runs per click and exits (~1 ms, ~1.5 MB
   binary); the optional daemon blocks on Hyprland's event socket (~3 MB RSS).
 
 ## Install
@@ -133,6 +133,25 @@ allow_extras = false   # true: also apply the mode's Hyprland options, power pro
 ```
 
 Enable with `systemctl --user enable --now stance.service`.
+
+### Phone deck (preview)
+
+Turn a phone into a Stream Deck–style remote for stance: buttons for modes,
+night light, brightness, audio output and layouts, with Keep / Revert for
+display changes. The PC side is ready; the Android app is being written.
+
+```sh
+stance deck serve            # or: systemctl --user enable --now stance-deck.service
+stance deck pair             # QR for the app (one phone, 120 s)
+stance deck devices          # paired phones; stance deck unpair NAME
+```
+
+Wi-Fi with QR pairing, or USB with `stance deck serve --loopback` and
+`adb reverse tcp:47800 tcp:47800`. Everything is encrypted (Noise), only
+paired phones get in, and buttons can only run the actions listed in
+`~/.config/stance/deck.toml` – there is no "run a command" button. If you use
+a firewall, allow TCP 47800 from your LAN (`stance doctor` tells you).
+Details and the protocol: [docs/deck.md](docs/deck.md).
 
 ### Screens remember their place
 

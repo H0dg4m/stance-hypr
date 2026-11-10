@@ -112,7 +112,9 @@ pub fn recall(dir: &Path, m: &Monitor, mons: &[Monitor]) -> Option<MonitorSpec> 
     spec.mirror = None;
     let mode_ok = m.modes.is_empty()
         || m.modes.iter().any(|md| {
-            md.width == spec.width && md.height == spec.height && (md.refresh - spec.refresh).abs() < 0.5
+            md.width == spec.width
+                && md.height == spec.height
+                && (md.refresh - spec.refresh).abs() < 0.5
         });
     if !mode_ok || spec.validate().is_err() {
         return None;

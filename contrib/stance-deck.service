@@ -1,0 +1,18 @@
+[Unit]
+Description=stance phone deck server
+Documentation=https://github.com/H0dg4m/stance-hypr
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Add --loopback to accept only USB (adb reverse) connections.
+ExecStart=/usr/bin/stance deck serve
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=32M
+
+[Install]
+WantedBy=graphical-session.target
