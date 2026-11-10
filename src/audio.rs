@@ -17,6 +17,13 @@ pub struct Sink {
     pub name: String,
     pub description: String,
     pub default: bool,
+    /// Short display name: text in `[...]` of the description, else the
+    /// node nick, else the description (at most 40 characters).
+    pub short: String,
+    /// "pci", "usb", "bluetooth", ... (empty when unknown).
+    pub bus: String,
+    /// Device profile, e.g. "Analog Stereo" (empty when unknown).
+    pub profile: String,
     #[serde(rename = "virtual")]
     pub virtual_: bool,
 }
@@ -30,6 +37,29 @@ fn clean(s: &str) -> String {
         .map(|c| if c.is_control() { '?' } else { c })
         .take(160)
         .collect()
+}
+
+/// Pure: picks the short label for a sink.
+fn short_name(description: &str, nick: Option<&str>) -> String {
+    let bracket = description
+        .rfind('[')
+        .and_then(|i| description[i + 1..].strip_suffix(']').map(str::trim))
+        .filter(|b| !b.is_empty());
+    let pick = bracket
+        .or(nick.map(str::trim).filter(|n| !n.is_empty()))
+        .unwrap_or(description)
+        .trim();
+    let s: String = pick
+        .chars()
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect();
+    if s.chars().count() > 40 {
+        let mut t: String = s.chars().take(39).collect();
+        t.push('…');
+        t
+    } else {
+        s
+    }
 }
 
 fn name_of(v: &Value) -> Option<String> {
@@ -81,8 +111,12 @@ pub fn parse_pw_dump(json: &str) -> Result<Vec<Sink>> {
             .or_else(|| p["node.nick"].as_str())
             .unwrap_or(name);
         let virtual_ = p["node.virtual"].as_bool().unwrap_or(false) || p.get("device.id").is_none();
+        let short = short_name(description, p["node.nick"].as_str());
         sinks.push(Sink {
             id,
+            short,
+            bus: clean(p["device.bus"].as_str().unwrap_or("")),
+            profile: clean(p["device.profile.description"].as_str().unwrap_or("")),
             name: clean(name),
             description: clean(description),
             default: default_name.as_deref() == Some(name),
@@ -189,6 +223,23 @@ mod tests {
     }
 
     #[test]
+    fn short_names() {
+        let s = parse_pw_dump(FIX).unwrap();
+        let by = |id| s.iter().find(|x| x.id == id).unwrap();
+        assert_eq!(by(85).short, "EPIC Q40");
+        assert_eq!(by(85).bus, "pci");
+        assert!(!by(85).profile.is_empty());
+        assert_eq!(by(86).short, "Razer Barracuda X 2.4");
+        assert_eq!(by(86).bus, "usb");
+        assert_eq!(by(33).short, "Easy Effects Sink");
+        assert_eq!(by(33).bus, "");
+        assert_eq!(short_name("Long ", None), "Long");
+        assert_eq!(short_name(&"x".repeat(80), None).chars().count(), 40);
+        assert_eq!(short_name("A [b]", Some("nick")), "b");
+        assert_eq!(short_name("A []", Some("nick")), "nick");
+    }
+
+    #[test]
     fn resolves() {
         let s = parse_pw_dump(FIX).unwrap();
         assert_eq!(resolve("88", &s).unwrap().id, 88);
@@ -209,6 +260,9 @@ mod tests {
             name: name.into(),
             description: "x".into(),
             default: false,
+            short: String::new(),
+            bus: String::new(),
+            profile: String::new(),
             virtual_: false,
         };
         let s = vec![mk(1, "a"), mk(2, "ab")];

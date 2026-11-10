@@ -161,7 +161,10 @@ impl<'a> Night<'a> {
         self.remember(k);
         let st = self.status();
         if st.temperature != Some(k) {
-            return Err(Error::new("not_applied", "hyprsunset did not take the temperature"));
+            return Err(Error::new(
+                "not_applied",
+                "hyprsunset did not take the temperature",
+            ));
         }
         Ok(st)
     }
@@ -205,7 +208,10 @@ impl<'a> Night<'a> {
         let tool = crate::tool::find("hyprsunset")
             .ok_or_else(|| Error::new("night", "hyprsunset not found (install hyprsunset)"))?;
         if std::env::var_os("WAYLAND_DISPLAY").is_none() {
-            return Err(Error::new("night", "WAYLAND_DISPLAY is not set; cannot start hyprsunset"));
+            return Err(Error::new(
+                "night",
+                "WAYLAND_DISPLAY is not set; cannot start hyprsunset",
+            ));
         }
         let mut child = Command::new(tool)
             .arg("-t")
@@ -229,7 +235,10 @@ impl<'a> Night<'a> {
                 return Ok(());
             }
         }
-        Err(Error::new("night", "hyprsunset started but does not answer"))
+        Err(Error::new(
+            "night",
+            "hyprsunset started but does not answer",
+        ))
     }
 }
 

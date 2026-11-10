@@ -18,7 +18,12 @@ Quick controls.
   night light and audio output
 - Daemon: hotplug rules with `allow_extras` apply them on a separate thread,
   only when the rule changed the screens
-- Panel: night light, brightness sliders and audio output section
+- Panel redesign: section cards, segmented refresh / scale / night light,
+  optional Material Symbols icons (`StanceTheme.iconFont`), screen map with
+  resolution and focus dot, audio outputs as a list with short names
+  (`short`, `bus`, `profile` in `audio list --json`), open animation
+- Confirm card: countdown readout and bar, Keep · Enter / Revert · Esc
+  buttons (Space no longer confirms)
 - `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
 - External tools run with a hard timeout (kill + reap)
 

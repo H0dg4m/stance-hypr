@@ -67,6 +67,14 @@ LazyLoader {
             focus: true
             Keys.onEscapePressed: root.open = false
 
+            // Fade and slide a few px from the bar; height is not animated
+            // because sections fill in as their data arrives.
+            opacity: 0
+            transform: Translate { id: slide; y: root.bottom ? 6 : -6 }
+            Component.onCompleted: { fadeIn.start(); slideIn.start(); }
+            NumberAnimation { id: fadeIn; target: frame; property: "opacity"; to: 1; duration: root.theme.animMs * 1.5; easing.type: Easing.OutCubic }
+            NumberAnimation { id: slideIn; target: slide; property: "y"; to: 0; duration: root.theme.animMs * 1.5; easing.type: Easing.OutCubic }
+
             StancePanel {
                 id: content
                 x: 12

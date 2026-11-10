@@ -37,7 +37,9 @@
     "node.name": "alsa_output.pci-0000_01_00.1.hdmi-stereo",
     "node.description": "AD107 High Definition Audio Controller Sayısal Stereo (HDMI) [EPIC Q40]",
     "node.nick": "EPIC Q40",
-    "device.id": 74
+    "device.id": 74,
+    "device.bus": "pci",
+    "device.profile.description": "Sayısal Stereo (HDMI)"
    }
   }
  },
@@ -50,7 +52,9 @@
     "node.name": "alsa_output.usb-1532_Razer_Barracuda_X_2.4_O001000007-00.analog-stereo",
     "node.description": "Razer Barracuda X 2.4 Analog Stereo",
     "node.nick": "Razer Barracuda X 2.4",
-    "device.id": 75
+    "device.id": 75,
+    "device.bus": "usb",
+    "device.profile.description": "Analog Stereo"
    }
   }
  },
@@ -63,7 +67,9 @@
     "node.name": "alsa_output.pci-0000_05_00.6.analog-stereo",
     "node.description": "Ryzen HD Audio Controller Analog Stereo",
     "node.nick": "ALC257 Analog",
-    "device.id": 76
+    "device.id": 76,
+    "device.bus": "pci",
+    "device.profile.description": "Analog Stereo"
    }
   }
  }

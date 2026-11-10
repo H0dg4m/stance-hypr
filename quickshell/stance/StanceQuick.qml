@@ -1,81 +1,92 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Night light, brightness and audio output. Read with one `stance quick`
-// call when the panel opens; each part hides itself when unavailable.
-ColumnLayout {
+// Night light, brightness and audio output in one card. Read with a single
+// `stance quick` call when the panel opens; each part hides when unavailable.
+StanceSection {
     id: quick
 
     required property StanceService service
-    required property StanceTheme theme
     readonly property var q: service.quick
     readonly property var night: q ? q.night : null
     readonly property var displays: q ? q.brightness : []
     readonly property var sinks: q ? q.sinks.filter(s => !s.virtual || s.default) : []
+    readonly property bool busy: service.quickBusy
 
-    spacing: 6
-    visible: q !== null && (!!(night && night.available) || displays.length > 0 || sinks.length > 0)
+    icon: "tune"
+    title: "Quick"
+    visible: q !== null && (night !== null || displays.length > 0 || sinks.length > 0)
 
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.topMargin: 4
-        implicitHeight: 1
-        color: quick.theme.border
+    function sinkIcon(s) {
+        if (s.virtual)
+            return "graphic_eq";
+        if (/hdmi|displayport/i.test(s.name + " " + s.profile))
+            return "tv";
+        if (s.bus === "usb" || s.bus === "bluetooth")
+            return "headphones";
+        return "speaker";
     }
 
     // ---- night light ---------------------------------------------------
     RowLayout {
-        visible: !!(quick.night && quick.night.available)
+        visible: quick.night !== null
         Layout.fillWidth: true
-        spacing: 6
-        StanceLabel { theme: quick.theme; text: "Night light"; Layout.fillWidth: true }
-        Repeater {
-            model: [3500, 4500, 5500]
-            delegate: StanceChip {
-                required property int modelData
-                theme: quick.theme
-                label: (modelData / 1000).toFixed(1) + "k"
-                selected: !!(quick.night && quick.night.on && quick.night.temperature === modelData)
-                enabled: !quick.service.quickBusy
-                onClicked: quick.service.runQuick(["night", "set", String(modelData)])
-            }
+        spacing: 8
+        Text {
+            text: "Night"
+            color: quick.theme.textDim
+            font.family: quick.theme.fontFamily
+            font.pixelSize: quick.theme.fontSize - 1
+            Layout.preferredWidth: 78
         }
-        StanceChip {
+        StanceSegmented {
+            Layout.fillWidth: true
             theme: quick.theme
-            label: quick.night && quick.night.on ? "On" : "Off"
-            selected: !!(quick.night && quick.night.on)
-            enabled: !quick.service.quickBusy
-            onClicked: quick.service.runQuick(["night", "toggle"])
+            enabled: !quick.busy
+            model: [{ label: "Off", value: 0 }, { label: "3.5k", value: 3500 }, { label: "4.5k", value: 4500 }, { label: "5.5k", value: 5500 }]
+            current: quick.night && quick.night.on ? quick.night.temperature : 0
+            onPicked: v => quick.service.runQuick(v === 0 ? ["night", "off"] : ["night", "set", String(v)])
         }
     }
 
     // ---- brightness ----------------------------------------------------
-    StanceLabel { theme: quick.theme; visible: quick.displays.length > 0; text: "Brightness" }
     Repeater {
         model: quick.displays
         delegate: RowLayout {
             required property var modelData
             Layout.fillWidth: true
             spacing: 8
-            Text {
-                text: modelData.monitor
-                color: quick.theme.text
-                font.family: quick.theme.fontFamily
-                font.pixelSize: quick.theme.fontSize - 1
-                Layout.preferredWidth: 52
-                elide: Text.ElideRight
+            Row {
+                Layout.preferredWidth: 78
+                spacing: 5
+                StanceIcon {
+                    theme: quick.theme
+                    name: modelData.kind === "backlight" ? "brightness_medium" : "light_mode"
+                    size: quick.theme.fontSize + 3
+                    color: quick.theme.textDim
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: modelData.monitor
+                    color: quick.theme.textDim
+                    font.family: quick.theme.fontFamily
+                    font.pixelSize: quick.theme.fontSize - 1
+                    elide: Text.ElideRight
+                    width: parent.width - x
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
             StanceSlider {
                 id: sl
                 theme: quick.theme
                 Layout.fillWidth: true
                 value: modelData.percent
-                enabled: !quick.service.quickBusy
+                enabled: !quick.busy
                 onCommitted: v => quick.service.runQuick(["brightness", modelData.monitor, String(v)])
             }
             Text {
                 text: Math.round(sl.shown) + "%"
-                color: quick.theme.textDim
+                color: quick.theme.text
                 font.family: quick.theme.fontFamily
                 font.pixelSize: quick.theme.fontSize - 1
                 horizontalAlignment: Text.AlignRight
@@ -84,22 +95,87 @@ ColumnLayout {
         }
     }
 
-    // ---- audio output ----------------------------------------------------
-    StanceLabel { theme: quick.theme; visible: quick.sinks.length > 1; text: "Audio output" }
-    Flow {
+    // ---- audio output --------------------------------------------------
+    ColumnLayout {
         visible: quick.sinks.length > 1
         Layout.fillWidth: true
-        spacing: 6
+        spacing: 4
+        Text {
+            text: "Output"
+            color: quick.theme.textDim
+            font.family: quick.theme.fontFamily
+            font.pixelSize: quick.theme.fontSize - 1
+            Layout.topMargin: 2
+        }
         Repeater {
             model: quick.sinks
-            delegate: StanceChip {
+            delegate: Rectangle {
+                id: row
                 required property var modelData
-                theme: quick.theme
-                label: modelData.description
-                maxWidth: 336
-                selected: modelData.default
-                enabled: !quick.service.quickBusy
-                onClicked: if (!selected) quick.service.runQuick(["audio", "set", String(modelData.id)])
+                readonly property bool on: modelData.default
+                Layout.fillWidth: true
+                implicitHeight: 36
+                radius: quick.theme.chipRadius
+                opacity: quick.busy ? 0.6 : 1
+                color: on ? quick.theme.accentSoft : (ma.containsMouse ? quick.theme.surface : "transparent")
+                Behavior on color { ColorAnimation { duration: quick.theme.animMs } }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 12
+                    spacing: 8
+                    StanceIcon {
+                        theme: quick.theme
+                        name: quick.sinkIcon(row.modelData)
+                        size: quick.theme.fontSize + 3
+                        fill: row.on
+                        color: row.on ? quick.theme.accent : quick.theme.textDim
+                    }
+                    Text {
+                        text: row.modelData.short
+                        color: quick.theme.text
+                        font.family: quick.theme.fontFamily
+                        font.pixelSize: quick.theme.fontSize
+                        font.weight: row.on ? Font.Medium : Font.Normal
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: parent.width * 0.62
+                    }
+                    Text {
+                        text: row.modelData.profile
+                        visible: text !== ""
+                        color: quick.theme.textDim
+                        font.family: quick.theme.fontFamily
+                        font.pixelSize: quick.theme.fontSize - 2
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Item { Layout.fillWidth: !(row.modelData.profile !== "") }
+                    // Radio dot, drawn so it needs no icon font.
+                    Rectangle {
+                        implicitWidth: 16
+                        implicitHeight: 16
+                        radius: 8
+                        color: "transparent"
+                        border.width: 2
+                        border.color: row.on ? quick.theme.accent : quick.theme.textDim
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: quick.theme.accent
+                            visible: row.on
+                        }
+                    }
+                }
+                MouseArea {
+                    id: ma
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (!row.on && !quick.busy) quick.service.runQuick(["audio", "set", String(row.modelData.id)])
+                }
             }
         }
     }

@@ -1,11 +1,12 @@
 import QtQuick
 
-// Small clickable pill used for every action in the panel.
+// Small clickable pill used for actions in the panel, with an optional icon.
 Rectangle {
     id: chip
 
     required property StanceTheme theme
     property string label: ""
+    property string icon: ""
     property bool selected: false
     property bool danger: false
     property string tip: ""
@@ -13,26 +14,43 @@ Rectangle {
     property real maxWidth: 100000
     signal clicked
 
-    implicitWidth: Math.min(labelText.implicitWidth + 20, maxWidth)
-    implicitHeight: 28
+    readonly property bool hasIcon: icon !== "" && theme.iconFont !== ""
+    readonly property color fg: selected ? (danger ? theme.dangerText : theme.accentText) : (danger ? theme.danger : theme.text)
+
+    implicitWidth: Math.min(content.implicitWidth + 20, maxWidth)
+    implicitHeight: 30
     radius: theme.chipRadius
     opacity: enabled ? 1 : 0.45
     color: selected ? (danger ? theme.danger : theme.accent)
                     : (mouse.containsMouse && enabled ? theme.surfaceHover : theme.surface)
-    border.width: selected ? 0 : 1
-    border.color: theme.border
+    scale: mouse.pressed && enabled ? 0.97 : 1
 
-    Behavior on color { ColorAnimation { duration: 90 } }
+    Behavior on color { ColorAnimation { duration: chip.theme.animMs } }
+    Behavior on scale { NumberAnimation { duration: 80 } }
 
-    Text {
-        id: labelText
+    Row {
+        id: content
         anchors.centerIn: parent
-        width: Math.min(implicitWidth, chip.maxWidth - 20)
-        elide: Text.ElideRight
-        text: chip.label
-        color: chip.selected ? (chip.danger ? chip.theme.dangerText : chip.theme.accentText) : chip.theme.text
-        font.family: chip.theme.fontFamily
-        font.pixelSize: chip.theme.fontSize
+        spacing: 6
+        StanceIcon {
+            theme: chip.theme
+            name: chip.icon
+            size: chip.theme.fontSize + 3
+            color: chip.fg
+            fill: chip.selected
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+            id: labelText
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, chip.maxWidth - 20 - (chip.hasIcon ? chip.theme.fontSize + 9 : 0))
+            elide: Text.ElideRight
+            text: chip.label
+            visible: text !== ""
+            color: chip.fg
+            font.family: chip.theme.fontFamily
+            font.pixelSize: chip.theme.fontSize - 1
+        }
     }
 
     MouseArea {

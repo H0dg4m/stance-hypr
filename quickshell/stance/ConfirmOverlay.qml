@@ -44,18 +44,26 @@ LazyLoader {
 
         Rectangle {
             id: card
-            implicitWidth: 360
-            implicitHeight: col.implicitHeight + 32
+            readonly property int secs: Math.ceil(root.service.remainingMs / 1000)
+            readonly property bool urgent: secs <= 3
+            implicitWidth: 380
+            implicitHeight: col.implicitHeight + 40
             radius: root.theme.radius
             color: root.theme.background
             border.width: 1
             border.color: root.theme.border
             focus: true
+            opacity: 0
+            scale: 0.96
+            Component.onCompleted: { opacity = 1; scale = 1; }
+            Behavior on opacity { NumberAnimation { duration: root.theme.animMs; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: root.theme.animMs; easing.type: Easing.OutCubic } }
 
+            // Enter keeps, Escape reverts. Space is deliberately unbound.
             Keys.onPressed: event => {
                 if (!win.armed)
                     return;
-                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     root.service.confirm();
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Escape) {
@@ -67,46 +75,92 @@ LazyLoader {
             ColumnLayout {
                 id: col
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 10
+                anchors.margins: 20
+                spacing: 14
 
-                Text {
-                    text: "Keep these display settings?"
-                    color: root.theme.text
-                    font.family: root.theme.fontFamily
-                    font.pixelSize: root.theme.fontSize + 3
-                    font.weight: Font.DemiBold
-                }
-                Text {
-                    text: (root.service.pending ? root.service.pending.label : "") + " · reverting in " + Math.ceil(root.service.remainingMs / 1000) + " s"
-                    color: root.theme.textDim
-                    font.family: root.theme.fontFamily
-                    font.pixelSize: root.theme.fontSize
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Rectangle {
+                        implicitWidth: 44
+                        implicitHeight: 44
+                        radius: 22
+                        color: root.theme.accentSoft
+                        StanceIcon {
+                            anchors.centerIn: parent
+                            theme: root.theme
+                            name: "monitor"
+                            size: 24
+                            color: root.theme.accent
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            text: "Keep these display settings?"
+                            color: root.theme.text
+                            font.family: root.theme.fontFamily
+                            font.pixelSize: root.theme.fontSize + 3
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: root.service.pending ? root.service.pending.label : ""
+                            color: root.theme.textDim
+                            font.family: root.theme.fontFamily
+                            font.pixelSize: root.theme.fontSize - 1
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+                    }
+                    Text {
+                        text: card.secs + " s"
+                        color: card.urgent ? root.theme.danger : root.theme.accent
+                        font.family: root.theme.fontFamily
+                        font.pixelSize: root.theme.fontSize + 7
+                        font.weight: Font.DemiBold
+                        Behavior on color { ColorAnimation { duration: root.theme.animMs } }
+                    }
                 }
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: 4
-                    radius: 2
+                    implicitHeight: 6
+                    radius: 3
                     color: root.theme.surface
                     Rectangle {
                         width: parent.width * Math.min(1, root.service.remainingMs / root.service.timeoutMs)
                         height: parent.height
-                        radius: 2
-                        color: root.theme.accent
+                        radius: 3
+                        color: card.urgent ? root.theme.danger : root.theme.accent
                     }
+                }
+                Text {
+                    text: "Reverting automatically in " + card.secs + " s if you do nothing."
+                    color: root.theme.textDim
+                    font.family: root.theme.fontFamily
+                    font.pixelSize: root.theme.fontSize - 1
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
-                    Item { Layout.fillWidth: true }
+                    spacing: 10
                     StanceChip {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
                         theme: root.theme
-                        label: "Revert (Esc)"
+                        icon: "undo"
+                        label: "Revert · Esc"
                         onClicked: root.service.revert()
                     }
                     StanceChip {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
                         theme: root.theme
-                        label: "Keep (Enter)"
+                        icon: "check"
+                        label: "Keep · Enter"
                         selected: true
                         onClicked: root.service.confirm()
                     }

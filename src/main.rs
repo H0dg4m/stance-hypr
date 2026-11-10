@@ -482,7 +482,11 @@ fn night_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
         }
         "on" => {
             a.max_pos(3)?;
-            n.on(if a.pos.len() > 2 { Some(kelvin(2)?) } else { None })?
+            n.on(if a.pos.len() > 2 {
+                Some(kelvin(2)?)
+            } else {
+                None
+            })?
         }
         "off" => {
             a.max_pos(2)?;

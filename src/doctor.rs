@@ -318,7 +318,11 @@ fn dir_checks() -> Vec<Check> {
     let bl = crate::tool::find("brightnessctl").is_some();
     out.push(check(
         "brightness",
-        if crate::brightness::available() { Status::Ok } else { Status::Info },
+        if crate::brightness::available() {
+            Status::Ok
+        } else {
+            Status::Info
+        },
         match (bl, ddc) {
             (true, true) => "brightnessctl (laptop panel) and ddcutil (external, DDC/CI) found",
             (true, false) => "brightnessctl found; install ddcutil for external screens",

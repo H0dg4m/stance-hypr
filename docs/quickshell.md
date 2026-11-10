@@ -11,7 +11,8 @@ particular shell:
 | `StanceSlider` | 0–100 slider without QtQuick.Controls; commits on release (DDC/CI writes are slow) |
 | `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right |
 | `ConfirmOverlay` | "Keep these display settings?" card; create one per screen |
-| `StanceTheme` | Colours / radii / font; override to match your shell |
+| `StanceTheme` | Colours / radii / font / spacing; override to match your shell. Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
+| `StanceSection`, `StanceSegmented`, `StanceIcon` | Building blocks: titled card, segmented buttons, icon glyph |
 | `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `confirm`, `revert`) |
 
 Packages install them to `/usr/share/stance/quickshell`; from source use

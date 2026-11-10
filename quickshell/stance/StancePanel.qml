@@ -19,8 +19,8 @@ ColumnLayout {
             || ms.find(m => m.focused) || ms[0] || null;
     }
 
-    spacing: 8
-    width: 360
+    spacing: 10
+    width: 380
 
     function fmtHz(r) { return (Math.round(r * 100) / 100).toString(); }
 
@@ -67,9 +67,21 @@ ColumnLayout {
         return service.monitors.filter(o => o.enabled && !o.mirror_of).length;
     }
 
+    component RowLabel: Text {
+        required property StanceTheme theme
+        color: theme.textDim
+        font.family: theme.fontFamily
+        font.pixelSize: theme.fontSize - 1
+        Layout.preferredWidth: 78
+    }
+
     // ---- header ----------------------------------------------------------
     RowLayout {
         Layout.fillWidth: true
+        Layout.leftMargin: 4
+        Layout.rightMargin: 2
+        spacing: 8
+        StanceIcon { theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
         Text {
             text: "Displays"
             color: panel.theme.text
@@ -78,10 +90,26 @@ ColumnLayout {
             font.weight: Font.DemiBold
             Layout.fillWidth: true
         }
-        StanceLabel {
-            theme: panel.theme
+        Rectangle {
             visible: panel.service.activeMode !== ""
-            text: "mode · " + panel.service.activeMode
+            radius: height / 2
+            color: panel.theme.accentSoft
+            implicitHeight: 24
+            implicitWidth: modeRow.implicitWidth + 16
+            Row {
+                id: modeRow
+                anchors.centerIn: parent
+                spacing: 4
+                StanceIcon { theme: panel.theme; name: "bookmark"; size: panel.theme.fontSize + 1; color: panel.theme.accent; fill: true; anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    text: panel.service.activeMode
+                    color: panel.theme.accent
+                    font.family: panel.theme.fontFamily
+                    font.pixelSize: panel.theme.fontSize - 2
+                    font.weight: Font.Medium
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
         }
     }
 
@@ -89,11 +117,9 @@ ColumnLayout {
     Rectangle {
         id: map
         Layout.fillWidth: true
-        implicitHeight: 110
+        implicitHeight: 124
         radius: panel.theme.radius
-        color: panel.theme.surface
-        border.width: 1
-        border.color: panel.theme.border
+        color: panel.theme.card
 
         readonly property var shown: panel.service.monitors.filter(m => m.enabled && !m.mirror_of)
         readonly property var box: {
@@ -105,36 +131,61 @@ ColumnLayout {
             }
             return shown.length ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 1, h: 1 };
         }
-        readonly property real k: Math.min((width - 24) / box.w, (height - 24) / box.h)
+        readonly property real k: Math.min((width - 32) / box.w, (height - 32) / box.h)
 
         Repeater {
             model: map.shown
             delegate: Rectangle {
+                id: scr
                 required property var modelData
                 readonly property var l: panel.logical(modelData)
                 readonly property bool isSel: panel.selected && panel.selected.name === modelData.name
                 x: (map.width - map.box.w * map.k) / 2 + (modelData.x - map.box.x) * map.k
                 y: (map.height - map.box.h * map.k) / 2 + (modelData.y - map.box.y) * map.k
-                width: Math.max(8, l.w * map.k - 3)
-                height: Math.max(8, l.h * map.k - 3)
-                radius: 4
-                color: isSel ? panel.theme.accent : panel.theme.surfaceHover
-                border.width: 1
-                border.color: isSel ? panel.theme.accent : panel.theme.border
-                Text {
+                width: Math.max(10, l.w * map.k - 4)
+                height: Math.max(10, l.h * map.k - 4)
+                radius: Math.min(8, panel.theme.chipRadius)
+                color: isSel ? panel.theme.accent : (hover.containsMouse ? panel.theme.surfaceHover : panel.theme.surface)
+                Behavior on color { ColorAnimation { duration: panel.theme.animMs } }
+                Column {
                     anchors.centerIn: parent
-                    width: parent.width - 4
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideRight
-                    text: parent.modelData.name
-                    color: parent.isSel ? panel.theme.accentText : panel.theme.text
-                    font.family: panel.theme.fontFamily
-                    font.pixelSize: panel.theme.fontSize - 2
+                    width: parent.width - 8
+                    spacing: 1
+                    Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        text: scr.modelData.name
+                        color: scr.isSel ? panel.theme.accentText : panel.theme.text
+                        font.family: panel.theme.fontFamily
+                        font.pixelSize: panel.theme.fontSize - 2
+                        font.weight: Font.DemiBold
+                    }
+                    Text {
+                        width: parent.width
+                        visible: scr.height > 40
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        text: scr.modelData.width + "×" + scr.modelData.height + " · " + Math.round(scr.modelData.refresh) + " Hz"
+                        color: scr.isSel ? panel.theme.accentText : panel.theme.textDim
+                        opacity: 0.85
+                        font.family: panel.theme.fontFamily
+                        font.pixelSize: panel.theme.fontSize - 4
+                    }
+                }
+                // The screen the mouse/keyboard is on.
+                Rectangle {
+                    visible: scr.modelData.focused
+                    width: 6; height: 6; radius: 3
+                    anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 5
+                    color: scr.isSel ? panel.theme.accentText : panel.theme.accent
                 }
                 MouseArea {
+                    id: hover
                     anchors.fill: parent
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: panel.selectedName = parent.modelData.name
+                    onClicked: panel.selectedName = scr.modelData.name
                 }
             }
         }
@@ -150,7 +201,8 @@ ColumnLayout {
             delegate: StanceChip {
                 required property var modelData
                 theme: panel.theme
-                label: modelData.name + (modelData.enabled ? " (mirror)" : " (off)")
+                icon: modelData.enabled ? "content_copy" : "desktop_access_disabled"
+                label: modelData.name + (modelData.enabled ? " · mirror" : " · off")
                 selected: panel.selected && panel.selected.name === modelData.name
                 onClicked: panel.selectedName = modelData.name
             }
@@ -158,21 +210,23 @@ ColumnLayout {
     }
 
     // ---- selected screen -------------------------------------------------
-    ColumnLayout {
+    StanceSection {
         id: detail
         visible: panel.selected !== null
         Layout.fillWidth: true
-        spacing: 6
+        theme: panel.theme
         readonly property var m: panel.selected
         readonly property var ref: m ? panel.others(m)[0] : null
         readonly property bool active: m && m.enabled && !m.mirror_of
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: 4
+            spacing: 8
+            StanceIcon { theme: panel.theme; name: "monitor"; color: panel.theme.textDim }
             ColumnLayout {
                 spacing: 0
-                Layout.maximumWidth: 230
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1000
                 Text {
                     text: detail.m ? detail.m.name : ""
                     color: panel.theme.text
@@ -180,19 +234,21 @@ ColumnLayout {
                     font.pixelSize: panel.theme.fontSize + 1
                     font.weight: Font.DemiBold
                 }
-                StanceLabel {
-                    theme: panel.theme
+                Text {
                     text: detail.m ? detail.m.description : ""
                     visible: text !== ""
                     elide: Text.ElideRight
+                    color: panel.theme.textDim
+                    font.family: panel.theme.fontFamily
+                    font.pixelSize: panel.theme.fontSize - 2
                     Layout.fillWidth: true
                 }
             }
-            Item { Layout.fillWidth: true }
             StanceChip {
                 theme: panel.theme
+                icon: "power_settings_new"
                 label: detail.m && detail.m.enabled ? "Turn off" : "Turn on"
-                danger: true
+                danger: detail.m && detail.m.enabled
                 enabled: detail.m && !panel.service.busy && !(detail.active && panel.activeCount() <= 1)
                 onClicked: panel.service.run(["set", detail.m.name, detail.m.enabled ? "--off" : "--on"])
             }
@@ -201,96 +257,110 @@ ColumnLayout {
         StanceChip {
             visible: detail.m && detail.m.enabled && !!detail.m.mirror_of
             theme: panel.theme
+            icon: "close"
             label: "Stop mirroring " + (detail.m && detail.m.mirror_of ? detail.m.mirror_of : "")
             enabled: !panel.service.busy
             onClicked: panel.service.run(["layout", "right-of", detail.m.name, detail.m.mirror_of])
         }
 
-        StanceLabel { theme: panel.theme; visible: detail.active; text: "Refresh rate" }
-        Flow {
+        RowLayout {
             visible: detail.active
             Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: detail.active ? panel.refreshRates(detail.m) : []
-                delegate: StanceChip {
-                    required property var modelData
-                    theme: panel.theme
-                    label: panel.fmtHz(modelData) + " Hz"
-                    selected: Math.abs(modelData - detail.m.refresh) < 0.5
-                    enabled: !panel.service.busy
-                    onClicked: if (!selected) panel.service.run(["set", detail.m.name, "--hz", String(modelData)])
-                }
-            }
-        }
-
-        StanceLabel { theme: panel.theme; visible: detail.active; text: "Resolution" }
-        Flow {
-            visible: detail.active
-            Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: detail.active ? panel.resolutions(detail.m) : []
-                delegate: StanceChip {
-                    required property var modelData
-                    theme: panel.theme
-                    label: modelData.w + "×" + modelData.h
-                    selected: modelData.w === detail.m.width && modelData.h === detail.m.height
-                    enabled: !panel.service.busy
-                    onClicked: if (!selected) panel.service.run(["set", detail.m.name, "--res", modelData.w + "x" + modelData.h])
-                }
-            }
-        }
-
-        StanceLabel { theme: panel.theme; visible: detail.active; text: "Scale" }
-        Flow {
-            visible: detail.active
-            Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: detail.active ? [1, 1.25, 1.5, 2] : []
-                delegate: StanceChip {
-                    required property var modelData
-                    theme: panel.theme
-                    label: modelData + "×"
-                    selected: Math.abs(modelData - detail.m.scale) < 0.05
-                    enabled: !panel.service.busy
-                    onClicked: if (!selected) panel.service.run(["set", detail.m.name, "--scale", String(modelData)])
-                }
-            }
-        }
-
-        StanceLabel {
-
-            theme: panel.theme
-            visible: detail.active && !!detail.ref
-            text: "Arrange relative to " + (detail.ref ? detail.ref.name : "")
-        }
-        Flow {
-            visible: detail.active && !!detail.ref
-            Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: [
-                    { label: "Left", args: ["layout", "left-of"] },
-                    { label: "Right", args: ["layout", "right-of"] },
-                    { label: "Above", args: ["layout", "above"] },
-                    { label: "Mirror", args: ["layout", "mirror"] }
-                ]
-                delegate: StanceChip {
-                    required property var modelData
-                    theme: panel.theme
-                    label: modelData.label
-                    enabled: !panel.service.busy
-                    onClicked: panel.service.run(modelData.args.concat([detail.m.name, detail.ref.name]))
-                }
-            }
-            StanceChip {
+            RowLabel { theme: panel.theme; text: "Refresh" }
+            StanceSegmented {
+                Layout.fillWidth: true
                 theme: panel.theme
-                label: "Only this one"
                 enabled: !panel.service.busy
-                onClicked: panel.service.run(["layout", "single", detail.m.name])
+                model: detail.active ? panel.refreshRates(detail.m).map(r => ({ label: panel.fmtHz(r), value: r })) : []
+                current: detail.m ? detail.m.refresh : null
+                same: (a, b) => Math.abs(a - b) < 0.5
+                onPicked: v => panel.service.run(["set", detail.m.name, "--hz", String(v)])
             }
+            Text {
+                text: "Hz"
+                color: panel.theme.textDim
+                font.family: panel.theme.fontFamily
+                font.pixelSize: panel.theme.fontSize - 2
+            }
+        }
+
+        RowLayout {
+            visible: detail.active
+            Layout.fillWidth: true
+            RowLabel { theme: panel.theme; text: "Scale" }
+            StanceSegmented {
+                Layout.fillWidth: true
+                theme: panel.theme
+                enabled: !panel.service.busy
+                model: [1, 1.25, 1.5, 2].map(v => ({ label: v + "×", value: v }))
+                current: detail.m ? detail.m.scale : null
+                same: (a, b) => Math.abs(a - b) < 0.05
+                onPicked: v => panel.service.run(["set", detail.m.name, "--scale", String(v)])
+            }
+        }
+
+        RowLayout {
+            visible: detail.active
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
+            RowLabel { theme: panel.theme; text: "Resolution"; Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
+                Repeater {
+                    model: detail.active ? panel.resolutions(detail.m) : []
+                    delegate: StanceChip {
+                        required property var modelData
+                        theme: panel.theme
+                        label: modelData.w + "×" + modelData.h
+                        selected: modelData.w === detail.m.width && modelData.h === detail.m.height
+                        enabled: !panel.service.busy
+                        onClicked: if (!selected) panel.service.run(["set", detail.m.name, "--res", modelData.w + "x" + modelData.h])
+                    }
+                }
+            }
+        }
+
+        RowLayout {
+            visible: detail.active && !!detail.ref
+            Layout.fillWidth: true
+            RowLabel { theme: panel.theme; text: "Place"; Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
+                Repeater {
+                    model: [
+                        { label: "Left", icon: "west", args: ["layout", "left-of"] },
+                        { label: "Right", icon: "east", args: ["layout", "right-of"] },
+                        { label: "Above", icon: "north", args: ["layout", "above"] },
+                        { label: "Mirror", icon: "content_copy", args: ["layout", "mirror"] }
+                    ]
+                    delegate: StanceChip {
+                        required property var modelData
+                        theme: panel.theme
+                        icon: modelData.icon
+                        label: modelData.label
+                        enabled: !panel.service.busy
+                        onClicked: panel.service.run(modelData.args.concat([detail.m.name, detail.ref.name]))
+                    }
+                }
+                StanceChip {
+                    theme: panel.theme
+                    icon: "crop_square"
+                    label: "Only this"
+                    enabled: !panel.service.busy
+                    onClicked: panel.service.run(["layout", "single", detail.m.name])
+                }
+            }
+        }
+        Text {
+            visible: detail.active && !!detail.ref
+            text: "relative to " + (detail.ref ? detail.ref.name : "")
+            color: panel.theme.textDim
+            font.family: panel.theme.fontFamily
+            font.pixelSize: panel.theme.fontSize - 3
+            Layout.leftMargin: 84
+            Layout.topMargin: -4
         }
     }
 
@@ -301,51 +371,68 @@ ColumnLayout {
     }
 
     // ---- modes -----------------------------------------------------------
-    Rectangle {
+    StanceSection {
         Layout.fillWidth: true
-        Layout.topMargin: 4
-        implicitHeight: 1
-        color: panel.theme.border
-    }
-    StanceLabel { theme: panel.theme; text: "Modes" }
-    Flow {
-        visible: panel.service.modes.length > 0
-        Layout.fillWidth: true
-        spacing: 6
-        Repeater {
-            model: panel.service.modes
-            delegate: StanceChip {
-                required property var modelData
-                theme: panel.theme
-                label: modelData.name
-                selected: modelData.name === panel.service.activeMode
-                enabled: !panel.service.busy && !modelData.error
-                onClicked: panel.service.applyMode(modelData.name)
+        theme: panel.theme
+        icon: "bookmarks"
+        title: "Modes"
+        Flow {
+            visible: panel.service.modes.length > 0
+            Layout.fillWidth: true
+            spacing: 6
+            Repeater {
+                model: panel.service.modes
+                delegate: StanceChip {
+                    required property var modelData
+                    theme: panel.theme
+                    icon: modelData.error ? "error" : "bookmark"
+                    label: modelData.name
+                    selected: modelData.name === panel.service.activeMode
+                    enabled: !panel.service.busy && !modelData.error
+                    onClicked: panel.service.applyMode(modelData.name)
+                }
             }
         }
-    }
-    StanceLabel {
-        theme: panel.theme
-        visible: panel.service.modes.length === 0
-        text: "No modes yet. Save the current setup with: stance mode save <name>"
-        wrapMode: Text.Wrap
-        Layout.fillWidth: true
+        Text {
+            visible: panel.service.modes.length === 0
+            text: "None yet · <font face='monospace'>stance mode save NAME</font>"
+            textFormat: Text.StyledText
+            color: panel.theme.textDim
+            font.family: panel.theme.fontFamily
+            font.pixelSize: panel.theme.fontSize - 2
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+        }
     }
 
-    Text {
-        visible: text !== ""
-        text: panel.service.lastError
-        color: panel.theme.danger
-        font.family: panel.theme.fontFamily
-        font.pixelSize: panel.theme.fontSize - 1
-        wrapMode: Text.Wrap
+    // ---- messages --------------------------------------------------------
+    Rectangle {
+        visible: panel.service.lastError !== "" || panel.service.lastNote !== ""
         Layout.fillWidth: true
-    }
-    StanceLabel {
-        theme: panel.theme
-        visible: text !== "" && panel.service.lastError === ""
-        text: panel.service.lastNote
-        wrapMode: Text.Wrap
-        Layout.fillWidth: true
+        implicitHeight: msg.implicitHeight + 16
+        radius: panel.theme.chipRadius
+        readonly property bool isError: panel.service.lastError !== ""
+        color: isError ? Qt.rgba(panel.theme.danger.r, panel.theme.danger.g, panel.theme.danger.b, 0.14) : panel.theme.card
+        RowLayout {
+            id: msg
+            x: 10; y: 8
+            width: parent.width - 20
+            spacing: 8
+            StanceIcon {
+                theme: panel.theme
+                name: parent.parent.isError ? "error" : "info"
+                size: panel.theme.fontSize + 2
+                color: parent.parent.isError ? panel.theme.danger : panel.theme.textDim
+                Layout.alignment: Qt.AlignTop
+            }
+            Text {
+                text: panel.service.lastError || panel.service.lastNote
+                color: parent.parent.isError ? panel.theme.danger : panel.theme.textDim
+                font.family: panel.theme.fontFamily
+                font.pixelSize: panel.theme.fontSize - 2
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
     }
 }

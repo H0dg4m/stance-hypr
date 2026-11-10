@@ -14,12 +14,13 @@ Item {
     // After a commit, keep showing the new value until the re-read arrives.
     property bool awaiting: false
     readonly property real shown: dragging || awaiting ? dragValue : value
+    readonly property real handleSize: mouse.pressed || mouse.containsMouse ? 20 : 16
     signal committed(real value)
 
     onValueChanged: awaiting = false
     onCommitted: { awaiting = true; holdTimer.restart(); }
 
-    implicitHeight: 20
+    implicitHeight: 24
     implicitWidth: 160
     opacity: enabled ? 1 : 0.45
 
@@ -32,31 +33,32 @@ Item {
         id: track
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width
-        height: 6
-        radius: 3
+        height: 8
+        radius: 4
         color: slider.theme.surface
-        border.width: 1
-        border.color: slider.theme.border
         Rectangle {
-            width: Math.max(6, track.width * (slider.shown - slider.from) / (slider.to - slider.from))
+            width: Math.max(8, track.width * (slider.shown - slider.from) / (slider.to - slider.from))
             height: parent.height
-            radius: 3
+            radius: 4
             color: slider.theme.accent
         }
     }
     Rectangle {
-        width: 14
-        height: 14
-        radius: 7
+        width: handleSize
+        height: handleSize
+        radius: handleSize / 2
         anchors.verticalCenter: parent.verticalCenter
         x: Math.max(0, Math.min(slider.width - width, track.width * (slider.shown - slider.from) / (slider.to - slider.from) - width / 2))
         color: slider.theme.accent
-        border.width: 2
-        border.color: slider.theme.background
+        border.width: 3
+        border.color: slider.theme.card
+        Behavior on width { NumberAnimation { duration: 80 } }
+        Behavior on height { NumberAnimation { duration: 80 } }
     }
     MouseArea {
         id: mouse
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: slider.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onPressed: e => slider.dragValue = slider.valueAt(e.x)
         onPositionChanged: e => { if (pressed) slider.dragValue = slider.valueAt(e.x); }

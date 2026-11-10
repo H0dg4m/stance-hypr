@@ -168,7 +168,8 @@ pub fn parse_mode(text: &str) -> Result<ModeFile> {
     }
     workspace_ids(&m.workspaces)?;
     if let Some(n) = m.night_light {
-        n.check().map_err(|e| Error::new("bad_mode", format!("night_light: {}", e.message)))?;
+        n.check()
+            .map_err(|e| Error::new("bad_mode", format!("night_light: {}", e.message)))?;
     }
     if let Some(a) = &m.audio_sink {
         crate::audio::validate_match(a)
@@ -414,7 +415,11 @@ pub fn apply_quick(q: &Quick, night: Option<&crate::night::Night>) -> (Vec<Strin
         match crate::brightness::set(mon, crate::brightness::Change::Abs(*pct)) {
             Ok(r) => {
                 changed.push(format!("brightness {mon} {}%", r.display.percent));
-                warnings.extend(r.warnings.into_iter().map(|w| format!("brightness {mon}: {w}")));
+                warnings.extend(
+                    r.warnings
+                        .into_iter()
+                        .map(|w| format!("brightness {mon}: {w}")),
+                );
             }
             Err(e) => warnings.push(format!("brightness {mon}: {}", e.message)),
         }
