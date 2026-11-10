@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 
 // Panel settings page: what the panel shows, how long a display change waits
 // for confirmation, hotplug rules and a short health summary.
@@ -508,6 +509,20 @@ ColumnLayout {
                 selectedTextColor: page.theme.accentText
                 font.family: "monospace"
                 font.pixelSize: page.theme.fontSize - 5
+            }
+            // The panel closes when focus moves to a terminal, so typing the
+            // code by hand is not an option: copy a ready command instead.
+            // (Single use and 120 s, so a clipboard history copy is harmless.)
+            StanceChip {
+                Layout.alignment: Qt.AlignHCenter
+                theme: page.theme
+                icon: copied ? "check" : "content_copy"
+                label: copied ? "Copied — paste in a terminal" : "Copy test command"
+                property bool copied: false
+                onClicked: {
+                    Quickshell.clipboardText = "stance deck test pair '" + page.pair.payload + "'";
+                    copied = true;
+                }
             }
             Dim {
                 textFormat: Text.PlainText
