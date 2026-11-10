@@ -29,6 +29,7 @@ ColumnLayout {
     property bool addingRule: false
     property var newMonitors: []
     property string newMode: ""
+    property string newPower: ""      // "" | "ac" | "battery"
     property bool newExtras: false
 
     // Stable match string for a connected monitor: its description when that
@@ -59,6 +60,7 @@ ColumnLayout {
                 newMonitors = [];
                 newMode = "";
                 newExtras = false;
+                newPower = "";
             } else {
                 rulesError = r && r.error ? r.error.message : "stance returned no output";
             }
@@ -68,7 +70,10 @@ ColumnLayout {
     function addRule() {
         if (newMonitors.length === 0 || newMode === "")
             return;
-        saveRules(rules.concat([{ monitors: newMonitors, mode: newMode, allow_extras: newExtras }]));
+        const r = { monitors: newMonitors, mode: newMode, allow_extras: newExtras };
+        if (newPower !== "")
+            r.on_power = newPower;
+        saveRules(rules.concat([r]));
     }
 
     function removeRule(i) {
@@ -313,7 +318,9 @@ ColumnLayout {
                             Layout.fillWidth: true
                         }
                         Dim {
-                            text: "→ " + rrow.modelData.mode + (rrow.modelData.allow_extras ? " · with night light, audio, brightness" : "")
+                            text: "→ " + rrow.modelData.mode
+                                + (rrow.modelData.on_power ? " · on " + rrow.modelData.on_power : "")
+                                + (rrow.modelData.allow_extras ? " · with night light, audio, brightness" : "")
                             wrapMode: Text.Wrap
                             Layout.fillWidth: true
                             font.pixelSize: page.theme.fontSize - 2
@@ -375,6 +382,14 @@ ColumnLayout {
                         onClicked: page.newMode = modelData.name
                     }
                 }
+            }
+            Dim { text: "Power source" }
+            StanceSegmented {
+                Layout.fillWidth: true
+                theme: page.theme
+                model: [{ label: "Any", value: "" }, { label: "Charger", value: "ac" }, { label: "Battery", value: "battery" }]
+                current: page.newPower
+                onPicked: v => page.newPower = v
             }
             RowLayout {
                 Layout.fillWidth: true
