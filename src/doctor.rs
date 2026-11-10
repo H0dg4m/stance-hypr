@@ -343,11 +343,96 @@ fn dir_checks() -> Vec<Check> {
         },
     ));
     out.push(deck_check());
+    out.extend(shell_checks());
     if ddc && !Path::new("/dev/i2c-0").exists() {
         out.push(check(
             "i2c",
             Status::Info,
             "no /dev/i2c-* devices: load the i2c-dev module for DDC/CI brightness",
+        ));
+    }
+    out
+}
+
+/// end-4 illogical-impulse style shells: is the stance button installed?
+/// Prints the exact commands when not; never edits anything itself.
+fn shell_checks() -> Vec<Check> {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return vec![];
+    };
+    let qs = home.join(".config/quickshell");
+    let Ok(rd) = fs::read_dir(&qs) else {
+        return vec![];
+    };
+    // Package layout vs. a source checkout.
+    let (comp, integ) = if Path::new("/usr/share/stance/quickshell").is_dir() {
+        (
+            "/usr/share/stance/quickshell",
+            "/usr/share/stance/integrations",
+        )
+    } else {
+        (
+            "<stance checkout>/quickshell/stance",
+            "<stance checkout>/quickshell/integrations",
+        )
+    };
+    let mut out = Vec::new();
+    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    dirs.sort();
+    for dir in dirs {
+        let bar = dir.join("modules/ii/bar");
+        let util = bar.join("UtilButtons.qml");
+        let Ok(text) = fs::read_to_string(&util) else {
+            continue;
+        };
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let flavor = if name.contains("end4") || text.contains("Flow {") {
+            "end4-pC"
+        } else {
+            "ii"
+        };
+        let linked =
+            dir.join("modules/stance").exists() && bar.join("StanceUtilButton.qml").exists();
+        let used = text.contains("StanceUtilButton");
+        if linked && used {
+            out.push(check(
+                "shell",
+                Status::Ok,
+                format!("{name}: stance button installed"),
+            ));
+            continue;
+        }
+        let line = if flavor == "end4-pC" {
+            "StanceUtilButton { contentColor: root.contentColor }"
+        } else {
+            "StanceUtilButton {}"
+        };
+        let mut steps = Vec::new();
+        if !dir.join("modules/stance").exists() {
+            steps.push(format!("ln -s {comp} {}/modules/stance", dir.display()));
+        }
+        if !bar.join("StanceUtilButton.qml").exists() {
+            steps.push(format!(
+                "ln -s {integ}/{flavor}/StanceUtilButton.qml {}/",
+                bar.display()
+            ));
+        }
+        if !used {
+            steps.push(format!(
+                "add `{line}` as the first child in {}",
+                util.display()
+            ));
+        }
+        out.push(check(
+            "shell",
+            Status::Info,
+            format!(
+                "{name} ({flavor}) has no stance button yet: {}",
+                steps.join("; ")
+            ),
         ));
     }
     out
