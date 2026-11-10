@@ -1,9 +1,11 @@
 # stance
 
-Hyprland için bar öncelikli ekran ayarları ve **modlar**. Yenileme hızını,
-çözünürlüğü, ölçeği, konumu ya da yerleşimi iki tıkla değiştir; kendi modların
-(oyun, çalışma, tek ekran…) arasında geç. Siyah ekranda kalmazsın: her
-değişiklik onaylanmazsa kendiliğinden geri döner.
+**Hyprland için seni siyah ekranda bırakmayan ekran ayarları.** Her
+değişiklik onaylanmazsa kendiliğinden geri döner, bar çökse bile. Yenileme
+hızını, çözünürlüğü, ölçeği, konumu ya da yerleşimi bardan iki tıkla değiştir,
+ekranları haritada sürükle, kendi **modların** (oyun, çalışma, tek ekran…)
+arasında geç: bardan, tak-çalıştır kuralıyla, dizüstü kapağıyla, şarj
+takılınca ya da telefonundan.
 
 [English](README.md)
 
@@ -84,6 +86,15 @@ Bunlar ekran değişikliğinden sonra uygulanır, 12 sn geri alma kapsamında de
 (ekranı karartamazlar); biri başarısız olursa (kulaklık takılı değil, DDC/CI yok)
 mod yine uygulanır ve not düşülür. `--no-extras` bunları atlar.
 
+### Modlar ve kurallar
+
+Mod: `~/.config/stance/modes/<ad>.toml` (ekranlar, çalışma alanları, beyaz
+listeli Hyprland ayarları, güç profili, gece ışığı, ses çıkışı, parlaklık).
+Kurallar: `~/.config/stance/rules.toml`; bağlı ekran kümesi kuralınkine tam
+eşitse mod uygulanır, hiçbiri eşleşmezse hiçbir şey olmaz. İkisi de panelden
+düzenlenebilir (Ayarlar ve Modlar). Ayrıntılı örnekler İngilizce README'de ve
+[`examples/`](examples) klasöründe.
+
 ### Hızlı ayarlar
 
 - **Gece ışığı** hyprsunset soketiyle konuşur. Zaten çalışan bir hyprsunset varsa
@@ -160,6 +171,17 @@ kez `require("stance-monitors")` ekle (nwg-displays kullanıyorsan onun
   symlink hedefleri reddedilir. Durum 0700 dizinde tutulur.
 - Bekleyen değişiklik Hyprland oturumuna bağlıdır; eski oturumun anlık
   görüntüsü yeni oturuma uygulanmaz. Root gerekmez.
+
+## Geliştirme
+
+```sh
+cargo test                    # birim testleri (Noise test vektörleri dahil)
+tests/nested.sh lua           # atılabilir iç içe Hyprland'de uçtan uca
+cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/debug/stance
+                              # telefon tarafı: vektörler + deck serve ile canlı uyum
+```
+
+Yayın adımları: [RELEASE.md](RELEASE.md).
 
 ## Lisans
 

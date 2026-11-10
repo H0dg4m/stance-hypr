@@ -1,9 +1,11 @@
 # stance
 
-Bar-first display settings and **modes** for Hyprland. Change refresh rate,
-resolution, scale, position or layout in two clicks, switch between your own
-modes (gaming, work, single screen…), and never get stuck on a black screen:
-every change reverts on its own unless you confirm it.
+**Display settings for Hyprland that can't strand you on a black screen.**
+Every change reverts on its own unless you confirm it, even if your bar
+crashes. Change refresh rate, resolution, scale, position or layout from the
+bar in two clicks, drag screens on a map, and switch between your own
+**modes** (gaming, work, single screen…) – from the bar, a hotplug rule, the
+laptop lid, the charger, or your phone.
 
 [Türkçe](README.tr.md)
 
@@ -224,9 +226,13 @@ if you use it. stance never edits your main config.
 ## Development
 
 ```sh
-cargo test                    # unit tests
+cargo test                    # unit tests (incl. Noise test vectors)
 tests/nested.sh lua           # end-to-end in a throwaway nested Hyprland
+cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/debug/stance
+                              # phone side: vectors + live interop with deck serve
 ```
+
+Release steps: [RELEASE.md](RELEASE.md).
 
 ## License
 

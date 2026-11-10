@@ -2,53 +2,64 @@
 
 ## 0.2.0 – unreleased
 
-Quick controls.
+The display tool that can't strand you on a black screen, now with quick
+controls, a full panel and a phone remote.
 
-- `night`: night light through hyprsunset's socket; uses a running hyprsunset
-  (keeps its gamma, "off" = neutral 6000 K) or starts one; remembers the last
-  warm temperature for `on` / `toggle`
-- `brightness`: laptop backlight (sysfs + brightnessctl) and external screens
-  over DDC/CI (ddcutil, connector → bus from ddcutil's DRM line, cached);
-  relative `+N` / `-N`, floors of 5 % / 1 % so a screen never goes dark
-- `audio`: list outputs from `pw-dump`, switch with `wpctl set-default`;
-  ambiguous matches are errors
-- `quick`: everything above in one JSON call for bars
-- Modes: `night_light`, `audio_sink`, `[brightness]` (extras, outside the
-  revert snapshot, failures are notes); `mode save --with-quick` also records
-  night light and audio output
-- Daemon: hotplug rules with `allow_extras` apply them on a separate thread,
-  only when the rule changed the screens
-- Panel redesign: section cards, segmented refresh / scale / night light,
-  optional Material Symbols icons (`StanceTheme.iconFont`), screen map with
-  resolution and focus dot, audio outputs as a list with short names
-  (`short`, `bus`, `profile` in `audio list --json`), open animation
-- Confirm card: countdown readout and bar, Keep · Enter / Revert · Esc
-  buttons (Space no longer confirms)
-- Screens remember where they were: turning one off and on (or re-plugging
-  it, with the daemon running and no rule matching) puts it back in its last
-  position, mode and scale (`memory.json` in the state dir; identical
-  screens without serial are skipped)
-- `arrange NAME=XxY …`: move several screens in one confirmable change;
+### Safety
+- Screen-changing commands refuse to run on a Hyprland newer than the tested
+  versions unless `--force-version` is given (`STANCE_FORCE_VERSION=1` for
+  the daemon); reading, keep and revert always work
+- Every `--json` reply carries `"schema": 1` (see docs/protocol.md)
+- External tools run by absolute path with a hard timeout (kill + reap)
+
+### Displays
+- Screens remember their place: turning one off and on, opening the lid or
+  re-plugging it (daemon, no matching rule) puts it back in its last
+  position, mode and scale (`memory.json`; identical screens without a
+  serial are skipped)
+- `arrange NAME=XxY …`: several positions in one confirmable change;
   overlaps are refused, screens that touch nothing are reported
-- Panel: drag screens on the map (edges snap), "identify" shows each
-  screen's name on it, settings page (sections to show, confirm window,
-  compact mode, hotplug rules editor, health from `doctor`), add-mode form
-  and a mode editor (`mode put NAME --data JSON`, `rules [show|put]`)
-- `status` reports whether the daemon is running
-- Phone deck (preview, PC side): `deck serve` (Wi-Fi, or `--loopback` for
-  USB through `adb reverse`), `deck pair` (QR, one phone, 120 s),
-  `deck devices` / `unpair`, `deck test` reference client; buttons from
-  `deck.toml` run whitelisted stance actions only (modes, night light,
-  brightness, audio, layout, keep / revert). Noise IK sessions, XXpsk3
-  pairing, rate limits; see docs/deck.md. The Android app comes next.
-- `lid close|open` for Hyprland's lid switch (panel off only when another
-  screen is on; back at its remembered place); hotplug rules gain
-  `on_power = "ac" | "battery"` and the daemon re-checks them when the
-  charger is plugged in or out (kernel uevents, no D-Bus); `power` shows the
-  source and matching rule
-- `waybar`: a JSON status line for a Waybar custom module (contrib/waybar)
-- `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
-- External tools run with a hard timeout (kill + reap)
+- `lid close|open` for Hyprland's lid switch: panel off only when another
+  screen is on, no confirm timer
+- `status` reports whether the daemon runs; `power` shows AC / battery
+
+### Modes and rules
+- Modes gain `night_light`, `audio_sink` and `[brightness]` (extras, outside
+  the revert snapshot, failures are notes); `mode save --with-quick`
+- `mode put NAME --data JSON`, `rules [show|put]` for editors
+- Rules gain `on_power = "ac" | "battery"`; the daemon re-checks them when
+  the charger is plugged in or out (kernel uevents, no D-Bus); quick
+  settings from rules run on their own thread, only when screens changed
+
+### Quick controls
+- `night` (hyprsunset socket; keeps your gamma, "off" = 6000 K, starts one
+  if needed), `brightness` (backlight + DDC/CI, floors so a screen never
+  goes dark), `audio` (pw-dump + wpctl, ambiguous matches are errors),
+  `quick` (all in one JSON call)
+
+### Panel
+- Redesign: section cards, segmented controls, optional Material Symbols
+  icons (`StanceTheme.iconFont`), open animation
+- Map: drag screens (edges snap), resolution and focus dot, "identify"
+- Settings page: sections to show, confirm window, compact mode, hotplug
+  rules editor (with power source), phone pairing, health from `doctor`
+- Modes: add from the current setup, full mode editor
+- Confirm card: countdown, Keep · Enter / Revert · Esc (Space removed)
+
+### Phone deck (preview)
+- `deck serve` (Wi-Fi, or `--loopback` for USB via `adb reverse`), `deck
+  pair` (QR, one phone, 120 s, desktop notice on pairing), `deck status`,
+  `deck devices` (last seen), `deck unpair`, `deck test` reference client
+- Noise IK sessions, XXpsk3 pairing; limits count failures only, so a flood
+  never locks out a paired phone; buttons from `deck.toml` run whitelisted
+  stance actions only; protocol and test vectors in docs/protocol.md
+
+### Integrations and packaging
+- `waybar` status line and contrib/waybar module
+- `doctor`: hyprsunset, brightness tools, audio tools, deck server and ufw,
+  and the exact install steps for ii / end4-pC shells
+- PKGBUILDs for `stance-hypr` and `stance-hypr-git`, user units for the
+  daemon and the deck server
 
 ## 0.1.0 – 2026-11-10
 
