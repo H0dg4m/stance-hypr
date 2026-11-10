@@ -21,6 +21,6 @@ pkgbase = stance-hypr
 	optdepends = android-tools: phone deck over USB (adb reverse)
 	conflicts = stance-hypr-git
 	source = stance-hypr-0.2.0.tar.gz::https://github.com/H0dg4m/stance-hypr/archive/refs/tags/v0.2.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 9104415f170230774b820e15a887530f6be10e4ca5a8f885590500a0922eff85
 
 pkgname = stance-hypr

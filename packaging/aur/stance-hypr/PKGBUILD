@@ -20,7 +20,7 @@ makedepends=('cargo')
 conflicts=('stance-hypr-git')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # After the v$pkgver tag exists: run `updpkgsums` to fill this in.
-sha256sums=('SKIP')
+sha256sums=('9104415f170230774b820e15a887530f6be10e4ca5a8f885590500a0922eff85')
 
 prepare() {
   cd "$pkgname-$pkgver"
