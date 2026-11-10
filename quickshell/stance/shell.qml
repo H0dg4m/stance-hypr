@@ -51,6 +51,7 @@ ShellRoot {
         function toggle(): void { popup.open = !popup.open; }
         function open(): void { popup.open = true; }
         function close(): void { popup.open = false; }
+        function settings(): void { popup.settingsOpen = true; }
         function confirm(): void { stanceService.confirm(); }
         function revert(): void { stanceService.revert(); }
     }

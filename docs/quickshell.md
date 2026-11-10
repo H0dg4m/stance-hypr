@@ -9,14 +9,15 @@ particular shell:
 | `StancePanel` | Layout map + settings for the selected screen + quick controls + modes |
 | `StanceQuick` | Night light, brightness sliders, audio output (part of the panel; hides what is unavailable) |
 | `StanceSlider` | 0–100 slider without QtQuick.Controls; commits on release (DDC/CI writes are slow) |
-| `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right |
+| `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right; owns the settings window (`settingsOpen`) |
+| `StanceSettingsWindow` | Panel settings in their own centred, scrolling window (opened from the panel's settings chip) |
 | `ConfirmOverlay` | "Keep these display settings?" card; create one per screen |
 | `StanceTheme` | Colours / radii / font / spacing; override to match your shell. Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
 | `StanceSection`, `StanceSegmented`, `StanceIcon`, `StanceSwitch`, `StanceField` | Building blocks: titled card, segmented buttons, icon glyph, switch, text field |
-| `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings page (prefs in `~/.config/stance/panel.json`) |
-| `StanceDeckButtons` | Phone-buttons editor card on the settings page (`deck buttons / put / reset`) |
+| `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings (prefs in `~/.config/stance/panel.json`) |
+| `StanceDeckButtons` | Phone-buttons editor card in the settings window (`deck buttons / put / reset`) |
 | `StanceIdentify` | Shows each screen's name on that screen for a moment |
-| `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `confirm`, `revert`) |
+| `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `settings`, `confirm`, `revert`) |
 
 Packages install them to `/usr/share/stance/quickshell`; from source use
 `quickshell/stance` in this repo.

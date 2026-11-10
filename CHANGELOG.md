@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 – unreleased
+## 0.2.0 – 2026-11-11
 
 The display tool that can't strand you on a black screen, now with quick
 controls, a full panel and a phone remote.
@@ -41,8 +41,9 @@ controls, a full panel and a phone remote.
 - Redesign: section cards, segmented controls, optional Material Symbols
   icons (`StanceTheme.iconFont`), open animation
 - Map: drag screens (edges snap), resolution and focus dot, "identify"
-- Settings page: sections to show, confirm window, compact mode, hotplug
-  rules editor (with power source), phone pairing, health from `doctor`
+- Settings window (centred, scrolls): sections to show, confirm window,
+  compact mode, hotplug rules editor (with power source), phone pairing,
+  health from `doctor`; the panel itself scrolls when taller than the screen
 - Modes: add from the current setup, full mode editor
 - Confirm card: countdown, Keep · Enter / Revert · Esc (Space removed)
 

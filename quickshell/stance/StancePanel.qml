@@ -12,8 +12,10 @@ ColumnLayout {
     property string selectedName: ""
     // Screen the panel was opened on; selected until the user picks another.
     property string preferredName: ""
-    // "main" | "settings" | "mode:<name>"
+    // "main" | "mode:<name>"
     property string page: "main"
+    // Settings live in their own window (StanceSettingsWindow).
+    signal settingsRequested
 
     // UI preference with a default of true (missing or unreadable prefs).
     function pref(key) {
@@ -99,7 +101,7 @@ ColumnLayout {
         }
         StanceIcon { visible: panel.page === "main" && theme.iconFont !== ""; theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
         Text {
-            text: panel.page === "settings" ? "Panel settings" : panel.page.startsWith("mode:") ? "Mode · " + panel.page.slice(5) : "Displays"
+            text: panel.page.startsWith("mode:") ? "Mode · " + panel.page.slice(5) : "Displays"
             color: panel.theme.text
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.fontSize + 3
@@ -139,7 +141,7 @@ ColumnLayout {
             theme: panel.theme
             icon: "settings"
             label: panel.theme.iconFont === "" ? "Settings" : ""
-            onClicked: panel.page = "settings"
+            onClicked: panel.settingsRequested()
         }
     }
 
@@ -559,17 +561,6 @@ ColumnLayout {
         onEdit: name => panel.page = "mode:" + name
     }
 
-    }
-
-    Loader {
-        Layout.fillWidth: true
-        active: panel.page === "settings"
-        visible: active
-        sourceComponent: StanceSettings {
-            service: panel.service
-            theme: panel.theme
-            onBack: panel.page = "main"
-        }
     }
 
     Loader {
