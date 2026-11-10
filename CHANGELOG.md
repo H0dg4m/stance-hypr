@@ -46,7 +46,16 @@ controls, a full panel and a phone remote.
 - Modes: add from the current setup, full mode editor
 - Confirm card: countdown, Keep · Enter / Revert · Esc (Space removed)
 
-### Phone deck (preview)
+### Phone deck
+- Android app "Stance Deck" (`android/`, Kotlin + Compose): QR or pasted-code
+  pairing with fingerprint check, several PCs, button grid, Keep / Revert
+  banner with countdown, reconnect with back-off, device key wrapped by the
+  Android Keystore, screenshots blocked while pairing
+- Its Noise core matches the Rust test vectors byte for byte and is tested
+  live against `deck serve` (also in CI); `tests/e2e-android.sh` drives the
+  app on an emulator against a nested Hyprland (keep, revert, timeout)
+- Panel: Phone card (QR, devices) and a phone-buttons editor;
+  `deck buttons | put | reset`
 - `deck serve` (Wi-Fi, or `--loopback` for USB via `adb reverse`), `deck
   pair` (QR, one phone, 120 s, desktop notice on pairing), `deck status`,
   `deck devices` (last seen), `deck unpair`, `deck test` reference client

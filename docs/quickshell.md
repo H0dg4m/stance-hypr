@@ -14,6 +14,7 @@ particular shell:
 | `StanceTheme` | Colours / radii / font / spacing; override to match your shell. Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
 | `StanceSection`, `StanceSegmented`, `StanceIcon`, `StanceSwitch`, `StanceField` | Building blocks: titled card, segmented buttons, icon glyph, switch, text field |
 | `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings page (prefs in `~/.config/stance/panel.json`) |
+| `StanceDeckButtons` | Phone-buttons editor card on the settings page (`deck buttons / put / reset`) |
 | `StanceIdentify` | Shows each screen's name on that screen for a moment |
 | `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `confirm`, `revert`) |
 

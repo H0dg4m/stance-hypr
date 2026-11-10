@@ -13,7 +13,8 @@ jobs:
       - run: cargo test
   android-core:
     # The phone's Noise/protocol core against test vectors and a real
-    # `stance deck serve` on loopback.
+    # `stance deck serve` on loopback; app screens and reconnect logic
+    # under Robolectric.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +24,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - run: ./gradlew :core:test -Dstance.binary=$GITHUB_WORKSPACE/target/debug/stance
+      - run: ./gradlew :core:test :app:testDebugUnitTest -Dstance.binary=$GITHUB_WORKSPACE/target/debug/stance
         working-directory: android
   audit:
     runs-on: ubuntu-latest
