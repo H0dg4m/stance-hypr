@@ -300,9 +300,18 @@ impl Ctx<'_> {
         let _lock = self.lock()?;
         let mut warnings = self.sweep();
         let mons = self.backend.monitors()?;
+        // Screens seen for the first time; confirm / revert / automatic
+        // changes record the final setup.
+        crate::memory::record_new(&self.state_dir, &mons);
         let before = self.capture(target, &mons)?;
         let active_before = self.active().map(|(m, e)| (Some(m), e));
         let changed = self.execute(target, &before)?;
+        // Automatic changes have no confirm step: what they set is final.
+        if timeout_s == 0
+            && let Ok(now) = self.backend.monitors()
+        {
+            crate::memory::record(&self.state_dir, &now);
+        }
 
         if let Some(m) = mode_after
             && let Err(e) = self.set_active(m)
@@ -347,6 +356,9 @@ impl Ctx<'_> {
         self.sweep();
         let had = self.read_pending().is_some();
         self.clear_pending();
+        if let Ok(mons) = self.backend.monitors() {
+            crate::memory::record(&self.state_dir, &mons);
+        }
         Ok(had)
     }
 
@@ -378,6 +390,11 @@ impl Ctx<'_> {
             res = self.execute_inner(&snap, &mut Vec::new());
         }
         self.clear_pending();
+        if res.is_ok()
+            && let Ok(mons) = self.backend.monitors()
+        {
+            crate::memory::record(&self.state_dir, &mons);
+        }
         let _ = self.set_active(p.active_mode_before.clone().unwrap_or((None, false)));
         if res.is_err() {
             self.backend.notify(Notice::RevertFailed);

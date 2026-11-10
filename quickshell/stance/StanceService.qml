@@ -27,12 +27,135 @@ Item {
 
     // { label, deadline_ms, generation } or null
     property var pending: null
+    // The hotplug daemon (`stance daemon`) is running.
+    property bool daemon: false
     property real now: Date.now()
     readonly property real remainingMs: pending ? Math.max(0, pending.deadline_ms - now) : 0
     readonly property real timeoutMs: pending ? Math.max(1, pending.timeout_ms || 12000) : 1
 
     readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/stance"
     readonly property string session: Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || ""
+
+    // ---- panel preferences (UI only, ~/.config/stance/panel.json) -----------
+    readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/stance"
+    readonly property var prefDefaults: ({
+        show: { map: true, screen: true, night: true, brightness: true, audio: true, modes: true },
+        confirmTimeout: 12,
+        compact: false
+    })
+    property var prefs: prefDefaults
+    readonly property int confirmTimeout: prefs.confirmTimeout
+
+    // Unknown keys, wrong types and out-of-range values fall back to defaults.
+    function normPrefs(o) {
+        const d = prefDefaults;
+        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact };
+        const show = o && typeof o.show === "object" && o.show ? o.show : {};
+        for (const k of Object.keys(d.show))
+            out.show[k] = typeof show[k] === "boolean" ? show[k] : d.show[k];
+        if (o && typeof o.confirmTimeout === "number" && isFinite(o.confirmTimeout))
+            out.confirmTimeout = Math.max(5, Math.min(60, Math.round(o.confirmTimeout)));
+        if (o && typeof o.compact === "boolean")
+            out.compact = o.compact;
+        return out;
+    }
+
+    // key: "show.<name>" | "confirmTimeout" | "compact"
+    function setPref(key, value) {
+        const p = JSON.parse(JSON.stringify(prefs));
+        if (key.startsWith("show."))
+            p.show[key.slice(5)] = value;
+        else
+            p[key] = value;
+        prefs = normPrefs(p);
+        prefsSave.restart();
+    }
+
+    function resetPrefs() {
+        prefs = normPrefs({});
+        prefsSave.restart();
+    }
+
+    Process {
+        id: mkdirProc
+        command: ["mkdir", "-p", svc.configDir]
+        running: true
+        onExited: prefsFile.reload()
+    }
+
+    Timer {
+        id: prefsSave
+        interval: 500
+        onTriggered: prefsFile.setText(JSON.stringify(svc.prefs, null, 1) + "\n")
+    }
+
+    FileView {
+        id: prefsFile
+        path: svc.configDir + "/panel.json"
+        printErrors: false
+        onLoaded: svc.prefs = svc.normPrefs(svc.parse(text()))
+    }
+
+    // ---- generic CLI calls with a callback (mode editor, rules, doctor) ------
+    property int callsRunning: 0
+    readonly property bool callBusy: callsRunning > 0
+
+    // `done(result)` gets the parsed {ok,data|error} object, or null when
+    // stance printed nothing usable.
+    function call(args, done) {
+        callsRunning++;
+        const p = callComp.createObject(svc, { command: [svc.bin].concat(args).concat(["--json"]), done: done });
+        p.running = true;
+        return p;
+    }
+
+    function showMode(name, done) { call(["mode", "show", name], done); }
+    function putMode(name, data, force, done) {
+        call(["mode", "put", name, "--data", JSON.stringify(data)].concat(force ? ["--force"] : []), r => {
+            modesProc.running = true;
+            if (done) done(r);
+        });
+    }
+    function saveMode(name, withQuick, done) {
+        call(["mode", "save", name].concat(withQuick ? ["--with-quick"] : []), r => {
+            modesProc.running = true;
+            if (done) done(r);
+        });
+    }
+    function removeMode(name, done) {
+        call(["mode", "rm", name], r => {
+            modesProc.running = true;
+            if (done) done(r);
+        });
+    }
+    function getRules(done) { call(["rules"], done); }
+    function putRules(data, done) { call(["rules", "put", "--data", JSON.stringify(data)], done); }
+    function doctor(done) { call(["doctor"], done); }
+
+    Component {
+        id: callComp
+        Process {
+            id: cp
+            property var done: null
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    const r = svc.parse(text);
+                    const d = cp.done;
+                    svc.callsRunning = Math.max(0, svc.callsRunning - 1);
+                    cp.destroy(50);
+                    if (d)
+                        d(r);
+                }
+            }
+        }
+    }
+
+    // Applying display changes uses the user's confirm window.
+    function withTimeout(args) {
+        const a = args[0];
+        const timed = a === "set" || a === "layout" || a === "arrange" || (a === "mode" && args[1] === "apply");
+        return timed && args.indexOf("--timeout") < 0 ? args.concat(["--timeout", String(prefs.confirmTimeout)]) : args;
+    }
 
     function refresh() {
         listProc.running = true;
@@ -54,7 +177,7 @@ Item {
     function run(args) {
         if (actProc.running)
             return;
-        actProc.command = [svc.bin].concat(args).concat(["--json"]);
+        actProc.command = [svc.bin].concat(withTimeout(args)).concat(["--json"]);
         actProc.running = true;
     }
 
@@ -166,6 +289,13 @@ Item {
         id: initProc
         command: [svc.bin, "status", "--json"]
         running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const r = svc.parse(text);
+                if (r && r.ok && r.data)
+                    svc.daemon = r.data.daemon === true;
+            }
+        }
         onExited: {
             svc.watching = true;
             pendingFile.reload();

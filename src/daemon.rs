@@ -40,6 +40,29 @@ pub fn classify(line: &str) -> Event {
     }
 }
 
+/// Is a stance daemon holding the lock in `state_dir`? (Read-only probe:
+/// takes the lock for an instant only if nobody has it.)
+pub fn running(state_dir: &std::path::Path) -> bool {
+    let Ok(f) = OpenOptions::new()
+        .write(true)
+        .open(state_dir.join("daemon.lock"))
+    else {
+        return false;
+    };
+    f.try_lock().is_err()
+}
+
+/// Connector of a `monitoradded` / `monitoraddedv2` event.
+pub fn added_name(line: &str) -> Option<String> {
+    let (ev, data) = line.split_once(">>")?;
+    let name = match ev {
+        "monitoradded" => data,
+        "monitoraddedv2" => data.split(',').nth(1)?,
+        _ => return None,
+    };
+    crate::spec::valid_connector(name).then(|| name.to_string())
+}
+
 pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
     let ctx = Ctx {
         backend: hypr,
@@ -69,6 +92,7 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
     let mut reload_at: Option<Instant> = None;
     let mut history: VecDeque<Instant> = VecDeque::new();
     let mut paused_until: Option<Instant> = None;
+    let mut added: Vec<String> = Vec::new();
     // Apply the matching rule once at start, like a hotplug.
     hotplug_at = hotplug_at.or(Some(Instant::now()));
 
@@ -91,7 +115,14 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
                 return Ok(());
             }
             Ok(_) => match classify(line.trim_end()) {
-                Event::Hotplug => hotplug_at = Some(Instant::now() + DEBOUNCE),
+                Event::Hotplug => {
+                    if let Some(n) = added_name(line.trim_end())
+                        && !added.contains(&n)
+                    {
+                        added.push(n);
+                    }
+                    hotplug_at = Some(Instant::now() + DEBOUNCE)
+                }
                 Event::Reload => reload_at = Some(Instant::now() + RELOAD_DEBOUNCE),
                 Event::Other => {}
             },
@@ -102,9 +133,10 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
         let now = Instant::now();
         if hotplug_at.is_some_and(|t| t <= now) {
             hotplug_at = None;
+            let added = std::mem::take(&mut added);
             if paused_until.is_some_and(|p| p > now) {
                 log("hotplug ignored (paused after a burst of changes)");
-            } else if let Some(changed) = on_hotplug(&ctx, &night)
+            } else if let Some(changed) = on_hotplug(&ctx, &night, &added)
                 && changed
             {
                 history.push_back(now);
@@ -130,7 +162,7 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
 }
 
 /// Returns Some(changed?) if a rule was applied.
-fn on_hotplug(ctx: &Ctx, night: &crate::night::Night) -> Option<bool> {
+fn on_hotplug(ctx: &Ctx, night: &crate::night::Night, added: &[String]) -> Option<bool> {
     if ctx.pending_info().is_some() {
         log("hotplug: a user change is awaiting confirmation, rules skipped");
         return None;
@@ -144,13 +176,52 @@ fn on_hotplug(ctx: &Ctx, night: &crate::night::Night) -> Option<bool> {
     };
     let mons = ctx.backend.monitors().map_err(|e| log(&e.message)).ok()?;
     let Some(rule) = modes::matching_rule(&rules, &mons) else {
-        log("hotplug: no rule matches the connected monitors, doing nothing");
-        return None;
+        return restore_remembered(ctx, &mons, added);
     };
     apply_mode(ctx, &rule.mode, rule.allow_extras, "rule", Some(night))
 }
 
+/// No rule matched: put re-plugged monitors back where they last were.
+fn restore_remembered(ctx: &Ctx, mons: &[crate::model::Monitor], added: &[String]) -> Option<bool> {
+    let specs: Vec<_> = mons
+        .iter()
+        .filter(|m| added.contains(&m.name) && m.enabled && m.mirror_of.is_none())
+        .filter_map(|m| {
+            let others: Vec<_> = mons.iter().filter(|o| o.name != m.name).cloned().collect();
+            let mut off = m.clone();
+            off.enabled = false;
+            let mut all = others;
+            all.push(off.clone());
+            crate::memory::recall(&ctx.state_dir, &off, &all)
+                .filter(|s| !crate::apply::satisfies(m, s))
+        })
+        .collect();
+    if specs.is_empty() {
+        log("hotplug: no rule matches the connected monitors, doing nothing");
+        return None;
+    }
+    let names: Vec<_> = specs.iter().map(|s| s.name.clone()).collect();
+    let st = crate::apply::State {
+        monitors: specs,
+        ..Default::default()
+    };
+    match ctx.apply("restore", &st, 0, None) {
+        Ok(o) => {
+            log(&format!("hotplug: restored last position of {}", names.join(", ")));
+            Some(!o.changed.is_empty())
+        }
+        Err(e) => {
+            log(&format!("hotplug: restoring {} failed: {}", names.join(", "), e.message));
+            None
+        }
+    }
+}
+
 fn on_reload(ctx: &Ctx) {
+    // Another tool (nwg-displays, a hand edit) may have moved screens.
+    if let Ok(mons) = ctx.backend.monitors() {
+        crate::memory::record(&ctx.state_dir, &mons);
+    }
     let Some((mode, extras)) = ctx.active() else {
         return;
     };
@@ -229,5 +300,9 @@ mod tests {
         assert_eq!(classify("configreloaded>>"), Event::Reload);
         assert_eq!(classify("workspace>>2"), Event::Other);
         assert_eq!(classify("monitoraddedfake>>x"), Event::Other);
+        assert_eq!(added_name("monitoraddedv2>>2,DP-2,JDR EPIC Q40").as_deref(), Some("DP-2"));
+        assert_eq!(added_name("monitoradded>>HDMI-A-1").as_deref(), Some("HDMI-A-1"));
+        assert_eq!(added_name("monitorremoved>>DP-2"), None);
+        assert_eq!(added_name("monitoradded>>../x"), None);
     }
 }

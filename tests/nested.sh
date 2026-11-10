@@ -138,6 +138,30 @@ expect "single reverted (outputs re-enabled)" "m['ANCHOR-1']['enabled'] and m['T
 run set TEST-1 --hz 144 && bad "unadvertised mode refused" || ok "unadvertised mode refused"
 run set 'TEST-1"})os.exit(1)--' --off && bad "injection refused" || ok "injection refused"
 
+# Arrange (panel drag) and position memory -------------------------------
+X2=$(q "m['TEST-2']['x']")
+run arrange "TEST-2=${X2}x300" --no-confirm && ok "arrange moves" || bad "arrange moves" "$(cat "$WORK/last.out")"
+expect "arrange position" "m['TEST-2']['y']==300"
+run arrange TEST-2=0x0 --no-confirm && bad "arrange overlap refused" || ok "arrange overlap refused"
+run set TEST-2 --off --no-confirm
+expect "off for memory test" "not m['TEST-2']['enabled']"
+run set TEST-2 --on --no-confirm
+expect "on restores last position" "m['TEST-2']['enabled'] and m['TEST-2']['x']==$X2 and m['TEST-2']['y']==300"
+run arrange "TEST-2=${X2}x0" --no-confirm
+
+# Mode / rules JSON (panel editor) -----------------------------------------
+run mode put edited --data '{"description":"from json","night_light":false,"monitor":[{"match":"TEST-1","scale":1.0}]}' \
+  && ok "mode put" || bad "mode put" "$(cat "$WORK/last.out")"
+"$BIN" mode show edited --json | grep -q '"from json"' && ok "mode put round-trip" || bad "mode put round-trip"
+run mode put edited --data '{"description":"x"}' && bad "mode put needs --force" || ok "mode put needs --force"
+run mode put evil --data '{"exec":"rm -rf ~"}' && bad "mode put rejects unknown keys" || ok "mode put rejects unknown keys"
+run rules put --data '{"rule":[{"monitors":["TEST-1"],"mode":"nope"}]}' && bad "rules put needs existing mode" || ok "rules put needs existing mode"
+run rules put --data '{"rule":[{"monitors":["TEST-1","TEST-2","ANCHOR-1"],"mode":"edited"}]}' \
+  && ok "rules put" || bad "rules put" "$(cat "$WORK/last.out")"
+"$BIN" rules --json | grep -q '"edited"' && ok "rules show" || bad "rules show"
+run rules put --data '{"rule":[]}'
+run mode rm edited
+
 # Modes ------------------------------------------------------------------
 run mode save base --description "baseline" && ok "mode save" || bad "mode save" "$(cat "$WORK/last.out")"
 # `mode save` records the REAL default audio sink; never let a nested test

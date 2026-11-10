@@ -12,6 +12,14 @@ ColumnLayout {
     property string selectedName: ""
     // Screen the panel was opened on; selected until the user picks another.
     property string preferredName: ""
+    // "main" | "settings" | "mode:<name>"
+    property string page: "main"
+
+    // UI preference with a default of true (missing or unreadable prefs).
+    function pref(key) {
+        const p = service.prefs;
+        return !(p && p.show && p.show[key] === false);
+    }
 
     readonly property var selected: {
         const ms = service.monitors;
@@ -81,9 +89,17 @@ ColumnLayout {
         Layout.leftMargin: 4
         Layout.rightMargin: 2
         spacing: 8
-        StanceIcon { theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
+        StanceChip {
+            visible: panel.page !== "main"
+            theme: panel.theme
+            icon: "arrow_back"
+            label: panel.theme.iconFont === "" ? "Back" : ""
+            // The mode editor may hold unsaved edits and ask first.
+            onClicked: editorLoader.item && panel.page.startsWith("mode:") ? editorLoader.item.requestBack() : panel.page = "main"
+        }
+        StanceIcon { visible: panel.page === "main" && theme.iconFont !== ""; theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
         Text {
-            text: "Displays"
+            text: panel.page === "settings" ? "Panel settings" : panel.page.startsWith("mode:") ? "Mode · " + panel.page.slice(5) : "Displays"
             color: panel.theme.text
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.fontSize + 3
@@ -111,17 +127,50 @@ ColumnLayout {
                 }
             }
         }
+        StanceChip {
+            visible: panel.page === "main" && panel.service.monitors.length > 1
+            theme: panel.theme
+            icon: "screen_search_desktop"
+            label: panel.theme.iconFont === "" ? "Identify" : ""
+            onClicked: identify.active = true
+        }
+        StanceChip {
+            visible: panel.page === "main"
+            theme: panel.theme
+            icon: "settings"
+            label: panel.theme.iconFont === "" ? "Settings" : ""
+            onClicked: panel.page = "settings"
+        }
+    }
+
+    ColumnLayout {
+    id: mainPage
+    visible: panel.page === "main"
+    Layout.fillWidth: true
+    spacing: 10
+
+    StanceIdentify {
+        id: identify
+        theme: panel.theme
+        monitors: panel.service.monitors
     }
 
     // ---- layout map ------------------------------------------------------
     Rectangle {
         id: map
+        visible: panel.pref("map")
         Layout.fillWidth: true
-        implicitHeight: 124
+        implicitHeight: 150
         radius: panel.theme.radius
         color: panel.theme.card
 
-        readonly property var shown: panel.service.monitors.filter(m => m.enabled && !m.mirror_of)
+        readonly property var live: panel.service.monitors.filter(m => m.enabled && !m.mirror_of)
+        // Frozen while a screen is dragged, so a refresh cannot rebuild
+        // the delegates under the pointer.
+        property bool dragActive: false
+        property var frozen: []
+        readonly property var shown: dragActive ? frozen : live
+        function beginDrag() { frozen = live; dragActive = true; }
         readonly property var box: {
             let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
             for (const m of shown) {
@@ -129,19 +178,116 @@ ColumnLayout {
                 x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y);
                 x1 = Math.max(x1, m.x + l.w); y1 = Math.max(y1, m.y + l.h);
             }
-            return shown.length ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 1, h: 1 };
+            if (!shown.length)
+                return { x: 0, y: 0, w: 1, h: 1 };
+            // Room around the layout so a screen can be dragged beside the
+            // others (only when there is something to drag against).
+            let pw = 0, ph = 0;
+            if (shown.length > 1)
+                for (const m of shown) {
+                    const l = panel.logical(m);
+                    pw = Math.max(pw, l.w * 0.25);
+                    ph = Math.max(ph, l.h * 0.25);
+                }
+            return { x: x0 - pw, y: y0 - ph, w: x1 - x0 + 2 * pw, h: y1 - y0 + 2 * ph };
         }
         readonly property real k: Math.min((width - 32) / box.w, (height - 32) / box.h)
+        readonly property real ox: (width - box.w * k) / 2
+        readonly property real oy: (height - box.h * k) / 2
+        clip: true
 
+        // Dragging: snap the moved screen's edges to the others' edges
+        // (within ~10 map px), then send every position in one "arrange" call.
+        // x snaps only to screens beside it (y ranges meet), y only to
+        // screens above/below or beside it after the x snap.
+        function snap(name, x, y, w, h) {
+            const t = 12 / k;
+            let bx = x, dx = t;
+            for (const o of shown) {
+                if (o.name === name) continue;
+                const l = panel.logical(o);
+                if (!(y - t < o.y + l.h && o.y < y + h + t)) continue;
+                for (const c of [o.x - w, o.x + l.w, o.x, o.x + l.w - w])
+                    if (Math.abs(c - x) < dx) { dx = Math.abs(c - x); bx = c; }
+            }
+            let by = y, dy = t;
+            for (const o of shown) {
+                if (o.name === name) continue;
+                const l = panel.logical(o);
+                if (!(bx - t < o.x + l.w && o.x < bx + w + t)) continue;
+                for (const c of [o.y - h, o.y + l.h, o.y, o.y + l.h - h])
+                    if (Math.abs(c - y) < dy) { dy = Math.abs(c - y); by = c; }
+            }
+            return { x: Math.round(bx), y: Math.round(by) };
+        }
+
+        // Same rule as the CLI: shares an edge segment with another screen.
+        function touches(name, x, y, w, h) {
+            return shown.some(o => {
+                if (o.name === name) return false;
+                const l = panel.logical(o);
+                const v = y < o.y + l.h && o.y < y + h;
+                const hz = x < o.x + l.w && o.x < x + w;
+                return (v && (x + w === o.x || o.x + l.w === x)) || (hz && (y + h === o.y || o.y + l.h === y));
+            });
+        }
+
+        property string hint: ""
+        Timer { id: hintTimer; interval: 2500; onTriggered: map.hint = "" }
+        function showHint(t) { hint = t; hintTimer.restart(); }
+
+        function overlaps(name, x, y, w, h) {
+            return shown.some(o => {
+                if (o.name === name) return false;
+                const l = panel.logical(o);
+                return x < o.x + l.w && o.x < x + w && y < o.y + l.h && o.y < y + h;
+            });
+        }
+
+        function commit(name, x, y) {
+            // Shift everything so the layout starts at 0,0.
+            const pos = shown.map(o => o.name === name ? { n: o.name, x: x, y: y } : { n: o.name, x: o.x, y: o.y });
+            const mx = Math.min(...pos.map(p => p.x)), my = Math.min(...pos.map(p => p.y));
+            const args = pos.filter(p => {
+                const o = shown.find(s => s.name === p.n);
+                return p.x - mx !== o.x || p.y - my !== o.y;
+            }).map(p => p.n + "=" + (p.x - mx) + "x" + (p.y - my));
+            if (args.length)
+                panel.service.run(["arrange"].concat(args));
+        }
+
+        Text {
+            visible: map.hint !== ""
+            text: map.hint
+            anchors.bottom: parent.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottomMargin: 6
+            z: 3
+            color: panel.theme.danger
+            font.family: panel.theme.fontFamily
+            font.pixelSize: panel.theme.fontSize - 3
+        }
+
+        // Keyed by name: a refresh (new array) must not recreate delegates
+        // and cancel a drag in progress.
         Repeater {
-            model: map.shown
+            model: map.shown.map(m => m.name)
             delegate: Rectangle {
                 id: scr
-                required property var modelData
-                readonly property var l: panel.logical(modelData)
-                readonly property bool isSel: panel.selected && panel.selected.name === modelData.name
-                x: (map.width - map.box.w * map.k) / 2 + (modelData.x - map.box.x) * map.k
-                y: (map.height - map.box.h * map.k) / 2 + (modelData.y - map.box.y) * map.k
+                required property string modelData
+                readonly property var mon: map.shown.find(m => m.name === modelData) || ({ name: modelData, x: 0, y: 0, width: 1, height: 1, refresh: 0, scale: 1, transform: 0 })
+                readonly property var l: panel.logical(mon)
+                readonly property bool isSel: panel.selected && panel.selected.name === modelData
+                property bool dragging: false
+                property real dragX: mon.x
+                property real dragY: mon.y
+                readonly property bool bad: dragging && (map.overlaps(modelData, dragX, dragY, l.w, l.h) || !map.touches(modelData, dragX, dragY, l.w, l.h))
+                x: map.ox + ((dragging ? dragX : mon.x) - map.box.x) * map.k
+                y: map.oy + ((dragging ? dragY : mon.y) - map.box.y) * map.k
+                z: dragging ? 2 : 0
+                opacity: dragging ? 0.85 : 1
+                border.width: dragging ? 2 : 0
+                border.color: bad ? panel.theme.danger : panel.theme.accent
                 width: Math.max(10, l.w * map.k - 4)
                 height: Math.max(10, l.h * map.k - 4)
                 radius: Math.min(8, panel.theme.chipRadius)
@@ -155,7 +301,7 @@ ColumnLayout {
                         width: parent.width
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
-                        text: scr.modelData.name
+                        text: scr.modelData
                         color: scr.isSel ? panel.theme.accentText : panel.theme.text
                         font.family: panel.theme.fontFamily
                         font.pixelSize: panel.theme.fontSize - 2
@@ -166,7 +312,7 @@ ColumnLayout {
                         visible: scr.height > 40
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
-                        text: scr.modelData.width + "×" + scr.modelData.height + " · " + Math.round(scr.modelData.refresh) + " Hz"
+                        text: scr.mon.width + "×" + scr.mon.height + " · " + Math.round(scr.mon.refresh) + " Hz"
                         color: scr.isSel ? panel.theme.accentText : panel.theme.textDim
                         opacity: 0.85
                         font.family: panel.theme.fontFamily
@@ -175,7 +321,7 @@ ColumnLayout {
                 }
                 // The screen the mouse/keyboard is on.
                 Rectangle {
-                    visible: scr.modelData.focused
+                    visible: scr.mon.focused
                     width: 6; height: 6; radius: 3
                     anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 5
                     color: scr.isSel ? panel.theme.accentText : panel.theme.accent
@@ -184,8 +330,43 @@ ColumnLayout {
                     id: hover
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: panel.selectedName = scr.modelData.name
+                    enabled: !panel.service.busy && panel.service.pending === null
+                    cursorShape: scr.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                    property point start
+                    onPressed: e => {
+                        start = mapToItem(map, e.x, e.y);
+                        scr.dragX = scr.mon.x;
+                        scr.dragY = scr.mon.y;
+                    }
+                    onPositionChanged: e => {
+                        if (!pressed) return;
+                        const p = mapToItem(map, e.x, e.y);
+                        const dx = p.x - start.x, dy = p.y - start.y;
+                        if (!scr.dragging && Math.abs(dx) + Math.abs(dy) < 5) return;
+                        if (!scr.dragging) {
+                            if (map.shown.length < 2) return;
+                            map.beginDrag();
+                            scr.dragging = true;
+                        }
+                        const s = map.snap(scr.modelData, scr.mon.x + dx / map.k, scr.mon.y + dy / map.k, scr.l.w, scr.l.h);
+                        scr.dragX = s.x;
+                        scr.dragY = s.y;
+                    }
+                    onReleased: {
+                        if (!scr.dragging) {
+                            panel.selectedName = scr.modelData;
+                            return;
+                        }
+                        const ok = !scr.bad;
+                        scr.dragging = false;
+                        map.dragActive = false;
+                        panel.selectedName = scr.modelData;
+                        if (ok)
+                            map.commit(scr.modelData, scr.dragX, scr.dragY);
+                        else
+                            map.showHint("Screens must touch and must not overlap");
+                    }
+                    onCanceled: { scr.dragging = false; map.dragActive = false; }
                 }
             }
         }
@@ -212,7 +393,7 @@ ColumnLayout {
     // ---- selected screen -------------------------------------------------
     StanceSection {
         id: detail
-        visible: panel.selected !== null
+        visible: panel.selected !== null && panel.pref("screen")
         Layout.fillWidth: true
         theme: panel.theme
         readonly property var m: panel.selected
@@ -370,38 +551,37 @@ ColumnLayout {
         theme: panel.theme
     }
 
-    // ---- modes -----------------------------------------------------------
-    StanceSection {
+    StanceModes {
         Layout.fillWidth: true
+        visible: panel.pref("modes")
+        service: panel.service
         theme: panel.theme
-        icon: "bookmarks"
-        title: "Modes"
-        Flow {
-            visible: panel.service.modes.length > 0
-            Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: panel.service.modes
-                delegate: StanceChip {
-                    required property var modelData
-                    theme: panel.theme
-                    icon: modelData.error ? "error" : "bookmark"
-                    label: modelData.name
-                    selected: modelData.name === panel.service.activeMode
-                    enabled: !panel.service.busy && !modelData.error
-                    onClicked: panel.service.applyMode(modelData.name)
-                }
-            }
+        onEdit: name => panel.page = "mode:" + name
+    }
+
+    }
+
+    Loader {
+        Layout.fillWidth: true
+        active: panel.page === "settings"
+        visible: active
+        sourceComponent: StanceSettings {
+            service: panel.service
+            theme: panel.theme
+            onBack: panel.page = "main"
         }
-        Text {
-            visible: panel.service.modes.length === 0
-            text: "None yet · <font face='monospace'>stance mode save NAME</font>"
-            textFormat: Text.StyledText
-            color: panel.theme.textDim
-            font.family: panel.theme.fontFamily
-            font.pixelSize: panel.theme.fontSize - 2
-            Layout.fillWidth: true
-            wrapMode: Text.Wrap
+    }
+
+    Loader {
+        id: editorLoader
+        Layout.fillWidth: true
+        active: panel.page.startsWith("mode:")
+        visible: active
+        sourceComponent: StanceModeEditor {
+            service: panel.service
+            theme: panel.theme
+            modeName: panel.page.slice(5)
+            onBack: panel.page = "main"
         }
     }
 

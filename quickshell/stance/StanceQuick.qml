@@ -12,10 +12,12 @@ StanceSection {
     readonly property var displays: q ? q.brightness : []
     readonly property var sinks: q ? q.sinks.filter(s => !s.virtual || s.default) : []
     readonly property bool busy: service.quickBusy
+    readonly property bool compact: service.prefs.compact === true
+    function shows(key) { return !(service.prefs.show && service.prefs.show[key] === false); }
 
     icon: "tune"
     title: "Quick"
-    visible: q !== null && (night !== null || displays.length > 0 || sinks.length > 0)
+    visible: q !== null && ((shows("night") && night !== null) || (shows("brightness") && displays.length > 0) || (shows("audio") && sinks.length > 0))
 
     function sinkIcon(s) {
         if (s.virtual)
@@ -29,7 +31,7 @@ StanceSection {
 
     // ---- night light ---------------------------------------------------
     RowLayout {
-        visible: quick.night !== null
+        visible: quick.night !== null && quick.shows("night")
         Layout.fillWidth: true
         spacing: 8
         Text {
@@ -51,7 +53,7 @@ StanceSection {
 
     // ---- brightness ----------------------------------------------------
     Repeater {
-        model: quick.displays
+        model: quick.shows("brightness") ? quick.displays : []
         delegate: RowLayout {
             required property var modelData
             Layout.fillWidth: true
@@ -97,7 +99,7 @@ StanceSection {
 
     // ---- audio output --------------------------------------------------
     ColumnLayout {
-        visible: quick.sinks.length > 1
+        visible: quick.sinks.length > 1 && quick.shows("audio")
         Layout.fillWidth: true
         spacing: 4
         Text {
@@ -114,7 +116,7 @@ StanceSection {
                 required property var modelData
                 readonly property bool on: modelData.default
                 Layout.fillWidth: true
-                implicitHeight: 36
+                implicitHeight: quick.compact ? 30 : 36
                 radius: quick.theme.chipRadius
                 opacity: quick.busy ? 0.6 : 1
                 color: on ? quick.theme.accentSoft : (ma.containsMouse ? quick.theme.surface : "transparent")
@@ -143,7 +145,7 @@ StanceSection {
                     }
                     Text {
                         text: row.modelData.profile
-                        visible: text !== ""
+                        visible: text !== "" && !quick.compact
                         color: quick.theme.textDim
                         font.family: quick.theme.fontFamily
                         font.pixelSize: quick.theme.fontSize - 2

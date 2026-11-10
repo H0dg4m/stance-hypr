@@ -7,6 +7,7 @@ mod doctor;
 mod error;
 mod hypr;
 mod model;
+mod memory;
 mod modes;
 mod night;
 mod persist;
@@ -40,6 +41,7 @@ Usage:
       --transform 0-7  --on | --off  --custom (allow unadvertised modes)
   stance layout <kind> <monitor> [<reference>]
       kind: left-of | right-of | above | below | mirror | single
+  stance arrange NAME=XxY [NAME=XxY…]  Move several monitors at once (panel drag)
   stance confirm                       Keep the last change
   stance revert                        Undo the last change now
   stance persist [--print]             Save the current setup to your Hyprland config dir
@@ -48,7 +50,10 @@ Usage:
   stance mode apply <name> [--no-extras]
   stance mode save <name> [--description TEXT] [--force] [--with-quick]
       --with-quick also records night light and audio output
+  stance mode put <name> --data JSON [--force]   Write a mode from JSON (panel editor)
   stance mode rm <name>
+  stance rules [show]                  Hotplug rules as JSON
+  stance rules put --data JSON         Replace the hotplug rules
   stance night [status|on [K]|off|toggle|set K]   Night light (hyprsunset)
   stance brightness [list]             Brightness of screens (backlight, DDC/CI)
   stance brightness <monitor> N|+N|-N  Set brightness in percent
@@ -71,6 +76,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--transform",
     "--timeout",
     "--description",
+    "--data",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -233,9 +239,12 @@ fn run(a: &Args) -> Result<ExitCode> {
             let pending = ctx.pending_info();
             let active = ctx.active_mode();
             if json {
-                ok_json(
-                    &json!({ "pending": pending, "active_mode": active, "warnings": warnings }),
-                );
+                ok_json(&json!({
+                    "pending": pending,
+                    "active_mode": active,
+                    "daemon": daemon::running(&ctx.state_dir),
+                    "warnings": warnings
+                }));
             } else {
                 match &pending {
                     Some(p) => println!(
@@ -246,6 +255,10 @@ fn run(a: &Args) -> Result<ExitCode> {
                     None => println!("pending: none"),
                 }
                 println!("active mode: {}", active.as_deref().unwrap_or("none"));
+                println!(
+                    "daemon: {}",
+                    if daemon::running(&ctx.state_dir) { "running" } else { "not running" }
+                );
                 for w in warnings {
                     println!("note: {w}");
                 }
@@ -274,7 +287,11 @@ fn run(a: &Args) -> Result<ExitCode> {
                 custom: a.has("--custom"),
             };
             let mons = hypr.monitors()?;
-            let specs = plan::plan_set(&mons, target, &args)?;
+            let remembered = plan::resolve(&mons, target)
+                .ok()
+                .filter(|m| !m.enabled)
+                .and_then(|m| memory::recall(&ctx.state_dir, m, &mons));
+            let specs = plan::plan_set(&mons, target, &args, remembered)?;
             let warnings = plan::check_result(&mons, &specs)?;
             let label = format!("set {}", specs[0].name);
             let st = State {
@@ -313,6 +330,22 @@ fn run(a: &Args) -> Result<ExitCode> {
             out.warnings.extend(warnings);
             report(json, out);
         }
+        "arrange" => {
+            let pairs = a.pos[1..]
+                .iter()
+                .map(|p| plan::parse_pair(p))
+                .collect::<Result<Vec<_>>>()?;
+            let mons = hypr.monitors()?;
+            let (specs, warnings) = plan::plan_arrange(&mons, &pairs)?;
+            let st = State {
+                monitors: specs,
+                ..Default::default()
+            };
+            let mut out = ctx.apply("arrange", &st, a.timeout()?, Some((None, false)))?;
+            out.warnings.extend(warnings);
+            report(json, out);
+        }
+        "rules" => rules_cmd(a, json)?,
         "confirm" => {
             a.max_pos(1)?;
             let had = ctx.confirm()?;
@@ -452,6 +485,19 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
                 println!("saved mode `{name}` to {}", path.display());
             }
         }
+        "put" => {
+            let name = a.arg(2, "mode name")?;
+            a.max_pos(3)?;
+            let m = modes::from_json(a.val("--data").ok_or_else(|| {
+                Error::new("usage", "mode put needs --data JSON")
+            })?)?;
+            let path = modes::save(name, &m, a.has("--force"))?;
+            if json {
+                ok_json(&json!({ "saved": name, "path": path }));
+            } else {
+                println!("saved mode `{name}` to {}", path.display());
+            }
+        }
         "rm" => {
             let name = a.arg(2, "mode name")?;
             a.max_pos(3)?;
@@ -462,6 +508,44 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
             return Err(Error::new(
                 "usage",
                 format!("unknown mode subcommand `{other}`"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn rules_cmd(a: &Args, json: bool) -> Result<()> {
+    let path = modes::rules_path()?;
+    match a.pos.get(1).map(String::as_str) {
+        None | Some("show") => {
+            a.max_pos(2)?;
+            let r = modes::load_rules(&path)?;
+            if json {
+                ok_json(&r);
+            } else {
+                print!(
+                    "{}",
+                    toml::to_string(&r).map_err(|e| Error::new("io", e.to_string()))?
+                );
+            }
+        }
+        Some("put") => {
+            a.max_pos(2)?;
+            let r = modes::rules_from_json(
+                a.val("--data")
+                    .ok_or_else(|| Error::new("usage", "rules put needs --data JSON"))?,
+            )?;
+            modes::save_rules(&r)?;
+            if json {
+                ok_json(&json!({ "saved": r.rules.len(), "path": path }));
+            } else {
+                println!("saved {} rule(s) to {}", r.rules.len(), path.display());
+            }
+        }
+        Some(other) => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown rules subcommand `{other}` (show, put)"),
             ));
         }
     }

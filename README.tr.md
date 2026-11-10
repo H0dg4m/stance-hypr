@@ -59,6 +59,7 @@ stance monitors                       ekranları listele
 stance set DP-1 --hz 165              bir ekranı değiştir
 stance set eDP-1 --off                (son açık ekranı kapatmayı reddeder)
 stance layout right-of eDP-1 DP-1     left-of | right-of | above | below | mirror | single
+stance arrange DP-1=0x0 eDP-1=2560x360  birden çok ekranı birlikte taşı
 stance confirm | stance revert        bekleyen değişikliği koru / geri al
 stance persist                        ~/.config/hypr/stance-monitors.lua yaz
 stance mode save work                 mevcut düzeni mod olarak kaydet
@@ -95,6 +96,14 @@ mod yine uygulanır ve not düşülür. `--no-extras` bunları atlar.
 - **Ses çıkışı** `pw-dump` ile okunur, `wpctl set-default` ile değiştirilir.
 
 Hangilerinin kullanılabildiğini `stance doctor` söyler.
+
+### Ekranlar yerini hatırlar
+
+stance her ekranın son konumunu, modunu ve ölçeğini saklar
+(`~/.local/state/stance/memory.json`). Kapatıp açılan ekran eski yerine döner;
+daemon çalışıyorsa ve hiçbir kural eşleşmiyorsa çıkarıp yeniden takılan ekran da.
+Panelde ekranlar haritada sürüklenerek taşınır (kenarlar yapışır), modlar
+panelden eklenip düzenlenir, ayarlar sayfasından gösterilecek bölümler seçilir.
 
 ### Kalıcı yapmak
 

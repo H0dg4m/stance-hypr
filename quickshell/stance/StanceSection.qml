@@ -12,6 +12,8 @@ Rectangle {
     default property alias content: body.data
     property alias trailing: trail.data
     property real padding: theme.padding
+    // false: header only (collapsible cards).
+    property bool expanded: true
 
     implicitHeight: col.implicitHeight + padding * 2
     radius: theme.radius
@@ -42,6 +44,7 @@ Rectangle {
 
         ColumnLayout {
             id: body
+            visible: section.expanded
             Layout.fillWidth: true
             spacing: section.theme.spacing
         }

@@ -12,7 +12,9 @@ particular shell:
 | `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right |
 | `ConfirmOverlay` | "Keep these display settings?" card; create one per screen |
 | `StanceTheme` | Colours / radii / font / spacing; override to match your shell. Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
-| `StanceSection`, `StanceSegmented`, `StanceIcon` | Building blocks: titled card, segmented buttons, icon glyph |
+| `StanceSection`, `StanceSegmented`, `StanceIcon`, `StanceSwitch`, `StanceField` | Building blocks: titled card, segmented buttons, icon glyph, switch, text field |
+| `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings page (prefs in `~/.config/stance/panel.json`) |
+| `StanceIdentify` | Shows each screen's name on that screen for a moment |
 | `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `confirm`, `revert`) |
 
 Packages install them to `/usr/share/stance/quickshell`; from source use

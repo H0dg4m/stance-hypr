@@ -160,7 +160,14 @@ pub fn pick_mode(m: &Monitor, res: (u32, u32), hz: Option<f64>, custom: bool) ->
     Ok((*chosen).clone())
 }
 
-pub fn plan_set(mons: &[Monitor], target: &str, a: &SetArgs) -> Result<Vec<MonitorSpec>> {
+/// `remembered`: the monitor's last known setup (see `memory`), used when a
+/// disabled monitor is turned back on without an explicit position.
+pub fn plan_set(
+    mons: &[Monitor],
+    target: &str,
+    a: &SetArgs,
+    remembered: Option<MonitorSpec>,
+) -> Result<Vec<MonitorSpec>> {
     let m = resolve(mons, target)?;
     if a.on == Some(false) {
         let mut s = MonitorSpec::from_monitor(m);
@@ -168,7 +175,9 @@ pub fn plan_set(mons: &[Monitor], target: &str, a: &SetArgs) -> Result<Vec<Monit
         return Ok(vec![s]);
     }
     let mut s = base_spec(m);
-    if !m.enabled && a.pos.is_none() {
+    if let Some(r) = remembered.filter(|_| !m.enabled && a.pos.is_none()) {
+        s = r;
+    } else if !m.enabled && a.pos.is_none() {
         // Newly enabled: put it right of the rightmost active monitor.
         let right = mons
             .iter()
@@ -205,6 +214,82 @@ pub fn plan_set(mons: &[Monitor], target: &str, a: &SetArgs) -> Result<Vec<Monit
     }
     s.validate()?;
     Ok(vec![s])
+}
+
+/// Moves several monitors at once (`NAME=XxY` pairs, e.g. from dragging on
+/// the panel map). The result must not overlap; gaps are allowed (Hyprland
+/// copes) but reported, since they usually mean a snap was missed.
+pub fn plan_arrange(mons: &[Monitor], pairs: &[(String, (i32, i32))]) -> Result<(Vec<MonitorSpec>, Vec<String>)> {
+    if pairs.is_empty() || pairs.len() > 16 {
+        return Err(Error::new("usage", "arrange needs 1-16 NAME=XxY pairs"));
+    }
+    let mut specs: Vec<MonitorSpec> = Vec::new();
+    for (q, (x, y)) in pairs {
+        let m = resolve(mons, q)?;
+        if !m.enabled || m.mirror_of.is_some() {
+            return Err(Error::new(
+                "usage",
+                format!("{} is off or mirrored; it has no position of its own", m.name),
+            ));
+        }
+        if specs.iter().any(|s| s.name == m.name) {
+            return Err(Error::new("usage", format!("{} given twice", m.name)));
+        }
+        let mut s = MonitorSpec::from_monitor(m);
+        (s.x, s.y) = (*x, *y);
+        s.validate()?;
+        specs.push(s);
+    }
+    let all: Vec<MonitorSpec> = mons
+        .iter()
+        .filter(|m| m.enabled && m.mirror_of.is_none())
+        .map(|m| {
+            specs
+                .iter()
+                .find(|s| s.name == m.name)
+                .cloned()
+                .unwrap_or_else(|| MonitorSpec::from_monitor(m))
+        })
+        .collect();
+    for (i, a) in all.iter().enumerate() {
+        for b in &all[i + 1..] {
+            if crate::memory::overlaps(a, b) {
+                return Err(Error::new(
+                    "overlap",
+                    format!("{} and {} would overlap", a.name, b.name),
+                ));
+            }
+        }
+    }
+    let mut warnings = Vec::new();
+    if all.len() > 1 {
+        for a in &all {
+            let touches = all.iter().any(|b| b.name != a.name && touching(a, b));
+            if !touches {
+                warnings.push(format!("{} does not touch any other screen", a.name));
+            }
+        }
+    }
+    specs.retain(|s| {
+        let cur = mons.iter().find(|m| m.name == s.name);
+        cur.is_some_and(|m| (m.x, m.y) != (s.x, s.y))
+    });
+    Ok((specs, warnings))
+}
+
+fn touching(a: &MonitorSpec, b: &MonitorSpec) -> bool {
+    let (aw, ah) = a.logical_size();
+    let (bw, bh) = b.logical_size();
+    let v = a.y < b.y + bh && b.y < a.y + ah;
+    let h = a.x < b.x + bw && b.x < a.x + aw;
+    (v && (a.x + aw == b.x || b.x + bw == a.x)) || (h && (a.y + ah == b.y || b.y + bh == a.y))
+}
+
+pub fn parse_pair(s: &str) -> Result<(String, (i32, i32))> {
+    let (name, pos) = s
+        .rsplit_once('=')
+        .ok_or_else(|| Error::new("usage", format!("`{}` is not NAME=XxY", crate::model::sanitize(s))))?;
+    Ok((name.to_string(), parse_pos(pos)?))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,6 +469,30 @@ pub fn check_result(mons: &[Monitor], changes: &[MonitorSpec]) -> Result<Vec<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn set3(m: &[Monitor], t: &str, a: &SetArgs) -> Result<Vec<MonitorSpec>> {
+        plan_set(m, t, a, None)
+    }
+
+    #[test]
+    fn arrange_checks_overlap_and_touch() {
+        use crate::apply::tests::mon;
+        let mons = vec![mon("A-1", 0), mon("B-1", 1920)];
+        let (s, w) = plan_arrange(&mons, &[("B-1".into(), (-1920, 0))]).unwrap();
+        assert_eq!((s[0].x, s.len()), (-1920, 1));
+        assert!(w.is_empty());
+        assert_eq!(
+            plan_arrange(&mons, &[("B-1".into(), (100, 0))]).unwrap_err().code,
+            "overlap"
+        );
+        let (_, w) = plan_arrange(&mons, &[("B-1".into(), (3000, 0))]).unwrap();
+        assert_eq!(w.len(), 2);
+        // Unchanged positions are dropped.
+        let (s, _) = plan_arrange(&mons, &[("A-1".into(), (0, 0))]).unwrap();
+        assert!(s.is_empty());
+        assert_eq!(parse_pair("DP-1=10x-5").unwrap(), ("DP-1".into(), (10, -5)));
+        assert!(parse_pair("DP-1").is_err());
+    }
     use crate::apply::tests::mon;
 
     fn two() -> Vec<Monitor> {
@@ -441,7 +550,7 @@ mod tests {
     #[test]
     fn set_picks_advertised_modes() {
         let m = two();
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {
@@ -451,7 +560,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((s[0].width, s[0].refresh), (2560, 165.0));
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {
@@ -461,7 +570,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((s[0].width, s[0].refresh), (1920, 119.88));
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {
@@ -472,7 +581,7 @@ mod tests {
         .unwrap();
         assert_eq!(s[0].refresh, 59.95);
         assert_eq!(
-            plan_set(
+            set3(
                 &m,
                 "DP-1",
                 &SetArgs {
@@ -484,7 +593,7 @@ mod tests {
             .code,
             "unsupported_mode"
         );
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {
@@ -537,7 +646,7 @@ mod tests {
             })
             .collect();
         assert_eq!(check_result(&m, &off).unwrap_err().code, "no_screen");
-        let s = plan_set(
+        let s = set3(
             &m,
             "eDP-1",
             &SetArgs {
@@ -548,7 +657,7 @@ mod tests {
         .unwrap();
         assert_eq!(check_result(&m, &s).unwrap().len(), 1);
         // 2560x1440 at 1.5 → 1706.67: not clean.
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {
@@ -563,7 +672,7 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("snap"))
         );
-        let s = plan_set(
+        let s = set3(
             &m,
             "DP-1",
             &SetArgs {

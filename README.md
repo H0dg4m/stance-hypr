@@ -61,11 +61,14 @@ stance monitors                       list monitors
 stance set DP-1 --hz 165              change one monitor
 stance set eDP-1 --off                (refuses to turn off the last screen)
 stance layout right-of eDP-1 DP-1     left-of | right-of | above | below | mirror | single
+stance arrange DP-1=0x0 eDP-1=2560x360  move several screens at once
 stance confirm | stance revert        keep / undo the pending change
 stance persist                        write ~/.config/hypr/stance-monitors.lua
 stance mode save work                 snapshot the current setup as a mode
                                       (--with-quick: also night light + audio output)
 stance mode apply gaming
+stance mode put work --data '{…}'     write a mode from JSON (what the panel editor uses)
+stance rules | stance rules put --data '{…}'   hotplug rules as JSON
 stance night on 4500 | off | toggle   night light via hyprsunset
 stance brightness DP-1 +10            N | +N | -N percent (DDC/CI or backlight)
 stance audio set "Razer"              default output: id, node name or unique text
@@ -130,6 +133,14 @@ allow_extras = false   # true: also apply the mode's Hyprland options, power pro
 ```
 
 Enable with `systemctl --user enable --now stance.service`.
+
+### Screens remember their place
+
+stance keeps the last position, mode and scale of every screen it has seen
+(`~/.local/state/stance/memory.json`). Turning a screen off and on puts it
+back there; with the daemon running, so does unplugging and re-plugging it
+when no hotplug rule matches. Use `stance persist` to make a layout survive
+Hyprland restarts.
 
 ### Persisting
 

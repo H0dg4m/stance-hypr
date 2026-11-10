@@ -250,6 +250,44 @@ pub fn save(name: &str, mode: &ModeFile, overwrite: bool) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// A mode from the panel editor: JSON with the same keys as the TOML file,
+/// checked by the same strict parser (unknown keys, caps, ranges).
+pub fn from_json(data: &str) -> Result<ModeFile> {
+    if data.len() as u64 > store::MAX_INPUT {
+        return Err(Error::new("bad_mode", "mode data is too large"));
+    }
+    let m: ModeFile = serde_json::from_str(data)
+        .map_err(|e| Error::new("bad_mode", format!("invalid mode data: {e}")))?;
+    let text = toml::to_string(&m).map_err(|e| Error::new("bad_mode", e.to_string()))?;
+    parse_mode(&text)
+}
+
+pub fn rules_from_json(data: &str) -> Result<Rules> {
+    if data.len() as u64 > store::MAX_INPUT {
+        return Err(Error::new("bad_rules", "rules data is too large"));
+    }
+    let r: Rules = serde_json::from_str(data)
+        .map_err(|e| Error::new("bad_rules", format!("invalid rules data: {e}")))?;
+    let text = toml::to_string(&r).map_err(|e| Error::new("bad_rules", e.to_string()))?;
+    let r = parse_rules(&text)?;
+    // A rule for a mode that does not exist would fail on every hotplug.
+    for rule in &r.rules {
+        load(&rule.mode).map_err(|e| {
+            Error::new("bad_rules", format!("rule for `{}`: {}", rule.mode, e.message))
+        })?;
+    }
+    Ok(r)
+}
+
+pub fn save_rules(r: &Rules) -> Result<PathBuf> {
+    let path = rules_path()?;
+    store::ensure_private_dir(&store::config_dir()?)?;
+    let body = toml::to_string(r).map_err(|e| Error::new("io", e.to_string()))?;
+    let text = format!("# stance hotplug rules (see `stance rules`)\n{body}");
+    store::atomic_write(&path, text.as_bytes(), true)?;
+    Ok(path)
+}
+
 pub fn remove(name: &str) -> Result<()> {
     let path = mode_path(name)?;
     fs::remove_file(&path).map_err(|e| Error::new("unknown_mode", format!("{name}: {e}")))
@@ -626,6 +664,18 @@ enabled = false
         assert!(parse_mode("[brightness]\n\"A\" = 101").is_err());
         assert!(parse_mode("[brightness]\n\"A\" = -1").is_err());
         assert!(parse_mode("[brightness]\n\"A\" = \"50; rm\"").is_err());
+    }
+
+    #[test]
+    fn json_round_trip_is_strict() {
+        let m = parse_mode(GAMING).unwrap();
+        let j = serde_json::to_string(&m).unwrap();
+        assert_eq!(from_json(&j).unwrap(), m);
+        assert!(from_json("{\"exec\": \"x\"}").is_err());
+        assert!(from_json("{\"workspaces\": {\"1-900\": \"A\"}}").is_err());
+        assert!(from_json("{\"brightness\": {\"A\": 300}}").is_err());
+        assert!(from_json("not json").is_err());
+        assert!(rules_from_json("{\"rule\": [{\"monitors\": [], \"mode\": \"x\"}]}").is_err());
     }
 
     #[test]

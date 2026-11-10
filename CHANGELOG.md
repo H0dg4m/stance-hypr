@@ -24,6 +24,17 @@ Quick controls.
   (`short`, `bus`, `profile` in `audio list --json`), open animation
 - Confirm card: countdown readout and bar, Keep · Enter / Revert · Esc
   buttons (Space no longer confirms)
+- Screens remember where they were: turning one off and on (or re-plugging
+  it, with the daemon running and no rule matching) puts it back in its last
+  position, mode and scale (`memory.json` in the state dir; identical
+  screens without serial are skipped)
+- `arrange NAME=XxY …`: move several screens in one confirmable change;
+  overlaps are refused, screens that touch nothing are reported
+- Panel: drag screens on the map (edges snap), "identify" shows each
+  screen's name on it, settings page (sections to show, confirm window,
+  compact mode, hotplug rules editor, health from `doctor`), add-mode form
+  and a mode editor (`mode put NAME --data JSON`, `rules [show|put]`)
+- `status` reports whether the daemon is running
 - `doctor` checks hyprsunset, ddcutil / brightnessctl, pw-dump / wpctl
 - External tools run with a hard timeout (kill + reap)
 
