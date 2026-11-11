@@ -49,7 +49,7 @@ dosyasına bak (her `stance doctor` iletisi için bir madde). Hata bildirirken
 
 ## Kurulum
 
-Arch: `stance-hypr` / `stance-hypr-git` (`packaging/aur` içinde PKGBUILD; AUR yüklemesi bekliyor). Kaynaktan:
+Arch: `stance-hypr` / `stance-hypr-git` (`packaging/aur` içinde PKGBUILD; AUR yüklemesi bekliyor). Nix: `nix run github:H0dg4m/stance-hypr`. Her sürümde statik bir tarball var. Tüm yollar, isteğe bağlı araçlar ve kaldırma: [docs/install.md](docs/install.md) (İngilizce). Kaynaktan:
 
 ```sh
 cargo build --release
