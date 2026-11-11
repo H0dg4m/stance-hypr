@@ -17,7 +17,8 @@ particular shell:
 | `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings (prefs in `~/.config/stance/panel.json`) |
 | `StanceDeckButtons` | Phone-buttons editor card in the settings window (`deck buttons / put / reset`) |
 | `StanceIdentify` | Shows each screen's name on that screen for a moment |
-| `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `settings`, `confirm`, `revert`) |
+| `StanceClip`, `StanceClipService` | Clipboard shelf overlay (`stance clip`, see `docs/clip.md`) and its data side (list on open, `clip.rev` watch while open) |
+| `shell.qml` | Standalone shell with IPC (`toggle`, `open`, `close`, `settings`, `confirm`, `revert`, `clip`, `clipOpen`, `clipClose`) |
 
 Packages install them to `/usr/share/stance/quickshell`; from source use
 `quickshell/stance` in this repo.
@@ -99,6 +100,41 @@ Waybar example:
   "tooltip": false
 }
 ```
+
+## Clipboard shelf
+
+Needs `stance clip` (capture units running, `clip.enabled` set in the panel
+settings under "Clipboard shelf"). The standalone shell owns the overlay:
+
+```sh
+qs -p /usr/share/stance/quickshell ipc call stance clip      # toggle
+qs -p /usr/share/stance/quickshell ipc call stance clipOpen
+qs -p /usr/share/stance/quickshell ipc call stance clipClose
+```
+
+Hyprland (Lua config):
+
+```lua
+hl.bind("SUPER + SHIFT + V", hl.dsp.exec_cmd("qs -p /usr/share/stance/quickshell ipc call stance clip"))
+```
+
+Keys: arrows move, Up/Down/Tab switch shelf, Space previews, Enter copies and
+closes, P pins, S/Delete removes, Backspace undoes (or edits the search), `/`
+or any other key searches, Esc clears the search, then closes. In search mode
+letters type; use Ctrl+P / Ctrl+S to pin / remove then. The layer takes
+exclusive keyboard focus only while it is open.
+
+Embedding: create a `StanceClipService { bin: ... }` and a
+`StanceClip { clip: thatService; screen: ...; onSettingsRequested: ... }`, then
+set `open`. To try it without the real core:
+
+```sh
+STANCE_BIN=$PWD/contrib/fake-clip.sh STANCE_CLIP_DIR=/tmp/stance-clip-fixture qs -p quickshell/stance
+```
+
+(`STANCE_CLIP_DIR` is the directory image paths must live under; the default is
+`$XDG_DATA_HOME/stance/clip`. `STANCE_FAKE_OFF=1` shows the disabled state,
+`STANCE_FAKE_LOG=file` records the calls.)
 
 The confirm card appears on every screen for any change, including ones made
 from the CLI or a keybind.

@@ -2,6 +2,7 @@ mod apply;
 mod audio;
 mod backend;
 mod brightness;
+mod clip;
 mod daemon;
 mod deck;
 mod doctor;
@@ -70,6 +71,10 @@ Usage:
   stance deck status | devices | unpair NAME   Server state, paired phones
   stance deck buttons | put --data JSON | reset   The phone's buttons (deck.toml)
   stance deck test …                   Reference client (pair PAYLOAD, buttons, press ID)
+  stance clip list [--kind K] [--query Q] [--limit N]   Clipboard shelf (text, link, image)
+  stance clip copy | get | pin | unpin | rm ID…   stance clip undo | prune | clear [--all]
+  stance clip config [show | put --data JSON]   enabled, text, image, retention_days
+  stance clip ingest [--image]         Store one copy (run by `wl-paste --watch`)
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
 
@@ -92,6 +97,9 @@ const VALUE_FLAGS: &[&str] = &[
     "--data",
     "--port",
     "--name",
+    "--kind",
+    "--query",
+    "--limit",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -105,6 +113,8 @@ const BOOL_FLAGS: &[&str] = &[
     "--with-quick",
     "--loopback",
     "--force-version",
+    "--image",
+    "--all",
     "--help",
     "-h",
     "--version",
@@ -229,6 +239,9 @@ fn run(a: &Args) -> Result<ExitCode> {
 
     if cmd == "deck" {
         return deck_cmd(a, json).map(|_| ExitCode::SUCCESS);
+    }
+    if cmd == "clip" {
+        return clip_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
     if cmd == "audio" {
         return audio_cmd(a, json).map(|_| ExitCode::SUCCESS);
@@ -831,6 +844,151 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
             format!("unknown deck subcommand `{other}`"),
         )),
     }
+}
+
+fn clip_cmd(a: &Args, json: bool) -> Result<()> {
+    let c = clip::Clip::open(&state_dir()?)?;
+    let sub = a.pos.get(1).map(String::as_str).unwrap_or("list");
+    let ids = || -> Result<Vec<u64>> {
+        let v = a.pos[2..]
+            .iter()
+            .map(|s| clip::parse_id(s))
+            .collect::<Result<Vec<_>>>()?;
+        if v.is_empty() {
+            return Err(Error::new("usage", "missing clip id"));
+        }
+        Ok(v)
+    };
+    let done = |rev: u64, msg: &str| {
+        if json {
+            ok_json(&json!({ "rev": rev }));
+        } else if !msg.is_empty() {
+            println!("{msg}");
+        }
+    };
+    match sub {
+        "ingest" => {
+            a.max_pos(2)?;
+            // Must never break the wl-paste --watch loop: report, exit 0.
+            if let Err(e) = clip::ingest(&c, a.has("--image"), &mut std::io::stdin().lock()) {
+                eprintln!("stance clip ingest: {e}");
+            }
+        }
+        "list" => {
+            a.max_pos(2)?;
+            let kind = a.val("--kind").map(clip::Kind::parse).transpose()?;
+            let limit = a.num::<usize>("--limit")?.unwrap_or(200).min(2000);
+            let l = c.list(kind, a.val("--query"), limit)?;
+            if json {
+                ok_json(&l);
+            } else {
+                if !l.enabled {
+                    println!(
+                        "clip shelf is off (stance clip config put --data '{{\"enabled\":true}}')"
+                    );
+                }
+                for i in &l.items {
+                    let pin = if i.pinned { "*" } else { " " };
+                    let kind = format!("{:?}", i.kind).to_lowercase();
+                    let what = match (&i.path, i.w, i.h) {
+                        (Some(_), Some(w), Some(h)) => format!("{} {w}x{h}", i.mime),
+                        (Some(_), _, _) => i.mime.clone(),
+                        _ => i.preview.chars().take(70).collect(),
+                    };
+                    println!("{pin}{:>6} {kind:<5} {what}", i.id);
+                }
+            }
+        }
+        "get" => {
+            a.max_pos(3)?;
+            let e = c.entry(clip::parse_id(a.arg(2, "clip id")?)?)?;
+            if e.kind == clip::Kind::Image {
+                let p = c.blob_path(&e).to_string_lossy().into_owned();
+                if json {
+                    ok_json(&json!({ "path": p, "mime": e.mime }));
+                } else {
+                    println!("{p}");
+                }
+            } else {
+                let mut s = String::new();
+                use std::io::Read;
+                c.open_blob(&e)?
+                    .take(clip::MAX_TEXT)
+                    .read_to_string(&mut s)
+                    .map_err(|e| Error::new("io", format!("clip blob: {e}")))?;
+                if json {
+                    ok_json(&json!({ "text": s, "mime": e.mime }));
+                } else {
+                    print!("{s}");
+                }
+            }
+        }
+        "copy" => {
+            a.max_pos(3)?;
+            let rev = c.copy(clip::parse_id(a.arg(2, "clip id")?)?)?;
+            done(rev, "copied");
+        }
+        "pin" | "unpin" => done(c.set_pinned(&ids()?, sub == "pin")?, ""),
+        "rm" => done(c.remove(&ids()?)?, "removed (stance clip undo restores)"),
+        "undo" => {
+            a.max_pos(2)?;
+            let (n, rev) = c.undo()?;
+            done(rev, &format!("restored {n}"));
+        }
+        "prune" => {
+            a.max_pos(2)?;
+            done(c.prune()?, "");
+        }
+        "clear" => {
+            a.max_pos(2)?;
+            let all = a.has("--all");
+            done(
+                c.clear(all)?,
+                if all {
+                    "clip store wiped"
+                } else {
+                    "cleared (pinned kept; stance clip undo restores)"
+                },
+            );
+        }
+        "config" => match a.pos.get(2).map(String::as_str) {
+            None | Some("show") => {
+                let cfg = c.config()?;
+                if json {
+                    ok_json(&cfg);
+                } else {
+                    println!(
+                        "enabled: {}\ntext: {}\nimage: {}\nretention_days: {}",
+                        cfg.enabled, cfg.text, cfg.image, cfg.retention_days
+                    );
+                }
+            }
+            Some("put") => {
+                let data = a
+                    .val("--data")
+                    .ok_or_else(|| Error::new("usage", "clip config put needs --data JSON"))?;
+                let cfg = c.put_config(data)?;
+                if json {
+                    ok_json(&cfg);
+                }
+            }
+            Some(other) => {
+                return Err(Error::new(
+                    "usage",
+                    format!("unknown clip config command `{other}` (show, put)"),
+                ));
+            }
+        },
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!(
+                    "unknown clip command `{other}` (list, get, copy, pin, unpin, rm, undo, prune, clear, config, ingest)"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn rules_cmd(a: &Args, json: bool) -> Result<()> {

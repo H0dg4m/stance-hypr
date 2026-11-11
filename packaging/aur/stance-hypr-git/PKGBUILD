@@ -50,6 +50,8 @@ package() {
   install -Dm755 target/release/stance "$pkgdir/usr/bin/stance"
   install -Dm644 contrib/stance.service "$pkgdir/usr/lib/systemd/user/stance.service"
   install -Dm644 contrib/stance-deck.service "$pkgdir/usr/lib/systemd/user/stance-deck.service"
+  install -Dm644 contrib/stance-clip-text.service "$pkgdir/usr/lib/systemd/user/stance-clip-text.service"
+  install -Dm644 contrib/stance-clip-image.service "$pkgdir/usr/lib/systemd/user/stance-clip-image.service"
   install -dm755 "$pkgdir/usr/share/stance"
   cp -r quickshell/stance "$pkgdir/usr/share/stance/quickshell"
   cp -r quickshell/integrations "$pkgdir/usr/share/stance/integrations"

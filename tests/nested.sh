@@ -328,6 +328,44 @@ EOF
   run layout right-of TEST-2 TEST-1 --no-confirm
 fi
 
+# Clipboard shelf (nested compositor's own clipboard) ---------------------
+if command -v wl-copy >/dev/null && command -v wl-paste >/dev/null && [ -n "$NWL" ]; then
+  export STANCE_CLIP_DIR=$WORK/clip
+  # Everything that talks to a clipboard goes through W (never the live session).
+  W() { WAYLAND_DISPLAY=$NWL "$@"; }
+  W wl-paste --type text --watch "$BIN" clip ingest &
+  CT=$!
+  sleep 0.5
+  W wl-copy "not stored while off"; sleep 0.5
+  [ "$("$BIN" clip list --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]["items"]))')" = 0 ] \
+    && ok "clip stores nothing while off" || bad "clip stores nothing while off"
+  run clip config put --data '{"enabled":true}'
+  W wl-copy "hello from nested"; sleep 0.5
+  W wl-copy "https://example.org/x"; sleep 0.5
+  printf 'pw' | W wl-copy --type 'x-kde-passwordManagerHint' 2>/dev/null; sleep 0.3
+  W wl-copy --type text/plain --type x-kde-passwordManagerHint "hunter2" 2>/dev/null; sleep 0.5
+  "$BIN" clip list --json >"$WORK/clip.json"
+  python3 - "$WORK/clip.json" <<'PY' && ok "clip captures text and link" || bad "clip captures text and link" "$(cat "$WORK/clip.json")"
+import json, sys
+items = json.load(open(sys.argv[1]))["data"]["items"]
+kinds = {i["preview"]: i["kind"] for i in items}
+assert kinds.get("hello from nested") == "text", kinds
+assert kinds.get("https://example.org/x") == "link", kinds
+assert not any("hunter2" in p or "not stored" in p for p in kinds), kinds
+PY
+  ID=$("$BIN" clip list --kind text --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["items"][0]["id"])')
+  W wl-copy "something else"; sleep 0.5
+  W "$BIN" clip copy "$ID" >"$WORK/last.out" 2>&1 && [ "$(W wl-paste --no-newline)" = "hello from nested" ] \
+    && ok "clip copy puts the item back" || bad "clip copy puts the item back" "$(cat "$WORK/last.out")"
+  sleep 0.5
+  N=$("$BIN" clip list --json | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]["items"]; print(sum(i["preview"]=="hello from nested" for i in d), d[0]["preview"])')
+  [ "$N" = "1 hello from nested" ] && ok "clip copy-back deduped and on top" || bad "clip copy-back deduped and on top" "$N"
+  run clip rm "$ID" && run clip undo && grep -q "restored 1" "$WORK/last.out" && ok "clip rm + undo" || bad "clip rm + undo"
+  run clip get ../../etc/passwd && bad "clip id path refused" || ok "clip id path refused"
+  kill $CT 2>/dev/null; wait $CT 2>/dev/null
+  unset STANCE_CLIP_DIR
+fi
+
 # Daemon -----------------------------------------------------------------
 cat > "$XDG_CONFIG_HOME/stance/rules.toml" <<EOF
 [[rule]]

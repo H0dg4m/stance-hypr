@@ -13,6 +13,13 @@ ShellRoot {
 
     StanceService {
         id: stanceService
+        // STANCE_BIN points the shell at another binary (tests use contrib/fake-clip.sh).
+        bin: Quickshell.env("STANCE_BIN") || "stance"
+    }
+
+    StanceClipService {
+        id: clipService
+        bin: stanceService.bin
     }
 
     StanceTheme {
@@ -45,6 +52,14 @@ ShellRoot {
         }
     }
 
+    StanceClip {
+        id: clipShelf
+        clip: clipService
+        theme: stanceTheme
+        screen: popup.screen
+        onSettingsRequested: popup.settingsOpen = true
+    }
+
     IpcHandler {
         target: "stance"
 
@@ -52,6 +67,10 @@ ShellRoot {
         function open(): void { popup.open = true; }
         function close(): void { popup.open = false; }
         function settings(): void { popup.settingsOpen = true; }
+        // Clipboard shelf: `ipc call stance clip` toggles it.
+        function clip(): void { clipShelf.open = !clipShelf.open; }
+        function clipOpen(): void { clipShelf.open = true; }
+        function clipClose(): void { clipShelf.open = false; }
         function confirm(): void { stanceService.confirm(); }
         function revert(): void { stanceService.revert(); }
     }

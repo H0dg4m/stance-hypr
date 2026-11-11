@@ -1,0 +1,6 @@
+{"ok":true,"schema":1,"data":{"rev":42,"enabled":true,"items":[
+ {"id":"12","kind":"link","created":1794390000,"updated":1794390400,"pinned":true,"preview":"https://github.com/H0dg4m/stance-hypr","host":"github.com","size":37,"mime":"text/plain","path":null,"w":null,"h":null},
+ {"id":"15","kind":"image","created":1794390300,"updated":1794390300,"pinned":false,"preview":"","host":null,"size":183422,"mime":"image/png","path":"/tmp/stance-clip-fixture/blobs/3f2a.png","w":1920,"h":1080},
+ {"id":"14","kind":"text","created":1794390200,"updated":1794390250,"pinned":false,"preview":"<b>not bold</b> — clip text is always plain text","host":null,"size":49,"mime":"text/plain","path":null,"w":null,"h":null},
+ {"id":"13","kind":"text","created":1794390100,"updated":1794390100,"pinned":false,"preview":"cargo test --release && tests/nested.sh lua target/release/stance","host":null,"size":66,"mime":"text/plain","path":null,"w":null,"h":null}
+]}}

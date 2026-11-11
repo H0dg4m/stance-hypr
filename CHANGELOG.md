@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Clipboard shelf (`stance clip`)
+- Images, texts and links you copy, on three shelves; inspired by
+  ClipBoardLine (MIT), not a fork. Off until enabled; see docs/clip.md
+- Captured by `wl-paste --watch stance clip ingest` (two user units,
+  `contrib/stance-clip-text.service` and `-image.service`); copies that a
+  password manager marks sensitive, empty clipboards and unknown states are
+  never stored
+- Images typed by magic bytes (PNG, JPEG, WebP, GIF, BMP; SVG refused), size
+  caps (text 256 KiB, image 32 MiB), file-manager copies ignored
+- Same content is one entry (moved to the top), pins survive retention
+  (1/3/7/15/30 days), `rm` is undoable, `clear [--all]`
+- Store is private (`~/.local/share/stance/clip`, 0700/0600), index holds
+  only 200-character previews; `clip.rev` tells the panel when to reload
+- `doctor` reports the shelf, its watchers and that cliphist (if running)
+  keeps what stance skips
+
 ## 0.2.0 – 2026-11-11
 
 The display tool that can't strand you on a black screen, now with quick

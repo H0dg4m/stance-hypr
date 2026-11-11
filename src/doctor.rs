@@ -343,6 +343,9 @@ fn dir_checks() -> Vec<Check> {
         },
     ));
     out.push(deck_check());
+    if let Ok(dir) = crate::store::state_dir() {
+        out.push(clip_check(&dir));
+    }
     out.extend(shell_checks());
     if ddc && !Path::new("/dev/i2c-0").exists() {
         out.push(check(
@@ -446,29 +449,93 @@ fn shell_checks() -> Vec<Check> {
     out
 }
 
+/// Command lines of running processes (read from /proc, nothing is executed).
+fn cmdlines() -> Vec<Vec<String>> {
+    let Ok(rd) = fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    rd.flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .bytes()
+                .all(|b| b.is_ascii_digit())
+        })
+        .filter_map(|e| fs::read(e.path().join("cmdline")).ok())
+        .map(|raw| {
+            raw.split(|b| *b == 0)
+                .map(|a| String::from_utf8_lossy(a).into_owned())
+                .collect()
+        })
+        .collect()
+}
+
+/// Clipboard shelf: enabled, both watchers running, and the cliphist caveat.
+pub fn clip_check(state_dir: &Path) -> Check {
+    let enabled = crate::clip::Clip::open(state_dir)
+        .and_then(|c| c.config())
+        .map(|c| c.enabled);
+    let procs = cmdlines();
+    let base = |a: &String| a.rsplit('/').next().unwrap_or("").to_string();
+    let watching = |kind: &str| {
+        procs.iter().any(|p| {
+            p.first().is_some_and(|a| base(a) == "wl-paste")
+                && p.iter().any(|a| a == kind)
+                && p.iter().any(|a| base(a) == "stance")
+        })
+    };
+    let cliphist = procs.iter().any(|p| {
+        p.iter().any(|a| a.contains("cliphist store"))
+            || p.first().is_some_and(|a| base(a) == "cliphist")
+    });
+    let note = if cliphist {
+        "; cliphist also runs and stores what stance skips (password-manager copies)"
+    } else {
+        ""
+    };
+    match enabled {
+        Err(e) => check("clip", Status::Warn, format!("clip config: {}", e.message)),
+        Ok(false) => check(
+            "clip",
+            Status::Info,
+            "clipboard shelf off (optional: stance clip config put --data '{\"enabled\":true}' and systemctl --user enable --now stance-clip-text stance-clip-image)",
+        ),
+        Ok(true) => match (watching("text"), watching("image")) {
+            (true, true) => check(
+                "clip",
+                Status::Ok,
+                format!("clipboard shelf on, text and image capture running{note}"),
+            ),
+            (t, i) => check(
+                "clip",
+                Status::Warn,
+                format!(
+                    "clipboard shelf on but {} capture is not running: systemctl --user enable --now {} (the units need WAYLAND_DISPLAY in the systemd user environment: dbus-update-activation-environment --systemd WAYLAND_DISPLAY){note}",
+                    if t {
+                        "image"
+                    } else if i {
+                        "text"
+                    } else {
+                        "text and image"
+                    },
+                    if t {
+                        "stance-clip-image"
+                    } else if i {
+                        "stance-clip-text"
+                    } else {
+                        "stance-clip-text stance-clip-image"
+                    },
+                ),
+            ),
+        },
+    }
+}
+
 /// Names passed to `qs -c NAME` / `quickshell -c NAME` by running
-/// processes of this user (read from /proc, nothing is executed).
+/// processes of this user.
 fn running_qs_configs() -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(rd) = fs::read_dir("/proc") else {
-        return out;
-    };
-    for e in rd.flatten() {
-        if !e
-            .file_name()
-            .to_string_lossy()
-            .bytes()
-            .all(|b| b.is_ascii_digit())
-        {
-            continue;
-        }
-        let Ok(raw) = fs::read(e.path().join("cmdline")) else {
-            continue;
-        };
-        let args: Vec<String> = raw
-            .split(|b| *b == 0)
-            .map(|a| String::from_utf8_lossy(a).into_owned())
-            .collect();
+    for args in cmdlines() {
         let is_qs = args.first().is_some_and(|a| {
             a.rsplit('/')
                 .next()

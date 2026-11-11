@@ -185,6 +185,24 @@ daemon açıksa şarj takılıp çıkarılınca kurallar yeniden değerlendirili
 kez `require("stance-monitors")` ekle (nwg-displays kullanıyorsan onun
 `require("monitors")` satırından sonra). stance ana config'ine asla dokunmaz.
 
+## Pano rafı
+
+`stance clip` kopyaladıklarını üç rafta (görseller, metinler, linkler) tutar,
+klavyeyle geri seçersin. Sen açana kadar kapalıdır; cliphist'e dokunmadan
+onunla yan yana çalışır.
+
+```sh
+stance clip config put --data '{"enabled":true,"retention_days":30}'
+systemctl --user enable --now stance-clip-text stance-clip-image
+stance clip list                 # en yeni üstte, sabitlenenler en başta
+stance clip copy 12              # panoya geri koy
+stance clip pin 12 ; stance clip rm 13 ; stance clip undo
+```
+
+Şifre yöneticisinin "hassas" işaretlediği kopyalar asla saklanmaz (cliphist
+çalışıyorsa o yine saklar). Depo yalnız senin kullanıcına açıktır ama
+şifrelenmez. Ayrıntı: [docs/clip.md](docs/clip.md).
+
 ## Güvenlik
 
 - Hyprland soketine doğrudan bağlanır; `hyprctl` ve kabuk hiç kullanılmaz.

@@ -170,6 +170,42 @@ ColumnLayout {
         service.call(["status"], r => { if (r && r.ok && r.data) service.daemon = r.data.daemon === true; });
         loadRules();
         loadChecks();
+        loadClip();
+    }
+
+    // ---- clipboard shelf config (stance clip config) ---------------------------
+    property var clipCfg: null
+    property string clipError: ""
+    readonly property var clipRetention: [1, 3, 7, 15, 30]
+
+    function loadClip() {
+        service.call(["clip", "config", "show"], r => {
+            if (r && r.ok && r.data) {
+                clipCfg = r.data;
+                clipError = "";
+            } else {
+                clipError = r && r.error ? r.error.message : "this stance has no clip support";
+            }
+        });
+    }
+
+    // key: "enabled" | "text" | "image" | "retention_days"
+    function setClip(key, value) {
+        const next = {
+            enabled: clipCfg.enabled === true,
+            text: clipCfg.text !== false,
+            image: clipCfg.image !== false,
+            retention_days: clipCfg.retention_days || 30
+        };
+        next[key] = value;
+        service.call(["clip", "config", "put", "--data", JSON.stringify(next)], r => {
+            if (r && r.ok) {
+                clipCfg = r.data && r.data.enabled !== undefined ? r.data : next;
+                clipError = "";
+            } else {
+                clipError = r && r.error ? r.error.message : "stance returned no output";
+            }
+        });
     }
 
     component Dim: Text {
@@ -252,6 +288,76 @@ ColumnLayout {
                 theme: page.theme
                 checked: page.prefs.compact === true
                 onToggled: v => page.service.setPref("compact", v)
+            }
+        }
+    }
+
+    // ---- clipboard shelf ----------------------------------------------------------
+    StanceSection {
+        Layout.fillWidth: true
+        theme: page.theme
+        icon: "content_paste"
+        title: "Clipboard shelf"
+        Dim {
+            visible: page.clipCfg === null
+            text: page.clipError !== "" ? page.clipError : "Loading\u2026"
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
+        }
+        ColumnLayout {
+            visible: page.clipCfg !== null
+            Layout.fillWidth: true
+            spacing: 8
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Body { text: "Keep a clipboard history"; Layout.fillWidth: true }
+                StanceSwitch {
+                    theme: page.theme
+                    checked: page.clipCfg !== null && page.clipCfg.enabled === true
+                    onToggled: v => page.setClip("enabled", v)
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Body { text: "Capture text and links"; Layout.fillWidth: true }
+                StanceSwitch {
+                    theme: page.theme
+                    checked: page.clipCfg !== null && page.clipCfg.text !== false
+                    onToggled: v => page.setClip("text", v)
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Body { text: "Capture images"; Layout.fillWidth: true }
+                StanceSwitch {
+                    theme: page.theme
+                    checked: page.clipCfg !== null && page.clipCfg.image !== false
+                    onToggled: v => page.setClip("image", v)
+                }
+            }
+            Body { text: "Keep unpinned items for" }
+            StanceSegmented {
+                Layout.fillWidth: true
+                theme: page.theme
+                model: page.clipRetention.map(d => ({ label: d + (d === 1 ? " day" : " days"), value: d }))
+                current: page.clipCfg !== null ? page.clipCfg.retention_days : null
+                onPicked: v => page.setClip("retention_days", v)
+            }
+            Dim {
+                text: "History is stored unencrypted in your data directory. Copies a password manager marks as sensitive are never kept. Needs the stance-clip units running."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                font.pixelSize: page.theme.fontSize - 2
+            }
+            Dim {
+                visible: page.clipError !== ""
+                text: page.clipError
+                color: page.theme.danger
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
     }

@@ -1,0 +1,20 @@
+[Unit]
+Description=stance clipboard shelf (image capture)
+Documentation=https://github.com/H0dg4m/stance-hypr/blob/main/docs/clip.md
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Stores nothing until enabled: stance clip config put --data '{"enabled":true}'
+# Copies marked sensitive by password managers are always skipped.
+ExecStart=/usr/bin/wl-paste --type image --watch /usr/bin/stance clip ingest --image
+# wl-paste exits when the compositor restarts.
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=160M
+
+[Install]
+WantedBy=graphical-session.target

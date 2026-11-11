@@ -234,6 +234,24 @@ if you use it. stance never edits your main config.
 
 `stance doctor` reports which of these are available.
 
+## Clipboard shelf
+
+`stance clip` keeps what you copy on three shelves (images, texts, links) and
+lets you pick it back from the keyboard. It is off until you enable it, and it
+runs next to cliphist without touching it.
+
+```sh
+stance clip config put --data '{"enabled":true,"retention_days":30}'
+systemctl --user enable --now stance-clip-text stance-clip-image
+stance clip list                 # newest first, pinned on top
+stance clip copy 12              # back onto the clipboard
+stance clip pin 12 ; stance clip rm 13 ; stance clip undo
+```
+
+Copies that a password manager marks as sensitive are never stored (cliphist,
+if you run it, still stores them). The store is private to your user but not
+encrypted. Details: [docs/clip.md](docs/clip.md).
+
 ## Security
 
 - Talks to Hyprland's socket directly; no `hyprctl`, no shell, ever.
