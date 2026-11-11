@@ -77,24 +77,48 @@ pub fn toml_schema(text: &str) -> u32 {
         .unwrap_or(1)
 }
 
-fn read_small(path: &Path) -> Option<String> {
-    let meta = std::fs::metadata(path).ok()?;
+/// The file's text if it exists. Missing = None (nothing to protect); a file
+/// that exists but is too large or unreadable is refused, never overwritten.
+fn read_existing(path: &Path, file: &str) -> Result<Option<String>> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(Error::new("io", format!("{file}: {e}"))),
+    };
     if !meta.is_file() || meta.len() > 1 << 20 {
-        return None;
+        return Err(Error::new(
+            "unsafe_path",
+            format!("{file} is not a regular file under 1 MiB; not changing it"),
+        ));
     }
-    std::fs::read_to_string(path).ok()
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|e| Error::new("io", format!("{file}: {e}")))
 }
 
-/// Call before writing `path` (JSON): refuses if the file on disk is newer.
-/// A missing or unreadable file passes (nothing of value to protect).
+/// Fail closed: a `schema` key that is present but not a positive 32-bit
+/// integer is treated as "newer than us".
+fn refuse_unknown_schema(file: &str) -> Error {
+    Error::new(
+        "newer_schema",
+        format!("{file} has a schema this stance cannot read; not changing it"),
+    )
+}
+
+/// Call before writing `path` (JSON): refuses if the file on disk is newer
+/// or its schema cannot be read. A missing file or one that is not JSON at
+/// all passes (the write repairs it).
 pub fn guard_json(path: &Path, file: &str) -> Result<()> {
-    let Some(text) = read_small(path) else {
+    let Some(text) = read_existing(path, file)? else {
         return Ok(());
     };
-    let found = serde_json::from_str::<Value>(&text)
-        .ok()
-        .and_then(|v| json_schema(file, &v).ok())
-        .unwrap_or(1);
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return Ok(());
+    };
+    if v.get("schema").is_none() {
+        return Ok(());
+    }
+    let found = json_schema(file, &v).map_err(|_| refuse_unknown_schema(file))?;
     if found > CURRENT {
         return Err(newer(file, found));
     }
@@ -103,10 +127,20 @@ pub fn guard_json(path: &Path, file: &str) -> Result<()> {
 
 /// Same for a TOML file.
 pub fn guard_toml(path: &Path, file: &str) -> Result<()> {
-    let Some(text) = read_small(path) else {
+    let Some(text) = read_existing(path, file)? else {
         return Ok(());
     };
-    let found = toml_schema(&text);
+    let Ok(t) = text.parse::<toml::Table>() else {
+        return Ok(());
+    };
+    let Some(v) = t.get("schema") else {
+        return Ok(());
+    };
+    let found = v
+        .as_integer()
+        .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| refuse_unknown_schema(file))?;
     if found > CURRENT {
         return Err(newer(file, found));
     }
@@ -117,6 +151,53 @@ pub fn guard_toml(path: &Path, file: &str) -> Result<()> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn guards_fail_closed() {
+        let d = tmp("closed");
+        let t = d.join("rules.toml");
+        for bad in [
+            "schema = 5000000000\n",
+            "schema = -4\n",
+            "schema = 0\n",
+            "schema = \"x\"\n",
+            "schema = 2\n",
+        ] {
+            std::fs::write(&t, bad).unwrap();
+            assert_eq!(
+                guard_toml(&t, "rules.toml").unwrap_err().code,
+                "newer_schema",
+                "{bad}"
+            );
+        }
+        std::fs::write(&t, "x".repeat((1 << 20) + 1)).unwrap();
+        assert!(guard_toml(&t, "rules.toml").is_err(), "oversize refused");
+        std::fs::write(&t, "not [ toml").unwrap();
+        assert!(
+            guard_toml(&t, "rules.toml").is_ok(),
+            "broken file may be repaired"
+        );
+        std::fs::write(&t, "schema = 1\n").unwrap();
+        assert!(guard_toml(&t, "rules.toml").is_ok());
+        let j = d.join("features.json");
+        for bad in [
+            r#"{"schema":-1}"#,
+            r#"{"schema":99999999999}"#,
+            r#"{"schema":2}"#,
+            r#"{"schema":"1"}"#,
+        ] {
+            std::fs::write(&j, bad).unwrap();
+            assert_eq!(
+                guard_json(&j, "features.json").unwrap_err().code,
+                "newer_schema",
+                "{bad}"
+            );
+        }
+        std::fs::write(&j, r#"{"schema":1,"clip":true}"#).unwrap();
+        assert!(guard_json(&j, "features.json").is_ok());
+        assert!(guard_json(&d.join("missing.json"), "x").is_ok());
+        std::fs::remove_dir_all(&d).ok();
+    }
 
     fn fixtures(ver: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
