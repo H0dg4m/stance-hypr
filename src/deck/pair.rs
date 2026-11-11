@@ -224,6 +224,10 @@ pub fn save_devices(d: &Devices) -> Result<()> {
 pub fn add_device(name: &str, key: &str) -> Result<Device> {
     let name = clean_name(name).ok_or_else(|| Error::new("deck", "device name is empty"))?;
     let mut d = load_devices()?;
+    // A new key under a trusted name must earn the trust again.
+    if d.devices.iter().any(|x| x.name == name && x.key != key) {
+        super::transfer::untrust(&name);
+    }
     d.devices.retain(|x| x.name != name && x.key != key);
     if d.devices.len() >= MAX_DEVICES {
         return Err(Error::new(
@@ -248,6 +252,7 @@ pub fn remove_device(name: &str) -> Result<bool> {
     let removed = d.devices.len() != before;
     if removed {
         save_devices(&d)?;
+        super::transfer::untrust(name);
     }
     Ok(removed)
 }

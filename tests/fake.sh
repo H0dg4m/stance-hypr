@@ -227,10 +227,18 @@ python3 -c "import sys; d=open('$WORK/dot.png','rb').read(); sys.stdout.buffer.w
 CLIPBOARD_STATE=data s clip ingest --image < "$WORK/dot2.png"
 wait $R
 check "image to phone" "image: $(stat -c %s "$WORK/dot2.png") bytes" "$(cat "$WORK/recv.out")"
+s deck test receive "$WORK/got" 3 > "$WORK/recv.out" 2>&1 & R=$!
+sleep 1.2
+CLIPBOARD_STATE=data s clip ingest --image < "$WORK/dot.png"
+wait $R
+case "$(cat "$WORK/recv.out")" in *"nothing received"*) ok "phone's own image is not echoed back";; *) bad "phone's own image is not echoed back" "$(cat "$WORK/recv.out")";; esac
 rm -f "$WORK/answer"
 head -c 1000 /dev/urandom > "$WORK/t.bin"
 check "trusted phone: file saved without a prompt" done "$(s deck test push "$WORK/t.bin" 2>&1)"
 cmp -s "$WORK/t.bin" "$WORK/dl/t.bin" && ok "trusted file intact" || bad "trusted file intact"
+s deck transfer show --json | grep -q '"ci"' && ok "trust is listed" || bad "trust is listed"
+s deck unpair ci >/dev/null
+s deck transfer show --json | grep -q '"ci"' && bad "unpair ends trust" || ok "unpair ends trust"
 kill $DECK; wait $DECK 2>/dev/null
 
 echo "passed $PASS, failed $FAIL"

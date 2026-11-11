@@ -22,9 +22,6 @@ StanceSection {
             card.settings = r && r.ok ? r.data.settings : null;
             card.error = r && r.ok ? (r.data.warning || "") : (r && r.error ? r.error.message : "");
         });
-        service.deckDevices(r => {
-            card.devices = r && r.ok && r.data.devices ? r.data.devices.map(d => d.name) : [];
-        });
         service.call(["deck", "transfers"], r => {
             card.pending = r && r.ok ? r.data.pending : null;
             card.recent = r && r.ok && r.data.transfers ? r.data.transfers.slice(-3).reverse() : [];
@@ -60,7 +57,13 @@ StanceSection {
         service.call(["deck", "transfer", yes ? "accept" : "decline", String(pending.id)], () => card.load());
     }
 
-    Component.onCompleted: load()
+    Component.onCompleted: {
+        load();
+        // Paired phones change rarely; once per opening is enough.
+        service.deckDevices(r => {
+            card.devices = r && r.ok && r.data.devices ? r.data.devices.map(d => d.name) : [];
+        });
+    }
     // A prompt can arrive while the page is open.
     Timer {
         interval: 2000

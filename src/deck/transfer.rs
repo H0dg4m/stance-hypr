@@ -199,6 +199,22 @@ pub fn parse_settings(text: &str) -> Result<Settings> {
     Ok(s)
 }
 
+/// Drops `device` from `trusted_devices` (unpaired, or paired again with
+/// another key). Leaves the file alone when it is not there.
+pub fn untrust(device: &str) {
+    let (s, warn) = load_settings();
+    if warn.is_some() || !s.trusted_devices.iter().any(|d| d == device) {
+        return;
+    }
+    let mut s = s;
+    s.trusted_devices.retain(|d| d != device);
+    if let Ok(json) = serde_json::to_string(&s)
+        && let Err(e) = put_settings(&json)
+    {
+        eprintln!("stance: transfer.toml: {}", e.message);
+    }
+}
+
 /// Validates JSON from the panel / CLI and writes `transfer.toml`.
 pub fn put_settings(json: &str) -> Result<Settings> {
     let mut s: Settings = serde_json::from_str(json)

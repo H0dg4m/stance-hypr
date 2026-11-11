@@ -116,7 +116,7 @@ Design: [ADR 0004](adr/0004-phone-transfers.md); wire format: protocol.md
 | `download_dir` | `~/Downloads/stance` | received files land only here |
 | `max_file_mb` | 512 | 1..512 |
 | `clip_images` | false | clipboard images too (PNG, JPEG, WebP, GIF, up to 32 MiB), both ways as the two clip switches allow; the type comes from the content, not from the phone |
-| `trusted_devices` | `[]` | phones (as paired, at most 16) whose files are saved without asking; saving is still announced |
+| `trusted_devices` | `[]` | phones (as paired, at most 16) whose files are saved without asking; saving is still announced. Trust ends when the phone is unpaired or paired again with a new key. A trusted phone can fill the download folder up to the free-space margin: only for your own phones |
 
 `stance deck send FILE [--to PHONE]` offers a file (up to `max_file_mb`) to
 that phone, or to the first connected one; the phone asks its user.
