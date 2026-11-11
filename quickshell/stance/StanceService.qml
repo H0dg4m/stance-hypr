@@ -122,7 +122,8 @@ Item {
     }
 
     function resetPrefs() {
-        prefs = normPrefs({});
+        // Keep the open settings category.
+        prefs = normPrefs({ settingsPage: prefs.settingsPage });
         prefsSave.restart();
     }
 

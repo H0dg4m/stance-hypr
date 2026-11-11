@@ -362,6 +362,29 @@ PY
   [ "$N" = "1 hello from nested" ] && ok "clip copy-back deduped and on top" || bad "clip copy-back deduped and on top" "$N"
   run clip rm "$ID" && run clip undo && grep -q "restored 1" "$WORK/last.out" && ok "clip rm + undo" || bad "clip rm + undo"
   run clip get ../../etc/passwd && bad "clip id path refused" || ok "clip id path refused"
+  W wl-copy --sensitive "hunter3" 2>/dev/null; sleep 0.5
+  "$BIN" clip list --json | grep -q hunter3 && bad "wl-copy --sensitive skipped" || ok "wl-copy --sensitive skipped"
+  # Images: 30 MB kept, 34 MB dropped (cap 32 MiB), through the image watcher.
+  W wl-paste --type image --watch "$BIN" clip ingest --image &
+  CIMG=$!
+  sleep 0.5
+  bigpng() { python3 - "$1" <<'PY'
+import os, struct, sys, zlib
+w, h = 2000, int(sys.argv[1]) * 1_000_000 // 6000
+raw = b"".join(b"\0" + os.urandom(w * 3) for _ in range(h))
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 0)) + chunk(b"IEND", b""))
+PY
+  }
+  bigpng 30 | W wl-copy --type image/png; sleep 2
+  bigpng 34 | W wl-copy --type image/png; sleep 2
+  "$BIN" clip list --kind image --json >"$WORK/img.json"
+  python3 - "$WORK/img.json" <<'PY' && ok "30 MB image kept, 34 MB dropped" || bad "30 MB image kept, 34 MB dropped" "$(head -c 400 "$WORK/img.json")"
+import json, sys
+items = json.load(open(sys.argv[1]))["data"]["items"]
+sizes = sorted(i["size"] for i in items)
+assert len(sizes) == 1 and 29_000_000 < sizes[0] < 32 * 1024 * 1024, sizes
+PY
   kill $CT 2>/dev/null; wait $CT 2>/dev/null
   unset STANCE_CLIP_DIR
 fi
@@ -385,6 +408,14 @@ RSS=$(awk '/VmRSS/{print $2}' /proc/$DPID/status)
 case "$BIN" in */release/*) LIM=5120; KIND=release;; *) LIM=8192; KIND=debug;; esac
 [ "${RSS:-99999}" -lt "$LIM" ] && ok "daemon RSS ${RSS} KB < $((LIM/1024)) MB ($KIND build)" || bad "daemon RSS ${RSS} KB (limit $LIM, $KIND)"
 kill $DPID 2>/dev/null; wait $DPID 2>/dev/null
+
+# Compositor gone: the capture watcher must exit (systemd then restarts it
+# against the next session) instead of spinning.
+if [ -n "${CIMG:-}" ] && kill -0 "$CIMG" 2>/dev/null; then
+  kill "$HPID" 2>/dev/null; wait "$HPID" 2>/dev/null
+  for _ in $(seq 30); do kill -0 "$CIMG" 2>/dev/null || break; sleep 0.2; done
+  kill -0 "$CIMG" 2>/dev/null && { bad "clip watcher exits with the compositor"; kill "$CIMG"; } || ok "clip watcher exits with the compositor"
+fi
 
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]

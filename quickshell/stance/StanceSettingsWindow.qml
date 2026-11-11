@@ -88,6 +88,7 @@ LazyLoader {
 
             StanceNav {
                 id: nav
+                z: 10
                 theme: root.theme
                 model: win.visibleCats
                 current: win.cat

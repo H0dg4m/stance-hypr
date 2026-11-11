@@ -5,8 +5,8 @@ Thanks for helping. A few rules keep stance safe and small:
 - **Never run risky display changes in your own session while testing.**
   `tests/nested.sh lua target/release/stance` starts a throwaway nested Hyprland
   with headless outputs; QML is tried the same way (see docs/quickshell.md).
-- `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and the
-  nested tests must pass.
+- `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+  `tests/upgrade.sh`, `scripts/i18n-check.py` and the nested tests must pass.
 - No shell strings: external tools run by absolute path with an argument list
   and a timeout (`src/tool.rs`). Modes and phone buttons are whitelisted
   actions, never commands.

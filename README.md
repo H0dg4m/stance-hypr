@@ -44,7 +44,9 @@ switchers. stance is built for the bar:
 | Phone | Android 8+ ([stance-deck-android](https://github.com/H0dg4m/stance-deck-android)) |
 | Other desktops (KDE, GNOME, Windows) | planned after 1.0 |
 
-stance is alpha. Reporting a bug: run `stance doctor --report` and paste the block.
+stance is alpha. Something not working? See [docs/troubleshooting.md](docs/troubleshooting.md)
+(one entry per `stance doctor` message). Reporting a bug: run
+`stance doctor --report` and paste the block.
 
 ## Install
 
@@ -253,6 +255,17 @@ Rosé Pine, Everforest, Kanagawa, One Dark, Solarized, Stance dark/light) and a
 detailed editor; themes are plain JSON files you can export and share.
 The panel speaks English and Turkish.
 
+<p align="center">
+  <img src="docs/theme-mocha.png" alt="theme picker and colour editor, Catppuccin Mocha" width="380">
+  &nbsp;
+  <img src="docs/theme-latte.png" alt="the same, Catppuccin Latte (light)" width="380">
+</p>
+<p align="center">
+  <img src="docs/settings-general.png" alt="panel settings, General page" width="380">
+  &nbsp;
+  <img src="docs/panel-tr.png" alt="the panel in Turkish" width="230">
+</p>
+
 ```sh
 stance theme list
 stance theme export catppuccin-mocha --out ~/mocha.json
@@ -278,6 +291,14 @@ stance clip pin 12 ; stance clip rm 13 ; stance clip undo
 Copies that a password manager marks as sensitive are never stored (cliphist,
 if you run it, still stores them). The store is private to your user but not
 encrypted. Details: [docs/clip.md](docs/clip.md).
+
+<p align="center">
+  <img src="docs/clip-shelf.png" alt="clipboard shelf with images, texts and links" width="640">
+</p>
+
+Open it with `qs -p /usr/share/stance/quickshell ipc call stance clip` (bind it
+to a key; see [docs/quickshell.md](docs/quickshell.md)). Arrows move, Space
+previews, Enter copies, P pins, S removes, `/` searches.
 
 ## Security
 

@@ -271,7 +271,7 @@ Scope {
                             spacing: 8
                             StanceIcon { theme: root.theme; name: "search"; color: root.theme.textDim; visible: root.theme.iconFont !== "" }
                             Text {
-                                text: root.clip.query !== "" ? root.clip.query : StanceI18n.t("Type to search, or press /")
+                                text: !root.featureOn ? "" : root.clip.query !== "" ? root.clip.query : StanceI18n.t("Type to search, or press /")
                                 textFormat: Text.PlainText
                                 color: root.clip.query !== "" ? root.theme.text : root.theme.textDim
                                 font.family: root.theme.fontFamily
@@ -569,6 +569,7 @@ Scope {
                         anchors.margins: 16
                         height: 20
                         Text {
+                            visible: root.featureOn
                             anchors.verticalCenter: parent.verticalCenter
                             text: StanceI18n.t("←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close")
                             color: root.theme.textDim

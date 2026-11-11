@@ -43,7 +43,9 @@ arka planda profil değiştirir. stance bar için yapıldı:
 | Telefon | Android 8+ ([stance-deck-android](https://github.com/H0dg4m/stance-deck-android)) |
 | Diğer masaüstleri (KDE, GNOME, Windows) | 1.0'dan sonra planlı |
 
-stance alfa aşamasında. Hata bildirirken `stance doctor --report` çalıştırıp çıkan bloğu yapıştır.
+stance alfa aşamasında. Bir şey çalışmıyor mu? [docs/troubleshooting.md](docs/troubleshooting.md)
+dosyasına bak (her `stance doctor` iletisi için bir madde). Hata bildirirken
+`stance doctor --report` çalıştırıp çıkan bloğu yapıştır.
 
 ## Kurulum
 
@@ -65,7 +67,10 @@ güncellenene kadar çalışmaz; denemek için `--force-version` (servisler içi
 
 - **Quickshell** (end-4 / illogical-impulse ve türevleri ya da kendi kabuğun):
   hazır bileşenler, bkz. [docs/quickshell.md](docs/quickshell.md).
-- **Başka bar** (Waybar, …): paketteki bağımsız kabuğu bir kez başlat, tıklamaya
+- **Waybar**: `stance waybar` bir durum satırı yazar (mod, ekranlar, "koru?"
+  geri sayımı); modül ve tıklama eylemleri için [contrib/waybar](contrib/waybar).
+  Panel paketteki bağımsız kabuktan gelir.
+- **Başka bir bar**: paketteki bağımsız kabuğu bir kez başlat, tıklamaya
   `qs -p /usr/share/stance/quickshell ipc call stance toggle` bağla.
 - **Bar yok**: her şey CLI'dan çalışır.
 
@@ -82,6 +87,8 @@ stance persist                        ~/.config/hypr/stance-monitors.lua yaz
 stance mode save work                 mevcut düzeni mod olarak kaydet
                                       (--with-quick: gece ışığı + ses çıkışı da)
 stance mode apply gaming
+stance mode put work --data '{…}'     JSON'dan mod yaz (panel düzenleyicisinin kullandığı)
+stance rules | stance rules put --data '{…}'   tak-çalıştır kuralları JSON olarak
 stance night on 4500 | off | toggle   hyprsunset ile gece ışığı
 stance brightness DP-1 +10            N | +N | -N yüzde (DDC/CI ya da backlight)
 stance audio set "Razer"              varsayılan ses çıkışı: id, düğüm adı ya da tekil metin
@@ -94,34 +101,59 @@ stance doctor                         yalnız okuyan ortam denetimi
 olabilir. Değişiklik 12 sn içinde onaylanmazsa geri döner (`--timeout S`,
 betikler için `--no-confirm`). Tüm komutlar `--json` ile JSON konuşur.
 
-Mod ve kural dosyalarının biçimi için İngilizce README'deki örneklere ve
-[`examples/`](examples) klasörüne bak. Modlarda `night_light = false | true | K`,
-`audio_sink = "…"` ve `[brightness]` tablosu (`"ekran" = yüzde`) da olabilir.
-Bunlar ekran değişikliğinden sonra uygulanır, 12 sn geri alma kapsamında değildir
-(ekranı karartamazlar); biri başarısız olursa (kulaklık takılı değil, DDC/CI yok)
-mod yine uygulanır ve not düşülür. `--no-extras` bunları atlar.
+### Modlar
 
-### Modlar ve kurallar
+`~/.config/stance/modes/<ad>.toml`:
 
-Mod: `~/.config/stance/modes/<ad>.toml` (ekranlar, çalışma alanları, beyaz
-listeli Hyprland ayarları, güç profili, gece ışığı, ses çıkışı, parlaklık).
-Kurallar: `~/.config/stance/rules.toml`; bağlı ekran kümesi kuralınkine tam
-eşitse mod uygulanır, hiçbiri eşleşmezse hiçbir şey olmaz. İkisi de panelden
-düzenlenebilir (Ayarlar ve Modlar). Ayrıntılı örnekler İngilizce README'de ve
-[`examples/`](examples) klasöründe.
+```toml
+description = "Yalnız harici ekran, efektler kapalı"
+power_profile = "performance"           # power-saver | balanced | performance
+workspaces = { "1-5" = "JDR EPIC Q40" }
+night_light = false                     # true | false | Kelvin cinsinden sıcaklık
+audio_sink = "Razer"                    # varsayılan ses çıkışı
 
-### Hızlı ayarlar
+[brightness]                            # ekran eşleşmesi = yüzde
+"JDR EPIC Q40" = 80
 
-- **Gece ışığı** hyprsunset soketiyle konuşur. Zaten çalışan bir hyprsunset varsa
-  onu kullanır ve senin gamma ayarını korur; "kapalı" nötr 6000 K'dir, sıfırlama
-  değil. Hiçbiri çalışmıyorsa `stance night on` bir tane başlatır.
-- **Parlaklık**: dizüstü paneli `/sys/class/backlight` ve `brightnessctl` ile,
-  harici ekran `ddcutil` ile (`i2c-dev` modülü ve `/dev/i2c-*` erişimi, genelde
-  `i2c` grubu gerekir). Ekran tamamen kararmasın diye %5 (backlight) ve %1 (DDC)
-  altı yükseltilir.
-- **Ses çıkışı** `pw-dump` ile okunur, `wpctl set-default` ile değiştirilir.
+[hyprland]                              # beyaz liste: animations, blur, allow_tearing, gaps_in, gaps_out
+animations = false
+blur = false
+allow_tearing = true
 
-Hangilerinin kullanılabildiğini `stance doctor` söyler.
+[[monitor]]
+match = "JDR EPIC Q40"
+mode = "2560x1440@180"
+position = "0x0"
+vrr = 1
+
+[[monitor]]
+match = "AU Optronics 0x7EAD"
+enabled = false
+```
+
+Modun adını verdiği ama bağlı olmayan ekranlar atlanır; böylece aynı mod dock'ta
+da dock'suz da çalışır. Gece ışığı, ses ve parlaklık ekran değişikliğinden sonra
+uygulanır, 12 sn geri alma kapsamında değildir (ekranı karartamazlar); biri
+başarısız olursa (kulaklık takılı değil, DDC/CI yok) mod yine uygulanır ve not
+düşülür. Hyprland ayarları ve güç profiliyle birlikte bunlar "ekstra"dır:
+`--no-extras` atlar. Daha fazlası [`examples/`](examples) içinde. Modlar
+panelden de eklenip düzenlenir (Ekranlar ve modlar).
+
+### Tak-çalıştır kuralları
+
+`~/.config/stance/rules.toml`: bağlı ekran kümesi kuralın listesine tam eşitse
+kural çalışır; hiçbiri eşleşmezse hiçbir şey olmaz.
+
+```toml
+[[rule]]
+monitors = ["AU Optronics 0x7EAD", "JDR EPIC Q40"]
+mode = "desk"
+allow_extras = false   # true: modun Hyprland ayarları, güç profili, gece ışığı,
+                       # ses ve parlaklığı da uygulanır (son üçü yalnız kural
+                       # ekranları gerçekten değiştirdiyse)
+```
+
+`systemctl --user enable --now stance.service` ile aç.
 
 ### Telefon kumandası
 
@@ -173,8 +205,7 @@ Ayrıntı ve protokol: [docs/deck.md](docs/deck.md),
 stance her ekranın son konumunu, modunu ve ölçeğini saklar
 (`~/.local/state/stance/memory.json`). Kapatıp açılan ekran eski yerine döner;
 daemon çalışıyorsa ve hiçbir kural eşleşmiyorsa çıkarıp yeniden takılan ekran da.
-Panelde ekranlar haritada sürüklenerek taşınır (kenarlar yapışır), modlar
-panelden eklenip düzenlenir, ayarlar sayfasından gösterilecek bölümler seçilir.
+Bir yerleşimin Hyprland yeniden başlayınca da kalması için `stance persist` kullan.
 
 ### Dizüstü kapağı ve güç
 
@@ -185,10 +216,18 @@ hl.bind("switch:on:Lid Switch", hl.dsp.exec_cmd("stance lid close"), { locked = 
 hl.bind("switch:off:Lid Switch", hl.dsp.exec_cmd("stance lid open"), { locked = true })
 ```
 
-Tak-çalıştır kuralları güç kaynağına bağlanabilir (`on_power = "ac" | "battery"`);
-daemon açıksa şarj takılıp çıkarılınca kurallar yeniden değerlendirilir
-(`stance power` mevcut kaynağı ve geçerli kuralı gösterir). Waybar için
-`stance waybar` ve [contrib/waybar](contrib/waybar).
+Tak-çalıştır kuralları güç kaynağına bağlanabilir; daemon açıksa şarj takılıp
+çıkarılınca kurallar yeniden değerlendirilir (`stance power` mevcut kaynağı ve
+geçerli kuralı gösterir):
+
+```toml
+[[rule]]
+monitors = ["AU Optronics 0x7EAD"]
+mode = "battery-saver"
+on_power = "battery"     # ac | battery; eşleşen kural, olmayana göre önceliklidir
+```
+
+Waybar için `stance waybar` ve [contrib/waybar](contrib/waybar).
 
 ### Kalıcı yapmak
 
@@ -197,12 +236,36 @@ daemon açıksa şarj takılıp çıkarılınca kurallar yeniden değerlendirili
 kez `require("stance-monitors")` ekle (nwg-displays kullanıyorsan onun
 `require("monitors")` satırından sonra). stance ana config'ine asla dokunmaz.
 
+### Hızlı ayarlar
+
+- **Gece ışığı** hyprsunset soketiyle konuşur. Zaten çalışan bir hyprsunset varsa
+  onu kullanır ve senin gamma ayarını korur; "kapalı" nötr 6000 K'dir, sıfırlama
+  değil. Hiçbiri çalışmıyorsa `stance night on` bir tane başlatır.
+- **Parlaklık**: dizüstü paneli `/sys/class/backlight` ve `brightnessctl` ile,
+  harici ekran `ddcutil` ile (`i2c-dev` modülü ve `/dev/i2c-*` erişimi, genelde
+  `i2c` grubu gerekir). Ekran tamamen kararmasın diye %5 (backlight) ve %1 (DDC)
+  altı yükseltilir.
+- **Ses çıkışı** `pw-dump` ile okunur, `wpctl set-default` ile değiştirilir.
+
+Hangilerinin kullanılabildiğini `stance doctor` söyler.
+
 ## Temalar ve özellikler
 
 Panelde 17 hazır tema (Catppuccin, Nord, Gruvbox, Dracula, Tokyo Night, Rosé
 Pine, Everforest, Kanagawa, One Dark, Solarized, Stance koyu/açık) ve ayrıntılı
 bir düzenleyici var; temalar dışa aktarıp paylaşabileceğin düz JSON
 dosyalarıdır. Panel İngilizce ve Türkçe konuşur.
+
+<p align="center">
+  <img src="docs/theme-mocha.png" alt="tema seçici ve renk düzenleyici, Catppuccin Mocha" width="380">
+  &nbsp;
+  <img src="docs/theme-latte.png" alt="aynısı, Catppuccin Latte (açık)" width="380">
+</p>
+<p align="center">
+  <img src="docs/settings-general.png" alt="panel ayarları, Genel sayfası" width="380">
+  &nbsp;
+  <img src="docs/panel-tr.png" alt="Türkçe panel" width="230">
+</p>
 
 ```sh
 stance theme list
@@ -229,6 +292,14 @@ stance clip pin 12 ; stance clip rm 13 ; stance clip undo
 Şifre yöneticisinin "hassas" işaretlediği kopyalar asla saklanmaz (cliphist
 çalışıyorsa o yine saklar). Depo yalnız senin kullanıcına açıktır ama
 şifrelenmez. Ayrıntı: [docs/clip.md](docs/clip.md).
+
+<p align="center">
+  <img src="docs/clip-shelf.png" alt="görseller, metinler ve linkler olan pano rafı" width="640">
+</p>
+
+Şununla aç: `qs -p /usr/share/stance/quickshell ipc call stance clip` (bir tuşa
+bağla; bkz. [docs/quickshell.md](docs/quickshell.md)). Oklar gezdirir, Boşluk
+önizler, Enter kopyalar, P sabitler, S kaldırır, `/` arar.
 
 ## Güvenlik
 

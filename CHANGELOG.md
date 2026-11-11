@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Assurance (0.3.1 work)
+- Tests: password-manager (`wl-copy --sensitive`) copies, 30 MB image kept and
+  34 MB dropped, capture watcher exits with the compositor, 0.2.0 → 0.3.0
+  upgrade (`tests/upgrade.sh`, also in CI); all 16 feature on/off combinations
+  checked in the panel
+- CI: QML must parse, every panel string has a Turkish translation
+  (`scripts/i18n-check.py`), shell scripts parse
+- docs/troubleshooting.md for every doctor message; new screenshots; the
+  Turkish README matches the English one
+- Panel: reset keeps the open settings page, narrow navigation shows labels on
+  hover, a turned-off shelf shows only how to turn it on
+
 ### Getting started and reporting
 - `stance setup [waybar|quickshell|end4] [--dry-run]`: detects your bar and
   prints the exact steps; enables only stance's own units (new

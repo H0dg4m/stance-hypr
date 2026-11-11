@@ -740,7 +740,7 @@ ColumnLayout {
             theme: page.theme
             icon: "smartphone"
             visible: page.service.featureOn("deck")
-            title: StanceI18n.t("Phone")
+            title: StanceI18n.t("Phone deck")
             trailing: [
                 StanceChip {
                     theme: page.theme

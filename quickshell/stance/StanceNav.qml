@@ -137,10 +137,52 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: nav.picked(cell.modelData.id)
+                            // Icon-only entries get a label after a short hover.
+                            onContainsMouseChanged: {
+                                if (containsMouse && !cell.showText)
+                                    nav.hoverCell = cell;
+                                else if (nav.hoverCell === cell)
+                                    nav.hoverCell = null;
+                            }
+                            // A rebuilt model must not leave a dangling hover target.
+                            Component.onDestruction: if (nav.hoverCell === cell) nav.hoverCell = null
                         }
                     }
                 }
             }
+        }
+    }
+
+    // Label for the hovered icon-only entry (a plain item: popups are unreliable in layer windows).
+    property var hoverCell: null
+    Timer {
+        id: tipDelay
+        interval: 350
+        running: nav.hoverCell !== null
+        onTriggered: tip.shown = true
+    }
+    onHoverCellChanged: tip.shown = false
+    Rectangle {
+        id: tip
+        property bool shown: false
+        readonly property point pos: nav.hoverCell ? nav.hoverCell.mapToItem(nav, 0, 0) : Qt.point(0, 0)
+        visible: shown && nav.hoverCell !== null
+        z: 100
+        x: Math.max(0, Math.min(nav.width - width, pos.x + (nav.hoverCell ? nav.hoverCell.width : 0) / 2 - width / 2))
+        y: nav.height + 4
+        width: tipText.implicitWidth + 16
+        height: tipText.implicitHeight + 10
+        radius: nav.theme.chipRadius
+        color: nav.theme.surface
+        border.width: 1
+        border.color: nav.theme.border
+        Text {
+            id: tipText
+            anchors.centerIn: parent
+            text: nav.hoverCell ? nav.hoverCell.modelData.label : ""
+            color: nav.theme.text
+            font.family: nav.theme.fontFamily
+            font.pixelSize: nav.theme.fontSize - 1
         }
     }
 
