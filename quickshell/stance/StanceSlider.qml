@@ -22,6 +22,24 @@ Item {
     onValueChanged: awaiting = false
     onCommitted: { awaiting = true; holdTimer.restart(); }
 
+    property string label: ""
+    activeFocusOnTab: enabled
+    Accessible.role: Accessible.Slider
+    Accessible.name: label
+    Accessible.focusable: true
+    Keys.onLeftPressed: step(-1)
+    Keys.onDownPressed: step(-1)
+    Keys.onRightPressed: step(1)
+    Keys.onUpPressed: step(1)
+    function step(d) {
+        const v = Math.max(from, Math.min(to, Math.round(shown) + d));
+        if (v === Math.round(shown))
+            return;
+        dragValue = v;
+        moved(v);
+        committed(v);
+    }
+
     implicitHeight: 24
     implicitWidth: 160
     opacity: enabled ? 1 : 0.45
@@ -53,7 +71,7 @@ Item {
         x: Math.max(0, Math.min(slider.width - width, track.width * (slider.shown - slider.from) / (slider.to - slider.from) - width / 2))
         color: slider.theme.accent
         border.width: 3
-        border.color: slider.theme.card
+        border.color: slider.activeFocus ? slider.theme.text : slider.theme.card
         Behavior on width { NumberAnimation { duration: 80 } }
         Behavior on height { NumberAnimation { duration: 80 } }
     }

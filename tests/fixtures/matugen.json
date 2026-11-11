@@ -1,0 +1,4 @@
+{"colors": {"dark": {"surface": "#141318", "on_surface": "#e6e1e9", "primary": "#cbbeff",
+  "error": "#ffb4ab", "surface_container_low": "#1c1b20", "surface_container_high": "#2b292f"},
+ "light": {"surface": "#fcf8fd", "on_surface": "#1c1b20", "primary": "#5d4fa0",
+  "error": "#ba1a1a", "surface_container_low": "#f6f2f7", "surface_container_high": "#eae6ec"}}}

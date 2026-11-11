@@ -133,6 +133,27 @@ ColumnLayout {
         font.pixelSize: ap.theme.fontSize - 1
         wrapMode: Text.Wrap
     }
+    // WCAG contrast of the pairs that matter, from the live (override-aware) colours.
+    function lum(c) {
+        const f = v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+    }
+    function ratio(a, b) {
+        const x = lum(a), y = lum(b);
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    }
+    readonly property var contrastBad: {
+        const pairs = [["text", "background", 4.5], ["text", "card", 4.5], ["textDim", "card", 3],
+                       ["accentText", "accent", 4.5], ["dangerText", "danger", 4.5]];
+        const out = [];
+        for (const p of pairs) {
+            const r = ratio(theme.col(p[0]), theme.col(p[1]));
+            if (r < p[2])
+                out.push(p[0] + " / " + p[1] + " " + r.toFixed(1) + ":1");
+        }
+        return out;
+    }
+
     // Header of a collapsible editor group; `count` = overridden values in it.
     component GroupHead: Rectangle {
         id: gh
@@ -533,6 +554,14 @@ ColumnLayout {
             visible: ap.group === "colours"
             Layout.fillWidth: true
             spacing: 6
+            Dim {
+                visible: ap.contrastBad.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: ap.theme.danger
+                font.pixelSize: ap.theme.fontSize - 1
+                text: StanceI18n.t("Low contrast") + ": " + ap.contrastBad.join(", ")
+            }
             Repeater {
                 model: ap.colorRows
                 delegate: RowLayout {
@@ -562,6 +591,7 @@ ColumnLayout {
                         implicitHeight: 30
                         theme: ap.theme
                         maxLength: 9
+                        label: StanceI18n.t(crow.modelData.label)
                         text: ap.theme.hex(crow.cur)
                         invalid: !ap.service.isHex(text)
                         onEdited: v => { if (ap.service.isHex(v)) ap.service.setOverride(crow.modelData.key, v); }
@@ -593,6 +623,7 @@ ColumnLayout {
                     StanceSlider {
                         Layout.fillWidth: true
                         theme: ap.theme
+                        label: StanceI18n.t(mrow.modelData.label)
                         from: mrow.spec.min
                         to: mrow.spec.max
                         value: ap.theme[mrow.modelData.key]
@@ -614,6 +645,7 @@ ColumnLayout {
                 StanceSlider {
                     Layout.fillWidth: true
                     theme: ap.theme
+                    label: StanceI18n.t("Opacity")
                     from: 50
                     to: 100
                     value: Math.round(ap.theme.opacity * 100)

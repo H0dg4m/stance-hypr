@@ -24,6 +24,10 @@ Rectangle {
     color: selected ? (danger ? theme.danger : theme.accent)
                     : (mouse.containsMouse && enabled ? theme.surfaceHover : theme.surface)
     activeFocusOnTab: enabled
+    Accessible.role: Accessible.Button
+    Accessible.name: label !== "" ? label : tip
+    Accessible.description: tip
+    Accessible.onPressAction: if (enabled) clicked()
     Keys.onSpacePressed: if (enabled) clicked()
     Keys.onReturnPressed: if (enabled) clicked()
     Keys.onEnterPressed: if (enabled) clicked()

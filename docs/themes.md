@@ -52,12 +52,27 @@ overwrite needs `--force`. `put`/`import` return the saved theme in `data`,
 stance theme list [--json]          # built-in + user, with full data
 stance theme show ID [--json]
 stance theme put --data JSON [--force]    # save a user theme (editor "Save as")
+stance theme check [ID|FILE]       # WCAG contrast of text/background, text/card, textDim/card,
+                                    # accentText/accent, dangerText/danger; exit 1 if any is under
+                                    # 4.5:1 (3:1 for textDim). `show --json` has the same as `contrast`.
 stance theme import FILE [--force]  # validate + copy into the user dir
 stance theme export ID [--out FILE] # print (or write, 0644, refuses to overwrite without --force)
 stance theme rm ID                  # user themes only
 ```
 `theme list --json` → `{"ok":true,"schema":1,"data":{"themes":[{"builtin":true,
 "theme":{…full theme…}}, …]}}`. Sorted: built-ins in the order above, then user themes by name.
+
+## Converting pywal / matugen palettes
+`contrib/stance-theme-from-pywal` (python3, no dependencies) turns a pywal
+`colors.json` (default `~/.cache/wal/colors.json`) or a matugen JSON
+(`--matugen FILE [--scheme dark|light]`) into a theme and prints it; `--import` saves
+it through `stance theme import`. `--id`/`--name` set the identity. Palettes failing
+the contrast check are refused unless `--force`.
+```
+contrib/stance-theme-from-pywal --id wal --import
+contrib/stance-theme-from-pywal --matugen ~/.cache/matugen/colors.json --scheme light
+```
+Test: `tests/theme-convert.sh [stance]`.
 
 ## Panel preferences (`~/.config/stance/panel.json`, written by the panel)
 New keys:

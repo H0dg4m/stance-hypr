@@ -350,5 +350,6 @@
   "unpair failed": "eşleşme kaldırılamadı",
   "waiting": "bekliyor",
   "with night light, audio, brightness": "gece ışığı, ses, parlaklık ile",
-  "←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close": "←→ gez   ↑↓ raf   Boşluk önizle   Enter kopyala   P sabitle   S kaldır   ⌫ geri al   / ara   Esc kapat"
+  "←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close": "←→ gez   ↑↓ raf   Boşluk önizle   Enter kopyala   P sabitle   S kaldır   ⌫ geri al   / ara   Esc kapat",
+  "Low contrast": "Düşük kontrast"
 }

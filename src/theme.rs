@@ -218,6 +218,67 @@ impl Theme {
     }
 }
 
+/// WCAG 2.x relative luminance of `#rrggbb` / `#aarrggbb` (alpha ignored).
+fn luminance(c: &str) -> Option<f64> {
+    let h = c.strip_prefix('#')?;
+    let h = match h.len() {
+        6 => h,
+        8 => &h[2..],
+        _ => return None,
+    };
+    let ch = |i: usize| -> Option<f64> {
+        let v = f64::from(u8::from_str_radix(h.get(i..i + 2)?, 16).ok()?) / 255.0;
+        Some(if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        })
+    };
+    Some(0.2126 * ch(0)? + 0.7152 * ch(2)? + 0.0722 * ch(4)?)
+}
+
+/// WCAG contrast ratio (1.0 to 21.0) between two colours.
+pub fn contrast_ratio(a: &str, b: &str) -> Option<f64> {
+    let (la, lb) = (luminance(a)?, luminance(b)?);
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    Some((hi + 0.05) / (lo + 0.05))
+}
+
+/// (foreground, background, minimum ratio) pairs that matter for legibility.
+pub const CONTRAST_PAIRS: &[(&str, &str, f64)] = &[
+    ("text", "background", 4.5),
+    ("text", "card", 4.5),
+    ("textDim", "card", 3.0),
+    ("accentText", "accent", 4.5),
+    ("dangerText", "danger", 4.5),
+];
+
+#[derive(Debug, Serialize)]
+pub struct ContrastRow {
+    pub pair: String,
+    pub ratio: f64,
+    pub min: f64,
+    pub ok: bool,
+}
+
+impl Theme {
+    pub fn contrast(&self) -> Vec<ContrastRow> {
+        CONTRAST_PAIRS
+            .iter()
+            .filter_map(|(f, b, min)| {
+                let r = contrast_ratio(self.colors.get(*f)?, self.colors.get(*b)?)?;
+                let ratio = (r * 100.0).round() / 100.0;
+                Some(ContrastRow {
+                    pair: format!("{f}/{b}"),
+                    ratio,
+                    min: *min,
+                    ok: r >= *min,
+                })
+            })
+            .collect()
+    }
+}
+
 pub fn builtins() -> Vec<Theme> {
     BUILTIN
         .iter()
@@ -497,6 +558,23 @@ mod tests {
         t.id = id.into();
         t.name = "Mine".into();
         t
+    }
+
+    #[test]
+    fn contrast_math() {
+        assert!((contrast_ratio("#000000", "#ffffff").unwrap() - 21.0).abs() < 1e-9);
+        assert!((contrast_ratio("#ffffff", "#ffffff").unwrap() - 1.0).abs() < 1e-9);
+        // #777777 on white is the classic 4.48:1
+        let r = contrast_ratio("#777777", "#ffffff").unwrap();
+        assert!((r - 4.48).abs() < 0.01, "{r}");
+        assert!((contrast_ratio("#ff000000", "#ffffff").unwrap() - 21.0).abs() < 1e-9);
+        assert!(contrast_ratio("red", "#fff").is_none());
+    }
+
+    #[test]
+    fn contrast_rows() {
+        let t = builtins().remove(0);
+        assert_eq!(t.contrast().len(), 5);
     }
 
     #[test]

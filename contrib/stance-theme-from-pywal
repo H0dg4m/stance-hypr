@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Convert a pywal or matugen palette into a stance theme (docs/themes.md).
+
+  stance-theme-from-pywal [FILE]            pywal colors.json (default ~/.cache/wal/colors.json)
+  stance-theme-from-pywal --matugen FILE    matugen JSON (material colours)
+  options: --id ID  --name NAME  --scheme dark|light (matugen)  --import  --force
+
+Prints the theme JSON. Output whose contrast check fails (text/background,
+text/card, accentText/accent, dangerText/danger at 4.5:1, textDim/card at 3:1)
+is refused unless --force. --import saves it with `stance theme import`.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+PAIRS = [("text", "background", 4.5), ("text", "card", 4.5), ("textDim", "card", 3.0),
+         ("accentText", "accent", 4.5), ("dangerText", "danger", 4.5)]
+
+
+def rgb(h):
+    h = h.lstrip("#")
+    if len(h) == 8:
+        h = h[2:]
+    if len(h) != 6:
+        raise ValueError("bad colour %r" % h)
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def hexc(c):
+    return "#%02x%02x%02x" % tuple(max(0, min(255, round(v))) for v in c)
+
+
+def mix(a, b, t):
+    """t of b over a; a, b are #rrggbb."""
+    x, y = rgb(a), rgb(b)
+    return hexc(tuple(p + (q - p) * t for p, q in zip(x, y)))
+
+
+def lum(h):
+    def f(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb(h)
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def ratio(a, b):
+    x, y = lum(a), lum(b)
+    return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+
+
+def on(bg):
+    """Black or white, whichever reads better on bg."""
+    return max(("#000000", "#ffffff"), key=lambda c: ratio(c, bg))
+
+
+def build(ident, name, bg, fg, accent, danger, card=None, surface=None):
+    dark = lum(bg) < 0.4
+    towards = "#ffffff" if dark else "#000000"
+    c = {
+        "background": bg,
+        "card": card or mix(bg, "#000000" if dark else "#ffffff", 0.25),
+        "surface": surface or mix(bg, towards, 0.10),
+        "surfaceHover": mix(bg, towards, 0.18),
+        "border": mix(bg, towards, 0.22),
+        "text": fg,
+        "textDim": mix(fg, bg, 0.30),
+        "accent": accent,
+        "accentText": on(accent),
+        "danger": danger,
+        "dangerText": on(danger),
+        "scrim": "#99000000",
+    }
+    return {"stance_theme": 1, "id": ident, "name": name, "dark": dark, "colors": c}
+
+
+def from_pywal(d, ident, name):
+    sp, col = d.get("special", {}), d["colors"]
+    return build(ident, name, sp["background"] if "background" in sp else col["color0"],
+                 sp["foreground"] if "foreground" in sp else col["color7"],
+                 col["color4"], col["color1"])
+
+
+def from_matugen(d, ident, name, scheme):
+    colors = d["colors"]
+    m = colors.get(scheme, colors)
+
+    def g(k, *alt):
+        for key in (k,) + alt:
+            if key in m:
+                v = m[key]
+                return v["color"] if isinstance(v, dict) else v
+        raise KeyError(k)
+
+    return build(ident, name, g("surface", "background"), g("on_surface", "on_background"),
+                 g("primary"), g("error"),
+                 card=g("surface_container_low", "surface_container", "surface"),
+                 surface=g("surface_container_high", "surface_container", "surface"))
+
+
+def check(theme):
+    out = []
+    for f, b, mn in PAIRS:
+        r = ratio(theme["colors"][f], theme["colors"][b])
+        if r < mn:
+            out.append("%s/%s %.2f:1 (needs %.1f:1)" % (f, b, r, mn))
+    return out
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("file", nargs="?")
+    p.add_argument("--matugen", metavar="FILE")
+    p.add_argument("--scheme", choices=("dark", "light"), default="dark")
+    p.add_argument("--id")
+    p.add_argument("--name")
+    p.add_argument("--import", dest="do_import", action="store_true")
+    p.add_argument("--force", action="store_true")
+    a = p.parse_args(argv)
+    try:
+        if a.matugen:
+            ident = a.id or "matugen"
+            with open(a.matugen) as f:
+                t = from_matugen(json.load(f), ident, a.name or "Matugen", a.scheme)
+        else:
+            path = a.file or os.path.expanduser("~/.cache/wal/colors.json")
+            ident = a.id or "pywal"
+            with open(path) as f:
+                t = from_pywal(json.load(f), ident, a.name or "Pywal")
+    except (OSError, KeyError, ValueError, TypeError) as e:
+        print("stance-theme-from-pywal: cannot read palette: %s" % e, file=sys.stderr)
+        return 2
+    bad = check(t)
+    if bad and not a.force:
+        print("refusing: low contrast: " + "; ".join(bad) + " (use --force)", file=sys.stderr)
+        return 1
+    text = json.dumps(t, indent=2)
+    if not a.do_import:
+        print(text)
+        return 0
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+        tf.write(text)
+    try:
+        cmd = ["stance", "theme", "import", tf.name] + (["--force"] if a.force else [])
+        return subprocess.call(cmd)
+    finally:
+        os.unlink(tf.name)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
