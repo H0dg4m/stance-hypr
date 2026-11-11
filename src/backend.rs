@@ -64,6 +64,38 @@ impl OptValue {
     }
 }
 
+/// Backend-neutral things that happened on the desktop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Event {
+    /// `name` is empty when the backend did not give a usable connector.
+    MonitorAdded {
+        name: String,
+    },
+    MonitorRemoved {
+        name: String,
+    },
+    /// The compositor reloaded its config (runtime changes are gone).
+    ConfigReloaded,
+}
+
+/// What one wait on an [`EventSource`] returned.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Next {
+    Event(Event),
+    /// The timeout passed, or something uninteresting happened: look at
+    /// your timers.
+    Tick,
+    /// The compositor went away.
+    Closed,
+}
+
+/// A blocking stream of [`Event`]s. `next` waits at most `timeout`
+/// (`None` = until something happens).
+pub trait EventSource {
+    fn next(&mut self, timeout: Option<std::time::Duration>) -> Result<Next>;
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Notice {
     Reverted,
@@ -144,8 +176,8 @@ pub trait Backend {
     fn night_link(&self) -> Option<Arc<dyn crate::night::Link>> {
         None
     }
-    /// Hyprland's raw event socket (until neutral events land).
-    fn raw_events(&self) -> Result<std::io::BufReader<std::os::unix::net::UnixStream>> {
+    /// Neutral events (needs `caps.events`).
+    fn events(&self) -> Result<Box<dyn EventSource>> {
         Err(Error::new(
             "unsupported",
             format!("events are not available on the {} backend", self.name()),

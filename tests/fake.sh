@@ -52,6 +52,31 @@ s mode apply desk --no-confirm >/dev/null 2>&1
 check "mode apply restores layout" 1920 "$(x_of B-1)"
 check "active mode recorded" desk "$(s status --json | j "d['data']['active_mode']")"
 
+# daemon: applies the matching rule at start and when a screen appears
+s set B-1 --pos 5000x0 --no-confirm >/dev/null
+printf '[[rule]]\nmonitors = ["A-1", "B-1"]\nmode = "desk"\n' > "$XDG_CONFIG_HOME/stance/rules.toml"
+chmod 600 "$XDG_CONFIG_HOME/stance/rules.toml"
+"$BIN" daemon >"$WORK/daemon.log" 2>&1 &
+DPID=$!
+trap 'kill $DPID 2>/dev/null; rm -rf "$WORK"' EXIT
+for _ in $(seq 1 40); do [ "$(x_of B-1)" = 1920 ] && break; sleep 0.25; done
+check "daemon applies the rule at start" 1920 "$(x_of B-1)"
+s set B-1 --pos 5000x0 --no-confirm >/dev/null
+python3 - "$STANCE_STATE_DIR/fake.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d["monitors"].append(dict(d["monitors"][0], name="C-1", x=9000)); json.dump(d,open(p,"w"))
+PY
+sleep 0.5
+python3 - "$STANCE_STATE_DIR/fake.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d["monitors"]=[m for m in d["monitors"] if m["name"]!="C-1"]; json.dump(d,open(p,"w"))
+PY
+# C-1 came and went: the rule only matches the exact set A-1,B-1 again
+for _ in $(seq 1 40); do [ "$(x_of B-1)" = 1920 ] && break; sleep 0.25; done
+check "daemon reacts to monitor events" 1920 "$(x_of B-1)"
+kill $DPID 2>/dev/null; wait $DPID 2>/dev/null
+rm -f "$XDG_CONFIG_HOME/stance/rules.toml"
+
 # capabilities the fake has not got
 out=$(s night status --json 2>&1); rc=$?
 check "night unsupported exit code" 2 "$rc"

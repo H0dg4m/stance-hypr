@@ -8,11 +8,61 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use super::{Backend, Caps, Notice, OptKey, OptValue};
+use super::{Backend, Caps, Event, Next, Notice, OptKey, OptValue};
 use crate::error::{Error, Result};
 use crate::hypr::Instance;
 use crate::model::{Mode, Monitor, Parser, sanitize};
 use crate::spec::{MonitorSpec, check_connector};
+
+/// Hyprland's event socket (`name>>data` lines) as neutral events.
+struct Socket2(std::io::BufReader<std::os::unix::net::UnixStream>);
+
+impl super::EventSource for Socket2 {
+    fn next(&mut self, timeout: Option<std::time::Duration>) -> Result<Next> {
+        use std::io::{BufRead, ErrorKind};
+        self.0
+            .get_ref()
+            .set_read_timeout(timeout)
+            .map_err(|e| Error::new("io", e.to_string()))?;
+        let mut line = String::new();
+        match self.0.read_line(&mut line) {
+            Ok(0) => Ok(Next::Closed),
+            Ok(_) => Ok(parse_event(line.trim_end())),
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                Ok(Next::Tick)
+            }
+            Err(e) => Err(Error::new("ipc", format!("event socket: {e}"))),
+        }
+    }
+}
+
+/// Connector of a `monitoradded(v2)` / `monitorremoved(v2)` payload.
+fn event_name(v2: bool, data: &str) -> String {
+    let name = if v2 {
+        data.split(',').nth(1).unwrap_or_default()
+    } else {
+        data
+    };
+    if crate::spec::valid_connector(name) {
+        name.to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn parse_event(line: &str) -> Next {
+    let (ev, data) = line.split_once(">>").unwrap_or((line, ""));
+    match ev {
+        "monitoradded" | "monitoraddedv2" => Next::Event(Event::MonitorAdded {
+            name: event_name(ev.ends_with("v2"), data),
+        }),
+        "monitorremoved" | "monitorremovedv2" => Next::Event(Event::MonitorRemoved {
+            name: event_name(ev.ends_with("v2"), data),
+        }),
+        "configreloaded" => Next::Event(Event::ConfigReloaded),
+        _ => Next::Tick,
+    }
+}
 
 /// hyprsunset answers on a socket in the Hyprland instance dir.
 struct HyprsunsetLink(Instance);
@@ -162,8 +212,8 @@ impl Backend for Hyprland {
         Some(Arc::new(HyprsunsetLink(self.instance.clone())))
     }
 
-    fn raw_events(&self) -> Result<std::io::BufReader<std::os::unix::net::UnixStream>> {
-        self.instance.events()
+    fn events(&self) -> Result<Box<dyn super::EventSource>> {
+        Ok(Box::new(Socket2(self.instance.events()?)))
     }
 
     fn compat_check(&self) -> Result<()> {
@@ -445,5 +495,28 @@ mod tests {
             "hl.config({ decoration = { blur = { enabled = false } } })"
         );
         assert_eq!(legacy_opt(OptValue::Bool(true)), "1");
+    }
+
+    #[test]
+    fn translates_events() {
+        let added = |n: &str| Next::Event(Event::MonitorAdded { name: n.into() });
+        assert_eq!(
+            parse_event("monitoraddedv2>>2,DP-2,JDR EPIC Q40"),
+            added("DP-2")
+        );
+        assert_eq!(parse_event("monitoradded>>HDMI-A-1"), added("HDMI-A-1"));
+        assert_eq!(parse_event("monitoradded>>../x"), added(""));
+        assert_eq!(
+            parse_event("monitorremoved>>DP-2"),
+            Next::Event(Event::MonitorRemoved {
+                name: "DP-2".into()
+            })
+        );
+        assert_eq!(
+            parse_event("configreloaded>>"),
+            Next::Event(Event::ConfigReloaded)
+        );
+        assert_eq!(parse_event("workspace>>2"), Next::Tick);
+        assert_eq!(parse_event("monitoraddedfake>>x"), Next::Tick);
     }
 }

@@ -4,12 +4,11 @@
 
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
-use std::io::{BufRead, ErrorKind};
 use std::os::unix::fs::OpenOptionsExt;
 use std::time::{Duration, Instant};
 
 use crate::apply::Ctx;
-use crate::backend::{Backend, Notice};
+use crate::backend::{Backend, Event, EventSource, Next, Notice};
 use crate::error::{Error, Result};
 use crate::modes;
 
@@ -24,23 +23,6 @@ fn log(msg: &str) {
     eprintln!("stance daemon: {msg}");
 }
 
-/// Which events we care about.
-#[derive(Debug, PartialEq)]
-pub enum Event {
-    Hotplug,
-    Reload,
-    Other,
-}
-
-pub fn classify(line: &str) -> Event {
-    let name = line.split_once(">>").map_or(line, |(n, _)| n);
-    match name {
-        "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => Event::Hotplug,
-        "configreloaded" => Event::Reload,
-        _ => Event::Other,
-    }
-}
-
 /// Is a stance daemon holding the lock in `state_dir`? (Read-only probe:
 /// takes the lock for an instant only if nobody has it.)
 pub fn running(state_dir: &std::path::Path) -> bool {
@@ -53,15 +35,135 @@ pub fn running(state_dir: &std::path::Path) -> bool {
     f.try_lock().is_err()
 }
 
-/// Connector of a `monitoradded` / `monitoraddedv2` event.
-pub fn added_name(line: &str) -> Option<String> {
-    let (ev, data) = line.split_once(">>")?;
-    let name = match ev {
-        "monitoradded" => data,
-        "monitoraddedv2" => data.split(',').nth(1)?,
-        _ => return None,
-    };
-    crate::spec::valid_connector(name).then(|| name.to_string())
+/// What the event loop needs from the outside: a clock, the power state
+/// and the three things it may do. Tests script all of it.
+trait Host {
+    fn now(&self) -> Instant;
+    /// Charger plugged or unplugged since last asked.
+    fn power_changed(&mut self) -> bool;
+    /// Returns Some(changed?) if a rule was applied.
+    fn hotplug(&mut self, added: &[String]) -> Option<bool>;
+    fn reload(&mut self);
+    /// Too many automatic changes: tell the user.
+    fn paused(&mut self);
+}
+
+/// Debounces hotplug and reload events, remembers new screens, and pauses
+/// the rules after a burst of automatic changes. Blocks in `events.next`
+/// only; no polling beyond the optional power check.
+fn event_loop(events: &mut dyn EventSource, host: &mut dyn Host, power_poll: bool) -> Result<()> {
+    let mut hotplug_at: Option<Instant> = None;
+    let mut reload_at: Option<Instant> = None;
+    let mut history: VecDeque<Instant> = VecDeque::new();
+    let mut paused_until: Option<Instant> = None;
+    let mut added: Vec<String> = Vec::new();
+    // Apply the matching rule once at start, like a hotplug.
+    hotplug_at = hotplug_at.or(Some(host.now()));
+
+    loop {
+        let next = [hotplug_at, reload_at].into_iter().flatten().min();
+        let mut wait = next.map(|t| {
+            t.saturating_duration_since(host.now())
+                .max(Duration::from_millis(1))
+        });
+        // Wake now and then to look at the power flag (set by a thread).
+        if power_poll {
+            wait = Some(wait.map_or(POWER_POLL, |w| w.min(POWER_POLL)));
+        }
+
+        match events.next(wait)? {
+            Next::Closed => {
+                log("the compositor closed the event socket, exiting");
+                return Ok(());
+            }
+            Next::Event(Event::MonitorAdded { name }) => {
+                if !name.is_empty() && !added.contains(&name) {
+                    added.push(name);
+                }
+                hotplug_at = Some(host.now() + DEBOUNCE);
+            }
+            Next::Event(Event::MonitorRemoved { .. }) => {
+                hotplug_at = Some(host.now() + DEBOUNCE);
+            }
+            Next::Event(Event::ConfigReloaded) => reload_at = Some(host.now() + RELOAD_DEBOUNCE),
+            Next::Tick => {}
+        }
+
+        if host.power_changed() {
+            hotplug_at = Some(host.now() + DEBOUNCE);
+        }
+
+        let now = host.now();
+        if hotplug_at.is_some_and(|t| t <= now) {
+            hotplug_at = None;
+            let added = std::mem::take(&mut added);
+            if paused_until.is_some_and(|p| p > now) {
+                log("hotplug ignored (paused after a burst of changes)");
+            } else if host.hotplug(&added) == Some(true) {
+                history.push_back(now);
+                while history
+                    .front()
+                    .is_some_and(|t| now.duration_since(*t) > BURST_WINDOW)
+                {
+                    history.pop_front();
+                }
+                if history.len() >= BURST {
+                    paused_until = Some(now + PAUSE);
+                    history.clear();
+                    host.paused();
+                    log("too many automatic changes, pausing rules for 60 s");
+                }
+            }
+        }
+        if reload_at.is_some_and(|t| t <= now) {
+            reload_at = None;
+            host.reload();
+        }
+    }
+}
+
+struct Live<'a> {
+    ctx: Ctx<'a>,
+    night: Option<crate::night::Night>,
+    power_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    last_ac: Option<bool>,
+}
+
+impl Host for Live<'_> {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn power_changed(&mut self) -> bool {
+        if !self
+            .power_flag
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            return false;
+        }
+        let ac = crate::power::on_ac();
+        if ac == self.last_ac {
+            return false;
+        }
+        self.last_ac = ac;
+        log(&format!(
+            "power: now on {}",
+            if ac == Some(true) { "ac" } else { "battery" }
+        ));
+        true
+    }
+
+    fn hotplug(&mut self, added: &[String]) -> Option<bool> {
+        on_hotplug(&self.ctx, self.night.as_ref(), added)
+    }
+
+    fn reload(&mut self) {
+        on_reload(&self.ctx);
+    }
+
+    fn paused(&mut self) {
+        self.ctx.backend.notify(Notice::AutoPaused);
+    }
 }
 
 pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
@@ -85,104 +187,22 @@ pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
         ));
     }
 
-    let night = crate::night::Night::open(hypr, &state_dir).ok();
-    let mut events = hypr.raw_events()?;
-    log(&format!("watching Hyprland {}", hypr.session_id()));
+    let mut events = hypr.events()?;
+    log(&format!("watching {} {}", hypr.name(), hypr.session_id()));
 
-    let mut hotplug_at: Option<Instant> = None;
-    let mut reload_at: Option<Instant> = None;
-    let mut history: VecDeque<Instant> = VecDeque::new();
-    let mut paused_until: Option<Instant> = None;
-    let mut added: Vec<String> = Vec::new();
     // Charger in/out re-runs the rules (rules may have `on_power`).
     let power_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let power_watch = crate::uevent::watch_power(power_flag.clone());
-    let mut last_ac = crate::power::on_ac();
     if !power_watch {
         log("power-supply events unavailable; power rules apply on monitor changes only");
     }
-    // Apply the matching rule once at start, like a hotplug.
-    hotplug_at = hotplug_at.or(Some(Instant::now()));
-
-    let mut line = String::new();
-    loop {
-        let next = [hotplug_at, reload_at].into_iter().flatten().min();
-        let mut wait = next.map(|t| {
-            t.saturating_duration_since(Instant::now())
-                .max(Duration::from_millis(1))
-        });
-        // Wake now and then to look at the power flag (set by a thread).
-        if power_watch {
-            wait = Some(wait.map_or(POWER_POLL, |w| w.min(POWER_POLL)));
-        }
-        events
-            .get_ref()
-            .set_read_timeout(wait)
-            .map_err(|e| Error::new("io", e.to_string()))?;
-
-        line.clear();
-        match events.read_line(&mut line) {
-            Ok(0) => {
-                log("Hyprland closed the event socket, exiting");
-                return Ok(());
-            }
-            Ok(_) => match classify(line.trim_end()) {
-                Event::Hotplug => {
-                    if let Some(n) = added_name(line.trim_end())
-                        && !added.contains(&n)
-                    {
-                        added.push(n);
-                    }
-                    hotplug_at = Some(Instant::now() + DEBOUNCE)
-                }
-                Event::Reload => reload_at = Some(Instant::now() + RELOAD_DEBOUNCE),
-                Event::Other => {}
-            },
-            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-            Err(e) => return Err(Error::new("ipc", format!("event socket: {e}"))),
-        }
-
-        if power_flag.swap(false, std::sync::atomic::Ordering::Relaxed) {
-            let ac = crate::power::on_ac();
-            if ac != last_ac {
-                last_ac = ac;
-                log(&format!(
-                    "power: now on {}",
-                    if ac == Some(true) { "ac" } else { "battery" }
-                ));
-                hotplug_at = Some(Instant::now() + DEBOUNCE);
-            }
-        }
-
-        let now = Instant::now();
-        if hotplug_at.is_some_and(|t| t <= now) {
-            hotplug_at = None;
-            let added = std::mem::take(&mut added);
-            if paused_until.is_some_and(|p| p > now) {
-                log("hotplug ignored (paused after a burst of changes)");
-            } else if let Some(changed) = on_hotplug(&ctx, night.as_ref(), &added)
-                && changed
-            {
-                history.push_back(now);
-                while history
-                    .front()
-                    .is_some_and(|t| now.duration_since(*t) > BURST_WINDOW)
-                {
-                    history.pop_front();
-                }
-                if history.len() >= BURST {
-                    paused_until = Some(now + PAUSE);
-                    history.clear();
-                    hypr.notify(Notice::AutoPaused);
-                    log("too many automatic changes, pausing rules for 60 s");
-                }
-            }
-        }
-        if reload_at.is_some_and(|t| t <= now) {
-            reload_at = None;
-            on_reload(&ctx);
-        }
-    }
+    let mut host = Live {
+        night: crate::night::Night::open(hypr, &state_dir).ok(),
+        ctx,
+        power_flag,
+        last_ac: crate::power::on_ac(),
+    };
+    event_loop(events.as_mut(), &mut host, power_watch)
 }
 
 /// Returns Some(changed?) if a rule was applied.
@@ -323,23 +343,166 @@ fn apply_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    /// Virtual time: the source advances it, the host reads it.
+    #[derive(Clone)]
+    struct Clock(Rc<Cell<Instant>>);
+
+    impl Clock {
+        fn advance(&self, d: Duration) {
+            self.0.set(self.0.get() + d);
+        }
+    }
+
+    /// Events at given delays (after the previous one); a wait shorter
+    /// than the next delay times out. An empty script means closed.
+    struct Script {
+        clock: Clock,
+        items: VecDeque<(Duration, Next)>,
+    }
+
+    impl EventSource for Script {
+        fn next(&mut self, timeout: Option<Duration>) -> Result<Next> {
+            let Some((delay, _)) = self.items.front_mut() else {
+                return Ok(Next::Closed);
+            };
+            match timeout {
+                Some(t) if t < *delay => {
+                    *delay -= t;
+                    self.clock.advance(t);
+                    Ok(Next::Tick)
+                }
+                _ => {
+                    let (d, n) = self.items.pop_front().unwrap();
+                    self.clock.advance(d);
+                    Ok(n)
+                }
+            }
+        }
+    }
+
+    struct Rec {
+        clock: Clock,
+        start: Instant,
+        /// (seconds since start, names) per hotplug call.
+        hotplugs: Vec<(u64, Vec<String>)>,
+        reloads: Vec<u64>,
+        pauses: usize,
+        result: Option<bool>,
+    }
+
+    impl Host for Rec {
+        fn now(&self) -> Instant {
+            self.clock.0.get()
+        }
+        fn power_changed(&mut self) -> bool {
+            false
+        }
+        fn hotplug(&mut self, added: &[String]) -> Option<bool> {
+            let t = self.now().duration_since(self.start).as_secs();
+            self.hotplugs.push((t, added.to_vec()));
+            self.result
+        }
+        fn reload(&mut self) {
+            self.reloads
+                .push(self.now().duration_since(self.start).as_secs());
+        }
+        fn paused(&mut self) {
+            self.pauses += 1;
+        }
+    }
+
+    fn run_script(script: Vec<(u64, Next)>, result: Option<bool>) -> Rec {
+        let start = Instant::now();
+        let clock = Clock(Rc::new(Cell::new(start)));
+        let mut src = Script {
+            clock: clock.clone(),
+            items: script
+                .into_iter()
+                .map(|(ms, n)| (Duration::from_millis(ms), n))
+                .collect(),
+        };
+        let mut rec = Rec {
+            clock,
+            start,
+            hotplugs: vec![],
+            reloads: vec![],
+            pauses: 0,
+            result,
+        };
+        event_loop(&mut src, &mut rec, false).unwrap();
+        rec
+    }
+
+    fn added(n: &str) -> Next {
+        Next::Event(Event::MonitorAdded { name: n.into() })
+    }
 
     #[test]
-    fn classifies_events() {
-        assert_eq!(classify("monitoraddedv2>>2,DP-2,desc"), Event::Hotplug);
-        assert_eq!(classify("monitorremoved>>DP-2"), Event::Hotplug);
-        assert_eq!(classify("configreloaded>>"), Event::Reload);
-        assert_eq!(classify("workspace>>2"), Event::Other);
-        assert_eq!(classify("monitoraddedfake>>x"), Event::Other);
-        assert_eq!(
-            added_name("monitoraddedv2>>2,DP-2,JDR EPIC Q40").as_deref(),
-            Some("DP-2")
+    fn applies_at_start_and_after_debounce() {
+        let r = run_script(vec![(5000, added("DP-2")), (60_000, Next::Closed)], None);
+        assert_eq!(r.hotplugs.len(), 2);
+        assert_eq!(r.hotplugs[0], (0, vec![]));
+        // 1.5 s debounce after the event at 5 s.
+        assert_eq!(r.hotplugs[1].1, vec!["DP-2".to_string()]);
+        assert_eq!(r.hotplugs[1].0, 6);
+    }
+
+    #[test]
+    fn bursts_coalesce_into_one_call() {
+        let r = run_script(
+            vec![
+                (5000, added("DP-2")),
+                (500, added("DP-3")),
+                (
+                    500,
+                    Next::Event(Event::MonitorRemoved {
+                        name: "HDMI-A-1".into(),
+                    }),
+                ),
+                (60_000, Next::Closed),
+            ],
+            None,
         );
+        assert_eq!(r.hotplugs.len(), 2);
         assert_eq!(
-            added_name("monitoradded>>HDMI-A-1").as_deref(),
-            Some("HDMI-A-1")
+            r.hotplugs[1].1,
+            vec!["DP-2".to_string(), "DP-3".to_string()]
         );
-        assert_eq!(added_name("monitorremoved>>DP-2"), None);
-        assert_eq!(added_name("monitoradded>>../x"), None);
+    }
+
+    #[test]
+    fn reload_is_debounced() {
+        let reload = || Next::Event(Event::ConfigReloaded);
+        let r = run_script(
+            vec![(5000, reload()), (100, reload()), (60_000, Next::Closed)],
+            None,
+        );
+        assert_eq!(r.reloads, vec![5]);
+    }
+
+    #[test]
+    fn too_many_automatic_changes_pause_the_rules() {
+        // Every call changes something: after BURST (3) within 30 s the
+        // rules stop for 60 s; a later one works again.
+        let r = run_script(
+            vec![
+                (5000, added("A-1")),
+                (5000, added("A-2")),
+                (5000, added("A-3")),
+                (5000, added("A-4")),
+                (100_000, added("A-5")),
+                (60_000, Next::Closed),
+            ],
+            Some(true),
+        );
+        assert_eq!(r.pauses, 1);
+        // start + A-1 + A-2 hit the burst limit; A-3 and A-4 are ignored.
+        let called: Vec<_> = r.hotplugs.iter().map(|h| h.1.clone()).collect();
+        assert!(called.contains(&vec!["A-2".to_string()]));
+        assert!(!called.contains(&vec!["A-3".to_string()]));
+        assert!(called.contains(&vec!["A-5".to_string()]));
     }
 }

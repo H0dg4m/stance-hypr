@@ -35,6 +35,10 @@
   behind the Hyprland backend), `Backend::compat_check()` replaces the
   version gate in `main`; no module outside `backend/hyprland.rs` and
   `doctor.rs` uses `hypr::Instance`
+- Internal: `Backend::events()` yields neutral events (monitor added /
+  removed, config reloaded) from an `EventSource`; the daemon's loop takes
+  an event source and a clock, so debounce, burst pause and reload are
+  unit-tested with scripted events and virtual time
 - `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
   compositor (runs in CI)
 
