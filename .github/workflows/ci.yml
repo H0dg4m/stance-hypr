@@ -52,17 +52,17 @@ jobs:
           path: qml-shots/
   musl:
     # The release builds this target; break it here, not at tag time.
+    # Alpine has the musl C toolchain that `ring` needs.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    container: rust:alpine
     steps:
+      - run: apk add --no-cache musl-dev file
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
-      - run: cargo build --release --locked --target x86_64-unknown-linux-musl
+      - run: cargo build --release --locked
       - run: |
-          b=target/x86_64-unknown-linux-musl/release/stance
-          file "$b" | grep -q "static"
+          b=target/release/stance
+          file "$b" | grep -Eq "static|static-pie"
           "$b" --version
   nix:
     # flake.nix builds and installs (no flake.lock is committed: nixpkgs

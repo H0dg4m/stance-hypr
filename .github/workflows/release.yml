@@ -10,46 +10,51 @@ permissions:
   contents: write
 jobs:
   build:
+    # Alpine: musl toolchain for a static binary (`ring` needs a C compiler).
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    container: rust:alpine
     steps:
+      - run: apk add --no-cache musl-dev file
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
       - run: cargo test --locked
-      - run: cargo build --release --locked --target x86_64-unknown-linux-musl
+      - run: cargo build --release --locked
       - name: Static binary
         run: |
-          b=target/x86_64-unknown-linux-musl/release/stance
-          file "$b"
-          ! ldd "$b" 2>/dev/null | grep -q "=>"
-          STANCE_BACKEND=fake XDG_CONFIG_HOME=$RUNNER_TEMP/c XDG_STATE_HOME=$RUNNER_TEMP/s "$b" --version
+          b=target/release/stance
+          file "$b" | grep -Eq "static|static-pie"
+          "$b" --version
       - name: Tarball
+        shell: sh
         run: |
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "v$v" != "${GITHUB_REF_NAME}" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match Cargo.toml $v"; exit 1
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo.toml $v"; exit 1
           fi
           d=dist/stance-$v
           mkdir -p "$d"
-          cp target/x86_64-unknown-linux-musl/release/stance LICENSE README.md CHANGELOG.md "$d/"
+          cp target/release/stance LICENSE README.md CHANGELOG.md "$d/"
           cp -r quickshell examples contrib docs "$d/"
           tar -C dist -czf "dist/stance-$v-x86_64-linux.tar.gz" "stance-$v"
           (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
           awk -v v="$v" '$0 ~ "^## " v {f=1;next} /^## /{f=0} f' CHANGELOG.md > dist/notes.md
           [ -s dist/notes.md ] || echo "See CHANGELOG.md" > dist/notes.md
-          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "$v" > dist/VERSION
       - uses: actions/upload-artifact@v4
         with:
           name: stance-dist
-          path: |
-            dist/*.tar.gz
-            dist/SHA256SUMS
-      - name: GitHub release
-        if: github.ref_type == 'tag'
-        env:
+          path: dist/
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stance-dist
+          path: dist
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --title "stance ${VERSION}" --notes-file dist/notes.md \
-            dist/*.tar.gz dist/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "stance $(cat dist/VERSION)" \
+            --notes-file dist/notes.md dist/*.tar.gz dist/SHA256SUMS
