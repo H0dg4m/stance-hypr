@@ -425,9 +425,11 @@ fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
         CString::new(from.as_os_str().as_bytes())?,
         CString::new(to.as_os_str().as_bytes())?,
     );
-    // SAFETY: valid C strings, AT_FDCWD.
+    // SAFETY: valid C strings, AT_FDCWD. A raw syscall: musl has no
+    // renameat2 wrapper.
     let r = unsafe {
-        libc::renameat2(
+        libc::syscall(
+            libc::SYS_renameat2,
             libc::AT_FDCWD,
             a.as_ptr(),
             libc::AT_FDCWD,
