@@ -77,6 +77,40 @@ check "daemon reacts to monitor events" 1920 "$(x_of B-1)"
 kill $DPID 2>/dev/null; wait $DPID 2>/dev/null
 rm -f "$XDG_CONFIG_HOME/stance/rules.toml"
 
+# events: one JSON line per change; ends when the reader goes away
+rm -rf "$XDG_CONFIG_HOME/stance/themes"
+"$BIN" events > "$WORK/events.out" 2>/dev/null &
+EPID=$!
+sleep 0.5
+s set B-1 --pos 2500x0 --timeout 30 >/dev/null     # pending.json (+ the fake's file)
+s confirm >/dev/null
+python3 - "$STANCE_STATE_DIR/fake.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d["monitors"].append(dict(d["monitors"][0], name="D-1", x=9000)); json.dump(d,open(p,"w"))
+PY
+printf '{"show":{"map":true}}' > "$XDG_CONFIG_HOME/stance/panel.json"; chmod 600 "$XDG_CONFIG_HOME/stance/panel.json"
+s feature off quick >/dev/null
+mkdir -p -m 700 "$XDG_CONFIG_HOME/stance/themes"; sleep 0.3
+s theme export stance-dark --out "$WORK/t.json" >/dev/null && sed -i 's/"id": *"stance-dark"/"id": "evtest"/' "$WORK/t.json"
+s theme import "$WORK/t.json" >/dev/null
+sleep 0.7
+kill $EPID 2>/dev/null; wait $EPID 2>/dev/null
+ev() { grep -c "$1" "$WORK/events.out"; }
+check "events: hello first" hello "$(head -1 "$WORK/events.out" | j "d['event']")"
+check "events: backend and caps" "fake True" "$(head -1 "$WORK/events.out" | j "d['backend'], d['monitor_events']")"
+[ "$(ev '"event":"pending"')" -ge 1 ] && ok "events: pending" || bad "events: pending" "$(cat "$WORK/events.out")"
+[ "$(ev '"change":"added","event":"monitors","name":"D-1"')" -ge 1 ] && ok "events: monitor added" || bad "events: monitor added" "$(cat "$WORK/events.out")"
+[ "$(ev '"event":"panel"')" -ge 1 ] && ok "events: panel.json" || bad "events: panel.json"
+[ "$(ev '"event":"theme"')" -ge 1 ] && ok "events: themes/ (created after start)" || bad "events: themes/" "$(cat "$WORK/events.out")"
+[ "$(ev '"event":"features"')" -ge 1 ] && ok "events: features.json" || bad "events: features.json"
+python3 - "$STANCE_STATE_DIR/fake.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d["monitors"]=[m for m in d["monitors"] if m["name"]!="D-1"]; json.dump(d,open(p,"w"))
+PY
+t0=$(date +%s)
+timeout 10 bash -c '"$0" events | head -1 >/dev/null' "$BIN"; rc=$?
+[ "$rc" = 0 ] && [ $(( $(date +%s) - t0 )) -lt 5 ] && ok "events: ends when the reader closes (idle)" || bad "events: ends when the reader closes (idle)" "rc=$rc"
+
 # capabilities the fake has not got
 out=$(s night status --json 2>&1); rc=$?
 check "night unsupported exit code" 2 "$rc"

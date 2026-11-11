@@ -39,6 +39,10 @@
   removed, config reloaded) from an `EventSource`; the daemon's loop takes
   an event source and a clock, so debounce, burst pause and reload are
   unit-tested with scripted events and virtual time
+- `stance events`: JSON lines for monitor changes (backend events) and the
+  files the panel watches (pending, active mode, clip.rev, features, panel,
+  themes, modes, rules) through inotify; no idle cost, ends with its reader
+  (docs/protocol.md). The panel can use it instead of folder watches
 - `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
   compositor (runs in CI)
 

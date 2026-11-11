@@ -107,6 +107,40 @@ disappears; the panel's `StanceService.qml` does this with a `FileView`
 filtered to `pending.json`). Counting down locally from `deadline_ms` is
 fine; do not poll the CLI per frame.
 
+### `stance events`
+
+Streams one JSON object per line on stdout until the reader goes away
+(SIGPIPE or a closed pipe ends it, also while idle) or it is killed. A UI
+runs it as a child process and re-reads what changed; the lines carry no
+data beyond what happened. No inotify watches in your own code, no polling.
+
+```json
+{"event":"hello","schema":1,"backend":"hyprland","monitor_events":true}
+{"event":"monitors","change":"added","name":"DP-2"}
+{"event":"pending"}
+```
+
+| `event` | when | then read |
+| --- | --- | --- |
+| `hello` | first line; `backend` is null without a compositor, `monitor_events` says whether `monitors` lines can come | |
+| `monitors` | `change` is `added` / `removed` (with `name`, empty if unknown) or `reload` (compositor config reloaded) | `stance monitors` |
+| `pending` | `pending.json` changed (change made, confirmed, reverted, expired) | `stance status` |
+| `active` | the active mode changed | `stance status` |
+| `clip` | `clip.rev` changed (the shelf changed) | `stance clip list` |
+| `clip_config` | `clip.json` changed | `stance clip config show` |
+| `features` | `features.json` changed | `stance feature list` |
+| `panel` | `panel.json` changed | the file itself (see section 4) |
+| `theme` | a file in `themes/` changed, or the folder appeared | `stance theme list` |
+| `modes` | a file in `modes/` changed | `stance mode list` |
+| `rules` | `rules.toml` changed | `stance rules` |
+| `backend_closed` | the compositor went away; file events continue | |
+| `backend_error` | the backend's event stream failed (`code`, `message`) | |
+
+A change usually produces one line, sometimes two (a file written in two
+steps): treat every line as "re-read", never as a counter. Unknown `event`
+names may appear in later versions: ignore them. `schema` is bumped only on
+breaking changes to these lines.
+
 ### Other files (read-only for clients)
 
 `active.json` `{session, mode, extras}`: active mode. `memory.json`: last

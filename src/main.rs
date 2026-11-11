@@ -8,6 +8,7 @@ mod daemon;
 mod deck;
 mod doctor;
 mod error;
+mod events;
 mod feature;
 mod hypr;
 mod memory;
@@ -87,6 +88,7 @@ Usage:
   stance theme system                  System light/dark preference: dark | light | unknown
   stance theme put --data JSON | import FILE | export ID [--out FILE] | rm ID   [--force]
   stance feature list | on NAME | off NAME   Optional parts: clip, deck, rules, quick
+  stance events                        JSON lines on every change (monitors, pending, clip, themes, ...)
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor [--report]             Check the environment (read-only); --report = block for bug reports
   stance setup [waybar|quickshell|end4] [--dry-run]   How to wire stance into your desktop
@@ -260,6 +262,10 @@ fn run(a: &Args) -> Result<ExitCode> {
     }
     let cmd = cmd.unwrap_or_default();
 
+    if cmd == "events" {
+        a.max_pos(1)?;
+        return events::run(a.val("--backend"), &state_dir()?).map(|_| ExitCode::SUCCESS);
+    }
     if cmd == "doctor" {
         a.max_pos(1)?;
         if a.has("--report") {
