@@ -28,6 +28,9 @@
   `OptKey` is neutral (hyprlang paths, Lua/legacy rendering and `getoption`
   parsing now live in `src/backend/hyprland.rs`); `allow_tearing` stays the
   mode-file key
+- Internal: `src/commands.rs` returns serializable results (monitors, status,
+  caps, set, layout, arrange, lid, confirm, revert); one renderer prints them
+  (CLI text and JSON byte-identical to 0.3)
 - `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
   compositor (runs in CI)
 

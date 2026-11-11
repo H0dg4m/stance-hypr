@@ -3,6 +3,7 @@ mod audio;
 mod backend;
 mod brightness;
 mod clip;
+mod commands;
 mod daemon;
 mod deck;
 mod doctor;
@@ -31,7 +32,7 @@ use std::process::ExitCode;
 use serde::Serialize;
 use serde_json::json;
 
-use apply::{Ctx, DEFAULT_TIMEOUT, Outcome, State};
+use apply::{Ctx, DEFAULT_TIMEOUT};
 use backend::Backend;
 use error::{Error, Result};
 use model::Monitor;
@@ -321,63 +322,15 @@ fn run(a: &Args) -> Result<ExitCode> {
     match cmd {
         "caps" => {
             a.max_pos(1)?;
-            let c = hypr.capabilities();
-            if json {
-                ok_json(&json!({ "backend": hypr.name(), "caps": c }));
-            } else {
-                println!("backend {}", hypr.name());
-                let v = serde_json::to_value(c).unwrap_or_default();
-                for (k, on) in v.as_object().into_iter().flatten() {
-                    println!("  {k:<19} {}", if on == true { "yes" } else { "no" });
-                }
-            }
+            emit(json, &commands::caps(hypr));
         }
         "monitors" => {
             a.max_pos(1)?;
-            let mons = hypr.monitors()?;
-            if json {
-                ok_json(&mons);
-            } else {
-                print_monitors(&mons);
-            }
+            emit(json, &commands::monitors(hypr)?);
         }
         "status" => {
             a.max_pos(1)?;
-            let warnings = {
-                let _l = ctx.lock()?;
-                ctx.sweep()
-            };
-            let pending = ctx.pending_info();
-            let active = ctx.active_mode();
-            if json {
-                ok_json(&json!({
-                    "pending": pending,
-                    "active_mode": active,
-                    "daemon": daemon::running(&ctx.state_dir),
-                    "warnings": warnings
-                }));
-            } else {
-                match &pending {
-                    Some(p) => println!(
-                        "pending: {} (reverts in {:.0} s unless `stance confirm`)",
-                        p.label,
-                        p.remaining_ms as f64 / 1000.0
-                    ),
-                    None => println!("pending: none"),
-                }
-                println!("active mode: {}", active.as_deref().unwrap_or("none"));
-                println!(
-                    "daemon: {}",
-                    if daemon::running(&ctx.state_dir) {
-                        "running"
-                    } else {
-                        "not running"
-                    }
-                );
-                for w in warnings {
-                    println!("note: {w}");
-                }
-            }
+            emit(json, &commands::status(&ctx)?);
         }
         "set" => {
             let target = a.arg(1, "monitor")?;
@@ -401,21 +354,7 @@ fn run(a: &Args) -> Result<ExitCode> {
                 },
                 custom: a.has("--custom"),
             };
-            let mons = hypr.monitors()?;
-            let remembered = plan::resolve(&mons, target)
-                .ok()
-                .filter(|m| !m.enabled)
-                .and_then(|m| memory::recall(&ctx.state_dir, m, &mons));
-            let specs = plan::plan_set(&mons, target, &args, remembered)?;
-            let warnings = plan::check_result(&mons, &specs)?;
-            let label = format!("set {}", specs[0].name);
-            let st = State {
-                monitors: specs,
-                ..Default::default()
-            };
-            let mut out = ctx.apply(&label, &st, a.timeout()?, Some((None, false)))?;
-            out.warnings.extend(warnings);
-            report(json, out);
+            emit(json, &commands::set(&ctx, target, &args, a.timeout()?)?);
         }
         "layout" => {
             let kind_s = a.arg(1, "layout kind")?;
@@ -429,36 +368,15 @@ fn run(a: &Args) -> Result<ExitCode> {
                 a.max_pos(3)?;
                 None
             };
-            let mons = hypr.monitors()?;
-            let specs = plan::plan_layout(&mons, kind, target, reference)?;
-            let warnings = plan::check_result(&mons, &specs)?;
-            let st = State {
-                monitors: specs,
-                ..Default::default()
-            };
-            let mut out = ctx.apply(
-                &format!("layout {kind_s}"),
-                &st,
-                a.timeout()?,
-                Some((None, false)),
-            )?;
-            out.warnings.extend(warnings);
-            report(json, out);
+            let out = commands::layout(&ctx, kind, kind_s, target, reference, a.timeout()?)?;
+            emit(json, &out);
         }
         "arrange" => {
             let pairs = a.pos[1..]
                 .iter()
                 .map(|p| plan::parse_pair(p))
                 .collect::<Result<Vec<_>>>()?;
-            let mons = hypr.monitors()?;
-            let (specs, warnings) = plan::plan_arrange(&mons, &pairs)?;
-            let st = State {
-                monitors: specs,
-                ..Default::default()
-            };
-            let mut out = ctx.apply("arrange", &st, a.timeout()?, Some((None, false)))?;
-            out.warnings.extend(warnings);
-            report(json, out);
+            emit(json, &commands::arrange(&ctx, &pairs, a.timeout()?)?);
         }
         "lid" => {
             let what = a.arg(1, "close or open")?;
@@ -473,17 +391,7 @@ fn run(a: &Args) -> Result<ExitCode> {
                     ));
                 }
             };
-            let mons = hypr.monitors()?;
-            let (specs, note) =
-                plan::plan_lid(&mons, close, &|m| memory::recall(&ctx.state_dir, m, &mons))?;
-            let st = State {
-                monitors: specs,
-                ..Default::default()
-            };
-            // Nobody can confirm with the lid shut: no timer, mode kept.
-            let mut out = ctx.apply(&format!("lid {what}"), &st, 0, None)?;
-            out.warnings.extend(note);
-            report(json, out);
+            emit(json, &commands::lid(&ctx, close)?);
         }
         "power" => {
             a.max_pos(1)?;
@@ -511,25 +419,11 @@ fn run(a: &Args) -> Result<ExitCode> {
         }
         "confirm" => {
             a.max_pos(1)?;
-            let had = ctx.confirm()?;
-            simple(
-                json,
-                if had {
-                    "confirmed"
-                } else {
-                    "nothing to confirm"
-                },
-                had,
-            );
+            emit(json, &commands::confirm(&ctx)?);
         }
         "revert" => {
             a.max_pos(1)?;
-            let had = ctx.revert()?;
-            simple(
-                json,
-                if had { "reverted" } else { "nothing to revert" },
-                had,
-            );
+            emit(json, &commands::revert(&ctx)?);
         }
         "persist" => {
             a.max_pos(1)?;
@@ -622,7 +516,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
                 out.changed.extend(changed);
                 out.warnings.extend(w);
             }
-            report(json, out);
+            emit(json, &out);
         }
         "save" => {
             let name = a.arg(2, "mode name")?;
@@ -1595,32 +1489,23 @@ fn doctor_cmd(json: bool) -> ExitCode {
     }
 }
 
-fn report(json: bool, o: Outcome) {
-    if json {
-        ok_json(&o);
-        return;
-    }
-    if o.changed.is_empty() {
-        println!("{}: already in place, nothing changed", o.label);
-    } else {
-        println!("{}: changed {}", o.label, o.changed.join(", "));
-    }
-    if let Some(p) = &o.pending {
-        println!(
-            "keep it with `stance confirm` within {:.0} s, otherwise it reverts",
-            p.remaining_ms as f64 / 1000.0
-        );
-    }
-    for w in &o.warnings {
-        println!("note: {w}");
-    }
-}
-
 fn simple(json: bool, msg: &str, did: bool) {
     if json {
         ok_json(&json!({ "message": msg, "done": did }));
     } else {
         println!("{msg}");
+    }
+}
+
+/// The one renderer: JSON envelope or human text.
+fn emit<T: commands::Render>(json: bool, r: &T) {
+    if json {
+        ok_json(r);
+    } else {
+        let t = r.human();
+        if !t.is_empty() {
+            println!("{t}");
+        }
     }
 }
 
@@ -1634,32 +1519,4 @@ const SCHEMA: u32 = 1;
 
 fn ok_json(data: &impl Serialize) {
     print_json(&json!({ "ok": true, "schema": SCHEMA, "data": data }));
-}
-
-fn print_monitors(mons: &[Monitor]) {
-    for m in mons {
-        let state = if !m.enabled {
-            "off".to_string()
-        } else if let Some(src) = &m.mirror_of {
-            format!("mirror of {src}")
-        } else {
-            format!(
-                "{}x{}@{} at {},{} scale {}{}{}",
-                m.width,
-                m.height,
-                spec::fmt_num(m.refresh),
-                m.x,
-                m.y,
-                spec::fmt_num(m.scale),
-                if m.transform != 0 {
-                    format!(" rot {}", m.transform)
-                } else {
-                    String::new()
-                },
-                if m.vrr { " vrr" } else { "" },
-            )
-        };
-        let focus = if m.focused { "*" } else { " " };
-        println!("{focus} {:<8} {:<32} {state}", m.name, m.description);
-    }
 }
