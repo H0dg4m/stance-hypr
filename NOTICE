@@ -1,0 +1,13 @@
+stance — third-party credits
+
+The clipboard shelf (`stance clip`) is inspired by ClipBoardLine by @orkunisitmak
+(MIT, https://github.com/orkunisitmak/clipboardline). No code was
+copied; stance reimplements the ideas for Hyprland.
+
+Built-in theme palettes follow these projects (all MIT licensed):
+Catppuccin (catppuccin/catppuccin), Nord (nordtheme/nord), Gruvbox
+(morhetz/gruvbox), Dracula (dracula/dracula-theme), Tokyo Night
+(enkia/tokyo-night-vscode-theme), Rosé Pine (rose-pine/rose-pine-theme),
+Everforest (sainnhe/everforest), Kanagawa (rebelot/kanagawa.nvim), One Dark
+(atom/one-dark-syntax), Solarized (altercation/solarized). Colour values are
+facts; the theme names belong to their projects.

@@ -48,6 +48,7 @@ Scope {
             property var idx: [0, 0, 0]
             property bool searching: false
             property bool previewing: false
+            property bool pauseMenu: false
             property string previewText: ""
             property string curId: ""
             readonly property var current: shelves[shelf][idx[shelf]] || null
@@ -161,7 +162,9 @@ Scope {
                 }
                 switch (e.key) {
                 case Qt.Key_Escape:
-                    if (root.clip.query !== "") {
+                    if (pauseMenu) {
+                        pauseMenu = false;
+                    } else if (root.clip.query !== "") {
                         searching = false;
                         setQuery("");
                     } else {
@@ -210,6 +213,11 @@ Scope {
                 if (s < 3600) return StanceI18n.f("%1 min", Math.floor(s / 60));
                 if (s < 86400) return StanceI18n.f("%1 h", Math.floor(s / 3600));
                 return StanceI18n.f("%1 d", Math.floor(s / 86400));
+            }
+            // "HH:mm", with the weekday when it is not today.
+            function pauseText(secs) {
+                const d = new Date(secs * 1000);
+                return d.toDateString() === new Date().toDateString() ? Qt.formatTime(d, "HH:mm") : Qt.formatDateTime(d, "ddd HH:mm");
             }
             function bytes(n) {
                 if (n < 1024) return n + " B";
@@ -278,6 +286,7 @@ Scope {
                             }
                         }
                         StanceChip {
+                            id: closeChip
                             theme: root.theme
                             icon: "close"
                             label: root.theme.iconFont === "" ? StanceI18n.t("Close") : ""
@@ -286,6 +295,94 @@ Scope {
                             anchors.verticalCenter: parent.verticalCenter
                             implicitHeight: 30
                             onClicked: root.open = false
+                        }
+                        // Capture pause: a Pause menu, or the state + Resume.
+                        Row {
+                            visible: root.featureOn && root.clip.capture
+                            anchors.right: closeChip.left
+                            anchors.rightMargin: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+                            StanceChip {
+                                visible: root.clip.paused
+                                theme: root.theme
+                                icon: "pause_circle"
+                                label: StanceI18n.f("Paused until %1", win.pauseText(root.clip.pausedUntil))
+                                selected: true
+                                implicitHeight: 30
+                            }
+                            StanceChip {
+                                visible: root.clip.paused
+                                theme: root.theme
+                                icon: "play_arrow"
+                                label: StanceI18n.t("Resume")
+                                implicitHeight: 30
+                                onClicked: root.clip.resume()
+                            }
+                            StanceChip {
+                                id: pauseChip
+                                visible: !root.clip.paused
+                                theme: root.theme
+                                icon: "pause"
+                                label: StanceI18n.t("Pause")
+                                selected: win.pauseMenu
+                                implicitHeight: 30
+                                onClicked: win.pauseMenu = !win.pauseMenu
+                            }
+                        }
+                    }
+
+                    // Pause menu: how long capture stays off.
+                    Rectangle {
+                        id: pauseMenuBox
+                        visible: win.pauseMenu && !root.clip.paused
+                        z: 20
+                        width: 170
+                        height: pmCol.implicitHeight + 12
+                        x: searchBox.x + searchBox.width - closeChip.width - 9 - width
+                        y: searchBox.y + searchBox.height + 6
+                        radius: root.theme.chipRadius + 2
+                        color: root.theme.card
+                        border.width: 1
+                        border.color: root.theme.border
+                        Column {
+                            id: pmCol
+                            x: 6
+                            y: 6
+                            width: parent.width - 12
+                            spacing: 2
+                            Repeater {
+                                model: [
+                                    { label: StanceI18n.t("15 min"), value: "15m" },
+                                    { label: StanceI18n.t("1 hour"), value: "1h" },
+                                    { label: StanceI18n.t("Until resumed"), value: "24h" }
+                                ]
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: pmCol.width
+                                    height: 32
+                                    radius: root.theme.chipRadius
+                                    color: pma.containsMouse ? root.theme.surfaceHover : "transparent"
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: 10
+                                        text: modelData.label
+                                        color: root.theme.text
+                                        font.family: root.theme.fontFamily
+                                        font.pixelSize: root.theme.fontSize
+                                    }
+                                    MouseArea {
+                                        id: pma
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            win.pauseMenu = false;
+                                            root.clip.pause(modelData.value);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -515,7 +612,7 @@ Scope {
                             asynchronous: true
                             cache: false
                             sourceSize: Qt.size(1600, 1600)
-                            source: win.previewing && win.current && win.current.kind === "image" && win.current.path !== "" ? "file://" + win.current.path : ""
+                            source: win.previewing && win.current && win.current.kind === "image" && win.current.path !== "" ? "file://" + win.current.path.split("/").map(encodeURIComponent).join("/") : ""
                         }
                         Flickable {
                             id: previewFlick
@@ -566,7 +663,7 @@ Scope {
                         asynchronous: true
                         cache: false
                         sourceSize: Qt.size(320, 200)
-                        source: item.path !== "" ? "file://" + item.path : ""
+                        source: item.path !== "" ? "file://" + item.path.split("/").map(encodeURIComponent).join("/") : ""
                     }
                     Rectangle {
                         anchors.left: parent.left

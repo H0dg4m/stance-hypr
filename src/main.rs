@@ -16,6 +16,7 @@ mod night;
 mod persist;
 mod plan;
 mod power;
+mod setup;
 mod spec;
 mod store;
 mod theme;
@@ -76,12 +77,15 @@ Usage:
   stance clip list [--kind K] [--query Q] [--limit N]   Clipboard shelf (text, link, image)
   stance clip copy | get | pin | unpin | rm ID…   stance clip undo | prune | clear [--all]
   stance clip config [show | put --data JSON]   enabled, text, image, retention_days
+  stance clip purge                    Delete removed items now (otherwise kept a day for undo)
+  stance clip pause [15m|1h|30s] | resume   Stop capturing for a while (at most 24h)
   stance clip ingest [--image]         Store one copy (run by `wl-paste --watch`)
   stance theme list | show ID          Panel themes (built-in and yours)
   stance theme put --data JSON | import FILE | export ID [--out FILE] | rm ID   [--force]
   stance feature list | on NAME | off NAME   Optional parts: clip, deck, rules, quick
   stance daemon                        Hotplug rules (optional, long-running)
-  stance doctor                        Check the environment (read-only)
+  stance doctor [--report]             Check the environment (read-only); --report = block for bug reports
+  stance setup [waybar|quickshell|end4] [--dry-run]   How to wire stance into your desktop
 
 On a Hyprland newer than the tested versions, commands that change screens
 refuse to run unless --force-version is given.
@@ -120,6 +124,8 @@ const BOOL_FLAGS: &[&str] = &[
     "--loopback",
     "--force-version",
     "--image",
+    "--dry-run",
+    "--report",
     "--all",
     "--help",
     "-h",
@@ -251,7 +257,15 @@ fn run(a: &Args) -> Result<ExitCode> {
 
     if cmd == "doctor" {
         a.max_pos(1)?;
+        if a.has("--report") {
+            print!("{}", bug_report());
+            return Ok(ExitCode::SUCCESS);
+        }
         return Ok(doctor_cmd(json));
+    }
+    if cmd == "setup" {
+        a.max_pos(2)?;
+        return setup_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
 
     if cmd == "deck" {
@@ -1060,6 +1074,20 @@ fn clip_cmd(a: &Args, json: bool) -> Result<()> {
                     .map_err(|e| Error::new("io", format!("clip blob: {e}")))?;
                 if json {
                     ok_json(&json!({ "text": s, "mime": e.mime }));
+                } else if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+                    // Copied text may carry escape sequences; a terminal
+                    // must not execute them. Pipes get the exact bytes.
+                    let safe: String = s
+                        .chars()
+                        .map(|ch| {
+                            if ch.is_control() && ch != '\n' && ch != '\t' {
+                                '\u{FFFD}'
+                            } else {
+                                ch
+                            }
+                        })
+                        .collect();
+                    print!("{safe}");
                 } else {
                     print!("{s}");
                 }
@@ -1072,6 +1100,11 @@ fn clip_cmd(a: &Args, json: bool) -> Result<()> {
         }
         "pin" | "unpin" => done(c.set_pinned(&ids()?, sub == "pin")?, ""),
         "rm" => done(c.remove(&ids()?)?, "removed (stance clip undo restores)"),
+        "purge" => {
+            a.max_pos(2)?;
+            let (n, rev) = c.purge()?;
+            done(rev, &format!("deleted {n} removed item(s) for good"));
+        }
         "undo" => {
             a.max_pos(2)?;
             let (n, rev) = c.undo()?;
@@ -1093,6 +1126,31 @@ fn clip_cmd(a: &Args, json: bool) -> Result<()> {
                 },
             );
         }
+        "pause" => {
+            a.max_pos(3)?;
+            let secs = clip::parse_duration(a.pos.get(2).map(String::as_str).unwrap_or("15m"))?;
+            if secs == 0 {
+                return Err(Error::new("usage", "use `stance clip resume` to resume"));
+            }
+            let until = c.pause(secs)?;
+            if json {
+                ok_json(&json!({ "paused_until": until }));
+            } else {
+                println!(
+                    "capture paused for {}m (stance clip resume to resume)",
+                    secs.div_ceil(60)
+                );
+            }
+        }
+        "resume" => {
+            a.max_pos(2)?;
+            c.pause(0)?;
+            if json {
+                ok_json(&json!({ "paused_until": null }));
+            } else {
+                println!("capture resumed");
+            }
+        }
         "config" => match a.pos.get(2).map(String::as_str) {
             None | Some("show") => {
                 let cfg = c.config()?;
@@ -1103,6 +1161,12 @@ fn clip_cmd(a: &Args, json: bool) -> Result<()> {
                         "enabled: {}\ntext: {}\nimage: {}\nretention_days: {}",
                         cfg.enabled, cfg.text, cfg.image, cfg.retention_days
                     );
+                    if let Some(t) = cfg.paused(clip::now()) {
+                        println!(
+                            "paused: {}m left",
+                            t.saturating_sub(clip::now()).div_ceil(60)
+                        );
+                    }
                 }
             }
             Some("put") => {
@@ -1125,7 +1189,7 @@ fn clip_cmd(a: &Args, json: bool) -> Result<()> {
             return Err(Error::new(
                 "usage",
                 format!(
-                    "unknown clip command `{other}` (list, get, copy, pin, unpin, rm, undo, prune, clear, config, ingest)"
+                    "unknown clip command `{other}` (list, get, copy, pin, unpin, rm, undo, purge, prune, clear, pause, resume, config, ingest)"
                 ),
             ));
         }
@@ -1386,6 +1450,102 @@ fn persist_cmd(ctx: &Ctx, hypr: &Hyprland, print: bool, json: bool) -> Result<()
         println!("  {line}");
     }
     Ok(())
+}
+
+fn setup_cmd(a: &Args, json: bool) -> Result<()> {
+    let (target, detected) = match a.pos.get(1) {
+        Some(t) => (setup::Target::parse(t)?, None),
+        None => {
+            let (t, why) = setup::detect(&doctor::cmdlines());
+            (t, Some(why))
+        }
+    };
+    let panel = setup::panel_dir();
+    let plan = setup::plan(target, detected, panel.as_deref());
+    let dry = a.has("--dry-run");
+    let notes = if dry { Vec::new() } else { setup::apply(&plan) };
+    if json {
+        ok_json(&json!({ "plan": plan, "dry_run": dry, "notes": notes }));
+        return Ok(());
+    }
+    let name = format!("{:?}", plan.target).to_lowercase();
+    match &plan.detected {
+        Some(why) => println!("Setup for {name} ({why}; pass a target to choose)\n"),
+        None => println!("Setup for {name}\n"),
+    }
+    for u in &plan.units {
+        let verb = if dry { "would enable" } else { "enabled" };
+        if !notes.iter().any(|n| n.starts_with(u)) {
+            println!("  {verb} {u}");
+        }
+    }
+    for n in &notes {
+        println!("  note: {n}");
+    }
+    for (i, s) in plan.steps.iter().enumerate() {
+        println!("{}. {s}", i + 1);
+    }
+    Ok(())
+}
+
+/// A copy-pasteable block for bug reports: versions, session, features
+/// and the doctor checks. Nothing personal beyond what doctor prints.
+fn bug_report() -> String {
+    let first_line = |prog: &str, args: &[&str]| -> String {
+        tool::find(prog)
+            .and_then(|p| tool::run_tool(&p, args, std::time::Duration::from_secs(3)).ok())
+            .and_then(|o| o.lines().next().map(str::trim).map(String::from))
+            .unwrap_or_else(|| "not found".into())
+    };
+    let os = std::fs::read_to_string("/etc/os-release")
+        .ok()
+        .and_then(|s| {
+            s.lines().find_map(|l| {
+                l.strip_prefix("PRETTY_NAME=")
+                    .map(|v| v.trim_matches('"').to_string())
+            })
+        })
+        .unwrap_or_else(|| "unknown".into());
+    let hypr = Hyprland::connect()
+        .and_then(|h| h.version())
+        .unwrap_or_else(|e| format!("not reachable ({})", e.code));
+    let mut out = String::from("```\n");
+    out += &format!("stance      {}\n", env!("CARGO_PKG_VERSION"));
+    out += &format!("hyprland    {hypr}\n");
+    out += &format!("quickshell  {}\n", first_line("qs", &["--version"]));
+    out += &format!("os          {os}\n");
+    out += &format!("kernel      {}\n", first_line("uname", &["-r"]));
+    if let Ok(fs) = feature::list() {
+        let f: Vec<String> = fs
+            .iter()
+            .map(|f| format!("{}={}", f.name, if f.on { "on" } else { "off" }))
+            .collect();
+        out += &format!("features    {}\n", f.join(" "));
+    }
+    out += "\n";
+    // Instance and socket paths add nothing to a report.
+    for c in doctor::run()
+        .into_iter()
+        .filter(|c| !matches!(c.id, "instance" | "socket1" | "socket2"))
+    {
+        out += &format!(
+            "{:<5} {:<15} {}\n",
+            format!("{:?}", c.status).to_lowercase(),
+            c.id,
+            c.message
+        );
+    }
+    out += "```\n";
+    // Home path and user name are not needed to debug stance.
+    if let Some(home) = std::env::var_os("HOME").and_then(|h| h.into_string().ok())
+        && home.len() > 1
+    {
+        out = out.replace(&home, "~");
+    }
+    if let Ok(uid) = hypr::current_uid() {
+        out = out.replace(&format!("/run/user/{uid}"), "/run/user/<uid>");
+    }
+    out
 }
 
 fn doctor_cmd(json: bool) -> ExitCode {

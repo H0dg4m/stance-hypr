@@ -27,6 +27,26 @@ pub fn find(name: &str) -> Option<PathBuf> {
         .find(|p| p.is_absolute() && p.is_file())
 }
 
+/// Runs a prepared command (stdio already set) and waits at most `timeout`;
+/// on timeout the child is killed and reaped. True = exited with success.
+pub fn status_timeout(mut cmd: Command, timeout: Duration) -> bool {
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => return st.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
 /// Runs `path args...`, returns stdout. Fails on non-zero exit (message from
 /// sanitized stderr) and on timeout (child is killed and reaped).
 pub fn run_tool(path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
@@ -34,13 +54,24 @@ pub fn run_tool(path: &Path, args: &[&str], timeout: Duration) -> Result<String>
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "tool".into());
-    let mut child = Command::new(path)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| Error::new("tool", format!("{label}: {e}")))?;
+    let spawn = || {
+        Command::new(path)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    // ETXTBSY: a freshly written executable can still be open for writing in
+    // a child another thread is forking; it clears within milliseconds.
+    let mut child = match spawn() {
+        Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) => {
+            std::thread::sleep(Duration::from_millis(50));
+            spawn()
+        }
+        r => r,
+    }
+    .map_err(|e| Error::new("tool", format!("{label}: {e}")))?;
     let mut so = child.stdout.take();
     let mut se = child.stderr.take();
     let t_out = std::thread::spawn(move || {

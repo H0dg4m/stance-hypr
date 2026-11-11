@@ -16,7 +16,8 @@ particular shell:
 | `StanceI18n` | Singleton: `StanceI18n.t("English text")` / `f("... %1", x)`; English and Turkish, `lang` auto/en/tr from the panel prefs |
 | `StanceAppearance` | Settings cards for language, theme picker + live editor (save / import / export) and the feature switches (`stance feature`) |
 | `StanceSection`, `StanceSegmented`, `StanceIcon`, `StanceSwitch`, `StanceField` | Building blocks: titled card, segmented buttons, icon glyph, switch, text field |
-| `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings (prefs in `~/.config/stance/panel.json`) |
+| `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings pages (prefs in `~/.config/stance/panel.json`; the open category is `settingsPage`) |
+| `StanceNav` | Reusable category navigation: sidebar (`vertical`) or a scrolling top row; model `[{id, label, icon}]`, signal `picked(id)` |
 | `StanceDeckButtons` | Phone-buttons editor card in the settings window (`deck buttons / put / reset`) |
 | `StanceIdentify` | Shows each screen's name on that screen for a moment |
 | `StanceClip`, `StanceClipService` | Clipboard shelf overlay (`stance clip`, see `docs/clip.md`) and its data side (list on open, `clip.rev` watch while open) |

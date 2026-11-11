@@ -44,8 +44,10 @@ Item {
         compact: false,
         theme: "",
         themeOverrides: {},
-        lang: "auto"
+        lang: "auto",
+        settingsPage: "general"
     })
+    readonly property var settingsPages: ["general", "appearance", "displays", "quick", "clip", "phone", "features", "health"]
     property var prefs: prefDefaults
     readonly property int confirmTimeout: prefs.confirmTimeout
 
@@ -84,7 +86,7 @@ Item {
     // Unknown keys, wrong types and out-of-range values fall back to defaults.
     function normPrefs(o) {
         const d = prefDefaults;
-        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeOverrides: {}, lang: "auto" };
+        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeOverrides: {}, lang: "auto", settingsPage: "general" };
         const show = o && typeof o.show === "object" && o.show ? o.show : {};
         for (const k of Object.keys(d.show))
             out.show[k] = typeof show[k] === "boolean" ? show[k] : d.show[k];
@@ -103,10 +105,12 @@ Item {
         }
         if (o && (o.lang === "en" || o.lang === "tr" || o.lang === "auto"))
             out.lang = o.lang;
+        if (o && settingsPages.indexOf(o.settingsPage) >= 0)
+            out.settingsPage = o.settingsPage;
         return out;
     }
 
-    // key: "show.<name>" | "confirmTimeout" | "compact" | "theme" | "lang"
+    // key: "show.<name>" | "confirmTimeout" | "compact" | "theme" | "lang" | "settingsPage"
     function setPref(key, value) {
         const p = JSON.parse(JSON.stringify(prefs));
         if (key.startsWith("show."))
@@ -250,7 +254,7 @@ Item {
 
     Process {
         id: mkdirProc
-        command: ["mkdir", "-p", svc.configDir]
+        command: ["/usr/bin/mkdir", "-p", svc.configDir]
         running: true
         onExited: prefsFile.reload()
     }
@@ -264,6 +268,7 @@ Item {
             if (p.theme === "") delete p.theme;
             if (Object.keys(p.themeOverrides).length === 0) delete p.themeOverrides;
             if (p.lang === "auto") delete p.lang;
+            if (p.settingsPage === "general") delete p.settingsPage;
             prefsFile.setText(JSON.stringify(p, null, 1) + "\n");
         }
     }
@@ -488,7 +493,7 @@ Item {
     }
 
     FolderListModel {
-        folder: svc.watching ? "file://" + svc.stateDir : ""
+        folder: svc.watching ? "file://" + svc.stateDir.split("/").map(encodeURIComponent).join("/") : ""
         nameFilters: ["pending.json"]
         showDirs: false
         showDotAndDotDot: false

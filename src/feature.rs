@@ -79,25 +79,23 @@ fn systemctl() -> Option<PathBuf> {
     crate::tool::find("systemctl")
 }
 
-/// True if systemd knows the user unit (installed by a package or by hand).
-fn unit_installed(sc: &Path, unit: &str) -> bool {
-    Command::new(sc)
-        .args(["--user", "cat", unit])
+/// Runs systemctl quietly with a 5 s limit; true = success.
+fn quiet(sc: &Path, args: &[&str]) -> bool {
+    let mut c = Command::new(sc);
+    c.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .stderr(Stdio::null());
+    crate::tool::status_timeout(c, Duration::from_secs(5))
+}
+
+/// True if systemd knows the user unit (installed by a package or by hand).
+pub fn unit_installed(sc: &Path, unit: &str) -> bool {
+    quiet(sc, &["--user", "cat", unit])
 }
 
 fn unit_active(sc: &Path, unit: &str) -> bool {
-    Command::new(sc)
-        .args(["--user", "is-active", "--quiet", unit])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    quiet(sc, &["--user", "is-active", "--quiet", unit])
 }
 
 pub fn list() -> Result<Vec<State>> {
@@ -127,14 +125,18 @@ pub fn list() -> Result<Vec<State>> {
 pub fn set(name: &str, on: bool, clip_state_dir: &Path) -> Result<Vec<String>> {
     let f = find(name)?;
     let p = path()?;
-    let mut m = load_at(&p)?;
-    m.insert(name.to_string(), on);
     let parent = p
         .parent()
         .ok_or_else(|| Error::new("io", "config path has no parent"))?;
-    store::ensure_private_dir(parent)?;
-    let body = serde_json::to_string_pretty(&m).unwrap_or_default() + "\n";
-    store::atomic_write(&p, body.as_bytes(), false)?;
+    {
+        let _l = store::lock_named(parent, "features.lock")?;
+        let mut m = load_at(&p)?;
+        m.insert(name.to_string(), on);
+        let body = serde_json::to_string_pretty(&m).unwrap_or_default() + "\n";
+        store::atomic_write(&p, body.as_bytes(), false)?;
+    }
+    // Not atomic with the units below: if a unit change fails, the choice is
+    // still saved and the note says which unit to fix (docs/themes.md).
 
     if f.name == "clip" {
         let c = crate::clip::Clip::open(clip_state_dir)?;

@@ -140,6 +140,12 @@ pub fn read_checked(path: &Path) -> Result<String> {
 pub struct StateLock(#[allow(dead_code)] File);
 
 pub fn lock_state_in(dir: &Path) -> Result<StateLock> {
+    lock_named(dir, "lock")
+}
+
+/// Exclusive lock on `<dir>/<name>` (separate lock files for state that is
+/// changed independently, e.g. a config next to an index).
+pub fn lock_named(dir: &Path, name: &str) -> Result<StateLock> {
     ensure_private_dir(dir)?;
     let f = OpenOptions::new()
         .read(true)
@@ -148,7 +154,7 @@ pub fn lock_state_in(dir: &Path) -> Result<StateLock> {
         .truncate(false)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(dir.join("lock"))
+        .open(dir.join(name))
         .map_err(|e| Error::new("io", format!("state lock: {e}")))?;
     f.lock()
         .map_err(|e| Error::new("io", format!("state lock: {e}")))?;

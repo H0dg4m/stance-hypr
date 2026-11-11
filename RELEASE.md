@@ -71,3 +71,4 @@ cd ../stance-hypr-git && makepkg --printsrcinfo > .SRCINFO
 
 Commit the updated PKGBUILD / .SRCINFO back to this repo.
 - At the 0.3.0 tag: add the two `stance-clip-*.service` install lines to `packaging/aur/stance-hypr/PKGBUILD` (already in `-git`).
+- At the 0.3.0 tag: also `stance-panel.service`; optdepends add `wl-clipboard: clipboard shelf`.

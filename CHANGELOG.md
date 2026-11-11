@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Getting started and reporting
+- `stance setup [waybar|quickshell|end4] [--dry-run]`: detects your bar and
+  prints the exact steps; enables only stance's own units (new
+  `stance-panel.service` runs the standalone panel for Waybar and other bars)
+- `stance doctor --report`: versions, features and checks in one block for bug
+  reports; issue template, CONTRIBUTING, support table in the README
+- `stance clip pause [15m|1h|30s]` / `resume`: capture stops until the
+  deadline, which is kept on disk; shown by doctor and the panel
+- Fixed: a freshly written helper could fail to start (ETXTBSY) under load
+- Scan fixes (docs/scans/0.3.0.md): clip config writes are locked; the store is
+  capped (5000 items / 1 GiB); a damaged index no longer deletes content and a
+  newer one is refused; `https://a\\@b` is not a link to b; tampered index
+  entries never become paths; `clip purge`; terminal-safe `clip get`; PNG sizes
+  checked; theme names refuse bidi characters, imports are size-capped and
+  saved themes limited to 200; every external tool has a timeout; panel text
+  that comes from outside is shown as plain text; `doctor --report` hides your
+  home path and user name
+
 ### Themes, language, features
 - 17 built-in panel themes (Stance dark/light, Catppuccin Mocha/Macchiato/
   Frappé/Latte, Nord, Gruvbox dark/light, Dracula, Tokyo Night, Rosé Pine and

@@ -29,6 +29,30 @@ const PREVIEW_CHARS: usize = 200;
 const SEARCH_BYTES: u64 = 4096;
 const TRASH_SECS: u64 = 24 * 3600;
 pub const RETENTION_DAYS: &[u32] = &[1, 3, 7, 15, 30];
+pub const MAX_PAUSE: u64 = 24 * 3600;
+const MAX_SIDE: u32 = 65_535;
+/// Live, unpinned items beyond these limits are dropped oldest first.
+pub const MAX_ITEMS: usize = 5000;
+pub const MAX_BYTES: u64 = 1 << 30;
+const MAX_INDEX: u64 = 64 * 1024 * 1024;
+/// Prefix of what a damaged index is moved aside to (with its blobs).
+pub const CORRUPT: &str = "corrupt-";
+
+/// `30s`, `15m`, `1h` (or plain seconds) → seconds.
+pub fn parse_duration(s: &str) -> Result<u64> {
+    let bad = || Error::new("usage", format!("`{s}` is not a duration (30s, 15m, 1h)"));
+    let (num, mul) = match s.as_bytes().last() {
+        Some(b's') => (&s[..s.len() - 1], 1),
+        Some(b'm') => (&s[..s.len() - 1], 60),
+        Some(b'h') => (&s[..s.len() - 1], 3600),
+        _ => (s, 1),
+    };
+    if num.is_empty() || num.len() > 6 || !num.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(bad());
+    }
+    let n: u64 = num.parse().map_err(|_| bad())?;
+    Ok(n * mul)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -53,13 +77,24 @@ impl Kind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Nothing is stored unless this is on.
     pub enabled: bool,
     pub text: bool,
     pub image: bool,
     pub retention_days: u32,
+    /// Capture is paused until this unix time (set by `clip pause`, not by
+    /// `config put`). Kept on disk so a restart does not resume early.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused_until: Option<u64>,
+}
+
+impl Config {
+    /// The pause deadline if it is still in the future.
+    pub fn paused(&self, at: u64) -> Option<u64> {
+        self.paused_until.filter(|t| *t > at)
+    }
 }
 
 impl Default for Config {
@@ -69,6 +104,7 @@ impl Default for Config {
             text: true,
             image: true,
             retention_days: 30,
+            paused_until: None,
         }
     }
 }
@@ -109,6 +145,21 @@ pub struct Entry {
     pub trashed: Option<u64>,
 }
 
+impl Entry {
+    /// sha256 is 64 hex characters and ext one we write ourselves.
+    pub fn sane(&self) -> bool {
+        self.sha256.len() == 64
+            && self
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            && matches!(
+                self.ext.as_str(),
+                "txt" | "png" | "jpg" | "webp" | "gif" | "bmp"
+            )
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Index {
     pub schema: u32,
@@ -141,6 +192,7 @@ pub struct Item {
 pub struct Listing {
     pub rev: u64,
     pub enabled: bool,
+    pub paused_until: Option<u64>,
     pub items: Vec<Item>,
 }
 
@@ -202,14 +254,17 @@ pub fn png_size(data: &[u8]) -> Option<(u32, u32)> {
     }
     let w = u32::from_be_bytes(data[16..20].try_into().ok()?);
     let h = u32::from_be_bytes(data[20..24].try_into().ok()?);
-    Some((w, h))
+    // Header values are untrusted; only plausible sizes are reported.
+    ((1..=MAX_SIDE).contains(&w) && (1..=MAX_SIDE).contains(&h)).then_some((w, h))
 }
 
 /// The host of a standalone http(s) URL, or None when `text` is not exactly
 /// one such URL. Non-ASCII hosts (homograph risk) stay plain text.
 pub fn link_host(text: &str) -> Option<String> {
     let t = text.trim();
-    if t.is_empty() || t.len() > 4096 || t.chars().any(char::is_whitespace) {
+    // A backslash makes browsers and URL parsers disagree on the host
+    // (`https://evil.com\@trusted.com`), so such text stays plain text.
+    if t.is_empty() || t.len() > 4096 || t.chars().any(|c| c.is_whitespace() || c == '\\') {
         return None;
     }
     let rest = t
@@ -256,7 +311,7 @@ pub fn preview(text: &str) -> String {
 
 /// Bidi overrides/isolates, zero-width and other invisible format
 /// characters that could make a preview lie about its content.
-fn is_invisible(c: char) -> bool {
+pub fn is_invisible(c: char) -> bool {
     matches!(c,
         '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
         | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
@@ -354,6 +409,11 @@ impl Clip {
     }
 
     pub fn blob_path(&self, e: &Entry) -> PathBuf {
+        // Entries are validated on load (`Entry::sane`), so this cannot leave
+        // blobs/; the fallback name just never exists.
+        if !e.sane() {
+            return self.blobs().join("invalid");
+        }
         self.blobs().join(format!("{}.{}", e.sha256, e.ext))
     }
 
@@ -375,28 +435,56 @@ impl Clip {
         let serde_json::Value::Object(patch) = patch else {
             return Err(Error::new("invalid", "--data must be a JSON object"));
         };
-        let mut cur = serde_json::to_value(self.config()?).unwrap_or_default();
-        for (k, v) in patch {
-            if !matches!(k.as_str(), "enabled" | "text" | "image" | "retention_days") {
-                return Err(Error::new("invalid", format!("unknown clip setting `{k}`")));
+        let c = {
+            let _l = store::lock_named(&self.dir, "config.lock")?;
+            let mut cur = serde_json::to_value(self.config()?).unwrap_or_default();
+            for (k, v) in patch {
+                if !matches!(k.as_str(), "enabled" | "text" | "image" | "retention_days") {
+                    return Err(Error::new("invalid", format!("unknown clip setting `{k}`")));
+                }
+                cur[k] = v;
             }
-            cur[k] = v;
-        }
-        let c: Config = serde_json::from_value(cur)
-            .map_err(|e| Error::new("invalid", format!("--data: {e}")))?;
-        c.validate()?;
-        let parent = self
-            .config_path
-            .parent()
-            .ok_or_else(|| Error::new("io", "config path has no parent"))?;
-        store::ensure_private_dir(parent)?;
-        let body = serde_json::to_string_pretty(&c).unwrap_or_default();
-        store::atomic_write(&self.config_path, body.as_bytes(), false)?;
+            let c: Config = serde_json::from_value(cur)
+                .map_err(|e| Error::new("invalid", format!("--data: {e}")))?;
+            c.validate()?;
+            self.save_config(&c)?;
+            c
+        };
         // A shorter retention takes effect now, not at the next copy.
         if self.index_path().exists() {
             self.prune()?;
         }
         Ok(c)
+    }
+
+    /// Pauses capture for `secs` (at most a day) or, with 0, resumes it.
+    /// Returns the deadline.
+    pub fn pause(&self, secs: u64) -> Result<Option<u64>> {
+        if secs > MAX_PAUSE {
+            return Err(Error::new("usage", "a pause is at most 24h"));
+        }
+        let c = {
+            let _l = store::lock_named(&self.dir, "config.lock")?;
+            let mut c = self.config()?;
+            c.paused_until = (secs > 0).then(|| now() + secs);
+            self.save_config(&c)?;
+            c
+        };
+        if let Ok(idx) = self.load() {
+            // Lets the panel notice the change through clip.rev.
+            self.write_rev(idx.rev);
+        }
+        Ok(c.paused_until)
+    }
+
+    fn save_config(&self, c: &Config) -> Result<()> {
+        let parent = self
+            .config_path
+            .parent()
+            .ok_or_else(|| Error::new("io", "config path has no parent"))?;
+        store::ensure_private_dir(parent)?;
+        let body = serde_json::to_string_pretty(c).unwrap_or_default();
+        store::atomic_write(&self.config_path, body.as_bytes(), false)
     }
 
     /// Index as last written (no lock; rename is atomic). Missing = empty.
@@ -418,8 +506,24 @@ impl Clip {
             Err(e) => return Err(Error::new("io", format!("{}: {e}", p.display()))),
         };
         let mut s = String::new();
-        f.read_to_string(&mut s).map_err(io_err("clip index"))?;
-        serde_json::from_str(&s).map_err(|e| Error::new("invalid", format!("clip index: {e}")))
+        (&mut f)
+            .take(MAX_INDEX + 1)
+            .read_to_string(&mut s)
+            .map_err(io_err("clip index"))?;
+        if s.len() as u64 > MAX_INDEX {
+            return Err(Error::new("invalid", "clip index: larger than 64 MiB"));
+        }
+        let mut idx: Index = serde_json::from_str(&s)
+            .map_err(|e| Error::new("invalid", format!("clip index: {e}")))?;
+        if idx.schema > 1 {
+            return Err(Error::new(
+                "newer_schema",
+                "clip index was written by a newer stance; update stance (nothing was changed)",
+            ));
+        }
+        // Tampered entries must never become paths.
+        idx.items.retain(Entry::sane);
+        Ok(idx)
     }
 
     /// Runs `f` on the index under the lock and saves it with a new rev.
@@ -427,10 +531,18 @@ impl Clip {
         let _lock = store::lock_state_in(&self.dir)?;
         let mut idx = match self.load() {
             Err(e) if e.code == "invalid" => {
-                // A damaged index must not wedge the shelf: keep it aside
-                // for inspection and start over (orphan blobs get swept).
-                let _ = fs::rename(self.index_path(), self.dir.join("index.json.corrupt"));
-                eprintln!("stance clip: {e}; moved to index.json.corrupt, starting empty");
+                // A damaged index must not wedge the shelf, nor cost the
+                // content: index and blobs move aside together (doctor
+                // reports it; delete the folder once checked) and the shelf
+                // starts empty.
+                let aside = self.dir.join(format!("{CORRUPT}{}", now()));
+                let _ = store::ensure_private_dir(&aside);
+                let _ = fs::rename(self.index_path(), aside.join("index.json"));
+                let _ = fs::rename(self.blobs(), aside.join("blobs"));
+                eprintln!(
+                    "stance clip: {e}; moved index and content to {}",
+                    aside.display()
+                );
                 Index {
                     schema: 1,
                     next_id: 1,
@@ -529,6 +641,7 @@ impl Clip {
     }
 
     /// Deletes blobs that no entry (trashed ones included) refers to.
+    /// Does nothing while a damaged index is kept aside.
     fn sweep(&self, idx: &Index) {
         let keep: HashSet<String> = idx
             .items
@@ -567,7 +680,8 @@ impl Clip {
     /// Live items, pinned first then newest; at most `limit` of each kind.
     pub fn list(&self, kind: Option<Kind>, query: Option<&str>, limit: usize) -> Result<Listing> {
         let idx = self.load()?;
-        let enabled = self.config().map(|c| c.enabled).unwrap_or(false);
+        let cfg = self.config().unwrap_or_default();
+        let enabled = cfg.enabled;
         let needle = query
             .map(str::trim)
             .filter(|q| !q.is_empty())
@@ -608,6 +722,7 @@ impl Clip {
         Ok(Listing {
             rev: idx.rev,
             enabled,
+            paused_until: cfg.paused(now()),
             items,
         })
     }
@@ -656,14 +771,12 @@ impl Clip {
             .ok_or_else(|| Error::new("missing_tool", "wl-copy not found (wl-clipboard)"))?;
         let blob = self.open_blob(&e)?;
         // wl-copy forks a server and the parent exits once it has the data.
-        let status = Command::new(wl_copy)
-            .args(["--type", &e.mime])
+        let mut cmd = Command::new(wl_copy);
+        cmd.args(["--type", &e.mime])
             .stdin(Stdio::from(blob))
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(io_err("wl-copy"))?;
-        if !status.success() {
+            .stderr(Stdio::null());
+        if !crate::tool::status_timeout(cmd, std::time::Duration::from_secs(10)) {
             return Err(Error::new("tool", "wl-copy failed"));
         }
         let at = now();
@@ -715,6 +828,18 @@ impl Clip {
         })
     }
 
+    /// Deletes removed (trashed) items and their content now instead of
+    /// after a day. Returns how many went.
+    pub fn purge(&self) -> Result<(usize, u64)> {
+        self.mutate(|idx, c| {
+            let before = idx.items.len();
+            idx.items.retain(|e| e.trashed.is_none());
+            idx.last_removed.clear();
+            c.sweep(idx);
+            Ok(before - idx.items.len())
+        })
+    }
+
     /// Removes unpinned items (recoverable with undo), or with `all` wipes
     /// the whole store at once.
     pub fn clear(&self, all: bool) -> Result<u64> {
@@ -755,6 +880,26 @@ pub fn prune_index(idx: &mut Index, retention_days: u32, at: u64) {
         Some(t) => at.saturating_sub(t) < TRASH_SECS,
         None => e.pinned || at.saturating_sub(e.updated) < keep_secs,
     });
+    // Size and count caps: oldest unpinned live items go first.
+    let mut unpinned: Vec<(u64, u64, u64)> = idx
+        .items
+        .iter()
+        .filter(|e| !e.pinned && e.trashed.is_none())
+        .map(|e| (e.updated, e.id, e.size))
+        .collect();
+    unpinned.sort();
+    let mut count = unpinned.len();
+    let mut bytes: u64 = idx.items.iter().map(|e| e.size).sum();
+    let mut drop = HashSet::new();
+    for (_, id, size) in unpinned {
+        if count <= MAX_ITEMS && bytes <= MAX_BYTES {
+            break;
+        }
+        drop.insert(id);
+        count -= 1;
+        bytes = bytes.saturating_sub(size);
+    }
+    idx.items.retain(|e| !drop.contains(&e.id));
     let live: HashSet<u64> = idx.items.iter().map(|e| e.id).collect();
     idx.last_removed.retain(|id| live.contains(id));
 }
@@ -777,7 +922,10 @@ fn data_dir() -> Result<PathBuf> {
 pub fn ingest(clip: &Clip, image: bool, input: &mut impl Read) -> Result<Option<u64>> {
     let state = std::env::var("CLIPBOARD_STATE").unwrap_or_default();
     let cfg = clip.config().unwrap_or_default();
-    let wanted = state == "data" && cfg.enabled && if image { cfg.image } else { cfg.text };
+    let wanted = state == "data"
+        && cfg.enabled
+        && cfg.paused(now()).is_none()
+        && if image { cfg.image } else { cfg.text };
     if !wanted {
         // Sensitive, empty, disabled or unknown: read nothing into memory.
         let _ = std::io::copy(input, &mut std::io::sink());
@@ -883,7 +1031,12 @@ mod tests {
         assert!(c.list(None, None, 10).is_err());
         c.add(text("after"), 3).unwrap();
         assert_eq!(c.list(None, None, 10).unwrap().items.len(), 1);
-        assert!(c.dir.join("index.json.corrupt").exists());
+        assert!(
+            fs::read_dir(&c.dir)
+                .unwrap()
+                .flatten()
+                .any(|d| d.file_name().to_string_lossy().starts_with(CORRUPT))
+        );
         fs::remove_dir_all(c.dir.parent().unwrap()).ok();
     }
 
@@ -898,6 +1051,132 @@ mod tests {
         assert_eq!(l.items.len(), 3);
         assert!(l.items.iter().any(|i| i.kind == Kind::Link));
         fs::remove_dir_all(c.dir.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn pause_blocks_ingest_and_survives_config_put() {
+        let c = tmp("pause");
+        c.put_config(r#"{"enabled":true}"#).unwrap();
+        assert_eq!(parse_duration("15m").unwrap(), 900);
+        assert_eq!(parse_duration("1h").unwrap(), 3600);
+        assert_eq!(parse_duration("45").unwrap(), 45);
+        for bad in ["", "m", "-1m", "1d", "9999999h"] {
+            assert!(parse_duration(bad).is_err(), "{bad}");
+        }
+        assert!(c.pause(MAX_PAUSE + 1).is_err());
+        let until = c.pause(600).unwrap().unwrap();
+        assert!(until > now());
+        c.put_config(r#"{"retention_days":7}"#).unwrap();
+        assert_eq!(
+            c.config().unwrap().paused_until,
+            Some(until),
+            "config put keeps the pause"
+        );
+        assert!(
+            c.put_config(r#"{"paused_until":1}"#).is_err(),
+            "only clip pause sets it"
+        );
+        assert_eq!(c.list(None, None, 5).unwrap().paused_until, Some(until));
+        // Simulated ingest gate (CLIPBOARD_STATE is owned by another test).
+        assert!(c.config().unwrap().paused(now()).is_some());
+        assert_eq!(c.pause(0).unwrap(), None);
+        assert!(c.list(None, None, 5).unwrap().paused_until.is_none());
+        let mut cfg = c.config().unwrap();
+        cfg.paused_until = Some(1);
+        assert!(
+            cfg.paused(now()).is_none(),
+            "past deadline means not paused"
+        );
+        fs::remove_dir_all(c.dir.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn scan_fixes() {
+        // S-04, S-12
+        assert_eq!(link_host("https://evil.com\\@trusted.com/x"), None);
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend_from_slice(&u32::MAX.to_be_bytes());
+        png.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(png_size(&png), None);
+        // S-06
+        let c = tmp("scan");
+        fs::create_dir_all(c.config_path.parent().unwrap()).unwrap();
+        fs::write(&c.config_path, r#"{"retenton_days":1}"#).unwrap();
+        assert!(c.config().is_err());
+        fs::remove_file(&c.config_path).unwrap();
+        c.put_config(r#"{"enabled":true}"#).unwrap();
+        // S-03: corrupt index keeps blobs
+        let (a, _) = c.add(text("keep me"), 1).unwrap();
+        let blob = c.blob_path(&c.entry(a).unwrap());
+        fs::write(c.dir.join("index.json"), "{broken").unwrap();
+        c.add(text("new"), 2).unwrap();
+        assert!(!blob.exists(), "moved, not deleted");
+        let aside: Vec<_> = fs::read_dir(&c.dir)
+            .unwrap()
+            .flatten()
+            .filter(|d| d.file_name().to_string_lossy().starts_with(CORRUPT))
+            .collect();
+        assert_eq!(aside.len(), 1);
+        assert_eq!(
+            fs::read_dir(aside[0].path().join("blobs")).unwrap().count(),
+            1
+        );
+        assert_eq!(
+            c.list(None, None, 10).unwrap().items.len(),
+            1,
+            "fresh shelf works"
+        );
+        // newer schema is refused, not overwritten
+        fs::write(
+            c.dir.join("index.json"),
+            r#"{"schema":2,"rev":1,"next_id":1,"items":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(c.add(text("x"), 3).unwrap_err().code, "newer_schema");
+        fs::remove_file(c.dir.join("index.json")).unwrap();
+        // S-08: tampered entry dropped on load
+        let (b, _) = c.add(text("y"), 4).unwrap();
+        let mut v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(c.dir.join("index.json")).unwrap()).unwrap();
+        v["items"][0]["sha256"] = "../../etc/passwd".into();
+        fs::write(c.dir.join("index.json"), v.to_string()).unwrap();
+        assert!(c.entry(b).is_err());
+        // S-18
+        let (d, _) = c.add(text("gone"), 5).unwrap();
+        c.remove(&[d]).unwrap();
+        assert_eq!(c.purge().unwrap().0, 1);
+        assert!(c.undo().unwrap().0 == 0);
+        fs::remove_dir_all(c.dir.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn caps_drop_oldest_unpinned() {
+        let mut idx = Index::default();
+        for id in 0..(MAX_ITEMS as u64 + 3) {
+            idx.items.push(Entry {
+                id,
+                kind: Kind::Text,
+                created: id,
+                updated: id,
+                pinned: id == 0,
+                preview: String::new(),
+                host: None,
+                size: 1,
+                mime: "text/plain".into(),
+                sha256: format!("{id:064x}"),
+                ext: "txt".into(),
+                w: None,
+                h: None,
+                trashed: None,
+            });
+        }
+        prune_index(&mut idx, 30, 10);
+        assert_eq!(idx.items.iter().filter(|e| !e.pinned).count(), MAX_ITEMS);
+        assert!(idx.items.iter().any(|e| e.id == 0), "pinned kept");
+        assert!(
+            !idx.items.iter().any(|e| e.id == 1),
+            "oldest unpinned dropped"
+        );
     }
 
     #[test]

@@ -4,8 +4,10 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 
-// Panel settings in their own window, centred on `screen`. The page is
-// longer than most screens, so it scrolls; Esc or the close chip shut it.
+// Panel settings in their own window, centred on `screen`: category navigation
+// (sidebar, or a top row on narrow screens) and one scrolling page at a time.
+// The picked category is remembered in panel.json (`settingsPage`). Esc or the
+// close chip shut the window.
 LazyLoader {
     id: root
 
@@ -30,11 +32,26 @@ LazyLoader {
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
         readonly property real maxHeight: (win.screen ? win.screen.height : 1080) * 0.85
+        readonly property real screenW: win.screen ? win.screen.width : 1920
+        readonly property bool narrow: screenW < 860
+        readonly property var categories: [
+            { id: "general", label: StanceI18n.t("General"), icon: "settings" },
+            { id: "appearance", label: StanceI18n.t("Appearance"), icon: "palette" },
+            { id: "displays", label: StanceI18n.t("Displays & modes"), icon: "monitor" },
+            { id: "quick", label: StanceI18n.t("Quick settings"), icon: "tune", feature: "quick" },
+            { id: "clip", label: StanceI18n.t("Clipboard"), icon: "content_paste", feature: "clip" },
+            { id: "phone", label: StanceI18n.t("Phone"), icon: "smartphone", feature: "deck" },
+            { id: "features", label: StanceI18n.t("Features"), icon: "extension" },
+            { id: "health", label: StanceI18n.t("Health & about"), icon: "health_and_safety" }
+        ]
+        // A category whose feature is off is hidden (Features always stays).
+        readonly property var visibleCats: categories.filter(c => !c.feature || root.service.featureOn(c.feature))
+        readonly property string cat: visibleCats.some(c => c.id === root.service.prefs.settingsPage) ? root.service.prefs.settingsPage : "general"
 
         Rectangle {
             id: frame
-            implicitWidth: 460
-            implicitHeight: Math.min(win.maxHeight, header.implicitHeight + settings.implicitHeight + 40)
+            implicitWidth: win.narrow ? Math.max(320, win.screenW - 32) : 780
+            implicitHeight: Math.min(win.maxHeight, 660)
             radius: root.theme.radius
             color: root.theme.backgroundSolid
             border.width: 1
@@ -69,11 +86,37 @@ LazyLoader {
                 }
             }
 
-            Flickable {
-                id: flick
+            StanceNav {
+                id: nav
+                theme: root.theme
+                model: win.visibleCats
+                current: win.cat
+                vertical: !win.narrow
                 x: 16
                 y: header.y + header.implicitHeight + 12
-                width: parent.width - 32
+                width: win.narrow ? parent.width - 32 : 168
+                height: win.narrow ? 38 : implicitHeight
+                onPicked: id => {
+                    root.service.setPref("settingsPage", id);
+                    flick.contentY = 0;
+                }
+            }
+
+            // Hairline between the sidebar and the page.
+            Rectangle {
+                visible: !win.narrow
+                x: nav.x + nav.width + 8
+                y: nav.y
+                width: 1
+                height: parent.height - y - 12
+                color: root.theme.border
+            }
+
+            Flickable {
+                id: flick
+                x: win.narrow ? 16 : nav.x + nav.width + 20
+                y: win.narrow ? nav.y + nav.height + 10 : nav.y
+                width: parent.width - x - 16
                 height: parent.height - y - 12
                 clip: true
                 contentWidth: width
@@ -89,6 +132,7 @@ LazyLoader {
                     width: flick.width - 12
                     service: root.service
                     theme: root.theme
+                    cat: win.cat
                     onBack: root.open = false
                 }
             }

@@ -59,7 +59,8 @@ shelf for the whole shell with its own IPC target `stanceclip`.
 `$XDG_DATA_HOME/stance/clip/` (0700):
 - `index.json` (atomic write, schema 1, `rev` counter) — metadata + preview only.
 - `blobs/<sha256>.<ext>` (0600) — full text (`.txt`) or image.
-- `index.lock` — flock; every writer does load → mutate → atomic write under it.
+- `lock` — flock; every writer does load → mutate → atomic write under it.
+  `config.lock` guards `clip.json` (config put / pause) the same way.
   Readers do not lock (rename is atomic).
 - `$XDG_STATE_HOME/stance/clip.rev` — rewritten with the rev number after every
   mutation; the panel watches it.
@@ -69,6 +70,14 @@ a concurrent ingest; an existing blob of the wrong size is rewritten. A
 damaged `index.json` is moved to `index.json.corrupt` by the next writer.
 `list --limit N` is per kind. Previews drop bidi/zero-width characters;
 non-ASCII hosts stay text (homographs).
+
+Limits: at most 5000 unpinned items and 1 GiB in total; the oldest unpinned
+items go first. Index entries with a malformed hash/extension are dropped on
+load. A damaged index is moved aside with its blobs to `corrupt-<time>/` (doctor
+warns until you delete it) and the shelf starts empty. An index from a newer stance is
+refused untouched. `clip purge` deletes removed items at once (otherwise kept a
+day for `undo`). `clip get` replaces control characters when printing to a
+terminal.
 
 Ids: monotonic integer as string (`"417"`), validated `[0-9]+` before any use.
 

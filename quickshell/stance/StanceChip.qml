@@ -42,6 +42,7 @@ Rectangle {
         }
         Text {
             id: labelText
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             width: Math.min(implicitWidth, chip.maxWidth - 20 - (chip.hasIcon ? chip.theme.fontSize + 9 : 0))
             elide: Text.ElideRight

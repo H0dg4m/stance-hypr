@@ -18,7 +18,13 @@ ColumnLayout {
     readonly property var entry: service.activeThemeEntry
     readonly property bool userTheme: entry !== null && entry.builtin !== true
     readonly property int overrideCount: Object.keys(prefs.themeOverrides).length
+    function overridesIn(keys) { return keys.filter(k => prefs.themeOverrides[k] !== undefined).length; }
+    readonly property int colourOverrides: overridesIn(colorRows.map(r => r.key))
+    readonly property int sizeOverrides: overridesIn(metricRows.map(r => r.key).concat(["opacity"]))
+    readonly property int fontOverrides: overridesIn(["fontFamily", "iconFont"])
     property bool customising: false
+    // Open group of the editor: "" | "colours" | "sizes" | "fonts"
+    property string group: ""
     // "" | "save" | "export" | "import"
     property string action: ""
     property string status: ""
@@ -115,25 +121,57 @@ ColumnLayout {
         font.pixelSize: ap.theme.fontSize - 1
         wrapMode: Text.Wrap
     }
+    // Header of a collapsible editor group; `count` = overridden values in it.
+    component GroupHead: Rectangle {
+        id: gh
+        property string key: ""
+        property string title: ""
+        property int count: 0
+        readonly property bool on: ap.group === key
+        Layout.fillWidth: true
+        implicitHeight: 34
+        radius: ap.theme.chipRadius
+        color: gma.containsMouse ? ap.theme.surfaceHover : ap.theme.surface
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 8
+            Text {
+                text: gh.title
+                color: ap.theme.text
+                font.family: ap.theme.fontFamily
+                font.pixelSize: ap.theme.fontSize
+                font.weight: Font.Medium
+                Layout.fillWidth: true
+            }
+            Text {
+                visible: gh.count > 0
+                text: StanceI18n.f("%1 changed", gh.count)
+                color: ap.theme.accent
+                font.family: ap.theme.fontFamily
+                font.pixelSize: ap.theme.fontSize - 2
+            }
+            StanceIcon { theme: ap.theme; name: gh.on ? "expand_less" : "expand_more"; color: ap.theme.textDim }
+            Text {
+                visible: ap.theme.iconFont === ""
+                text: gh.on ? "▴" : "▾"
+                color: ap.theme.textDim
+                font.pixelSize: ap.theme.fontSize
+            }
+        }
+        MouseArea {
+            id: gma
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: ap.group = gh.on ? "" : gh.key
+        }
+    }
     component Body: Text {
         color: ap.theme.text
         font.family: ap.theme.fontFamily
         font.pixelSize: ap.theme.fontSize
-    }
-
-    // ---- language ----------------------------------------------------------------
-    StanceSection {
-        Layout.fillWidth: true
-        theme: ap.theme
-        icon: "translate"
-        title: StanceI18n.t("Language")
-        StanceSegmented {
-            Layout.fillWidth: true
-            theme: ap.theme
-            model: [{ label: StanceI18n.t("Auto"), value: "auto" }, { label: "English", value: "en" }, { label: "Türkçe", value: "tr" }]
-            current: ap.prefs.lang
-            onPicked: v => ap.service.setPref("lang", v)
-        }
     }
 
     // ---- appearance ------------------------------------------------------------------
@@ -141,7 +179,7 @@ ColumnLayout {
         Layout.fillWidth: true
         theme: ap.theme
         icon: "palette"
-        title: StanceI18n.t("Appearance")
+        title: StanceI18n.t("Theme")
         trailing: [
             StanceChip {
                 theme: ap.theme
@@ -366,7 +404,11 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: 6
 
-            Dim { text: StanceI18n.t("Colours"); font.weight: Font.Medium }
+            GroupHead { key: "colours"; title: StanceI18n.t("Colours"); count: ap.colourOverrides }
+            ColumnLayout {
+            visible: ap.group === "colours"
+            Layout.fillWidth: true
+            spacing: 6
             Repeater {
                 model: ap.colorRows
                 delegate: RowLayout {
@@ -403,7 +445,13 @@ ColumnLayout {
                 }
             }
 
-            Dim { text: StanceI18n.t("Sizes"); font.weight: Font.Medium; Layout.topMargin: 6 }
+            }
+
+            GroupHead { key: "sizes"; title: StanceI18n.t("Sizes"); count: ap.sizeOverrides }
+            ColumnLayout {
+            visible: ap.group === "sizes"
+            Layout.fillWidth: true
+            spacing: 6
             Repeater {
                 model: ap.metricRows
                 delegate: RowLayout {
@@ -455,6 +503,13 @@ ColumnLayout {
                 Layout.fillWidth: true
                 font.pixelSize: ap.theme.fontSize - 2
             }
+            }
+
+            GroupHead { key: "fonts"; title: StanceI18n.t("Fonts"); count: ap.fontOverrides }
+            ColumnLayout {
+            visible: ap.group === "fonts"
+            Layout.fillWidth: true
+            spacing: 6
             Repeater {
                 model: [{ key: "fontFamily", label: "Font" }, { key: "iconFont", label: "Icon font" }]
                 delegate: RowLayout {
@@ -479,63 +534,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 font.pixelSize: ap.theme.fontSize - 2
             }
-        }
-    }
-
-    // ---- features --------------------------------------------------------------------
-    StanceSection {
-        Layout.fillWidth: true
-        theme: ap.theme
-        icon: "extension"
-        title: StanceI18n.t("Features")
-        Repeater {
-            model: [
-                { name: "clip", label: "Clipboard shelf", hint: "History and the shelf", icon: "content_paste" },
-                { name: "deck", label: "Phone deck", hint: "Control the PC from a phone", icon: "smartphone" },
-                { name: "rules", label: "Hotplug rules", hint: "Apply modes when screens are plugged in", icon: "usb" },
-                { name: "quick", label: "Quick controls", hint: "Night light, brightness and audio in the panel", icon: "tune" }
-            ]
-            delegate: RowLayout {
-                id: frow2
-                required property var modelData
-                readonly property var info: ap.service.featureList.find(f => f.name === modelData.name) || null
-                Layout.fillWidth: true
-                spacing: 10
-                StanceIcon { theme: ap.theme; name: frow2.modelData.icon; size: ap.theme.fontSize + 3; color: ap.theme.textDim; Layout.alignment: Qt.AlignTop }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-                    Body { text: StanceI18n.t(frow2.modelData.label); Layout.fillWidth: true }
-                    Dim {
-                        text: StanceI18n.t(frow2.modelData.hint)
-                        font.pixelSize: ap.theme.fontSize - 3
-                        Layout.fillWidth: true
-                    }
-                    Dim {
-                        visible: ap.service.featureOn(frow2.modelData.name) && frow2.info !== null && frow2.info.unit_active === false
-                        text: StanceI18n.t("Its background service is not running.")
-                        color: ap.theme.danger
-                        font.pixelSize: ap.theme.fontSize - 3
-                        Layout.fillWidth: true
-                    }
-                }
-                StanceSwitch {
-                    theme: ap.theme
-                    checked: ap.service.featureOn(frow2.modelData.name)
-                    onToggled: v => ap.service.setFeature(frow2.modelData.name, v)
-                }
             }
-        }
-        Dim {
-            visible: ap.service.featureError !== ""
-            text: ap.service.featureError
-            color: ap.theme.danger
-            Layout.fillWidth: true
-        }
-        Dim {
-            text: StanceI18n.t("Turning a feature off also stops its background service; nothing stored is deleted.")
-            font.pixelSize: ap.theme.fontSize - 2
-            Layout.fillWidth: true
         }
     }
 }

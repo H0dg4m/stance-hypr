@@ -21,6 +21,10 @@ Item {
     property string note: ""
     property string query: ""
     property int rev: -1
+    // Capture pause (stance clip pause): unix seconds from `list`, 0 = running.
+    property real pausedUntil: 0
+    property real now: Date.now()
+    readonly property bool paused: pausedUntil * 1000 > now
 
     // Image paths are only trusted below this directory (STANCE_CLIP_DIR is
     // for tests with the fake CLI).
@@ -101,6 +105,9 @@ Item {
     function pin(id, on) { mutate([on ? "pin" : "unpin", id]); }
     function remove(id) { note = StanceI18n.t("Removed. Backspace undoes it."); mutate(["rm", id]); }
     function undo() { note = ""; mutate(["undo"]); }
+    // for: "15m" | "1h" | "24h" (the CLI allows 24 h at most).
+    function pause(duration) { mutate(["pause", duration]); }
+    function resume() { mutate(["resume"]); }
 
     // Full text of one item for the preview (`done(string)`).
     function fullText(id, done) {
@@ -136,6 +143,8 @@ Item {
                     svc.error = "";
                     svc.capture = r.data.enabled === true;
                     svc.rev = Number(r.data.rev) || 0;
+                    svc.now = Date.now();
+                    svc.pausedUntil = Number(r.data.paused_until) || 0;
                     svc.items = svc.sanitize(Array.isArray(r.data.items) ? r.data.items : []);
                 }
                 svc.loaded = true;
@@ -194,6 +203,11 @@ Item {
             if (svc.active && isFinite(n) && n !== svc.rev)
                 debounce.restart();
         }
+    }
+    // The pause ends by itself: update `paused` at the deadline.
+    Timer {
+        interval: 5000; repeat: true; running: svc.active && svc.pausedUntil > 0
+        onTriggered: svc.now = Date.now()
     }
     Timer { id: debounce; interval: 80; onTriggered: svc.reload() }
 }

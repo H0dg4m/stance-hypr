@@ -1,0 +1,17 @@
+[Unit]
+Description=stance panel (standalone Quickshell shell for Waybar and other bars)
+Documentation=https://github.com/H0dg4m/stance-hypr/blob/main/docs/quickshell.md
+PartOf=graphical-session.target
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+# Not needed with end4/ii: the panel then lives inside that shell.
+ExecStart=/usr/bin/qs -p /usr/share/stance/quickshell
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

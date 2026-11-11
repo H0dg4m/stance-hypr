@@ -33,6 +33,18 @@ arka planda profil değiştirir. stance bar için yapıldı:
 - **Boşta sıfır maliyet**: CLI tık başına çalışıp çıkar (~1 ms, ~1,5 MB);
   isteğe bağlı daemon Hyprland olay soketinde bekler (~3 MB bellek).
 
+## Destek
+
+| | Durum |
+|---|---|
+| Hyprland | 0.55, 0.56, 0.57 (Lua config ve hyprlang). Daha yenisinde okuma çalışır; ekran değiştirmek test edilene kadar `--force-version` ister |
+| Bar / kabuk | end4 / illogical-impulse (hazır düğme + pano rafı), her bar bağımsız panel ile (`stance setup`), Waybar modülü |
+| Quickshell | 0.2.x |
+| Telefon | Android 8+ ([stance-deck-android](https://github.com/H0dg4m/stance-deck-android)) |
+| Diğer masaüstleri (KDE, GNOME, Windows) | 1.0'dan sonra planlı |
+
+stance alfa aşamasında. Hata bildirirken `stance doctor --report` çalıştırıp çıkan bloğu yapıştır.
+
 ## Kurulum
 
 Arch: `stance-hypr` / `stance-hypr-git` (`packaging/aur` içinde PKGBUILD; AUR yüklemesi bekliyor). Kaynaktan:

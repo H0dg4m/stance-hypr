@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::store;
 
+pub const MAX_USER_THEMES: usize = 200;
+
 pub const COLOR_KEYS: &[&str] = &[
     "background",
     "card",
@@ -153,7 +155,10 @@ fn range(name: &str, v: f64, lo: f64, hi: f64) -> Result<()> {
 }
 
 fn font_name(name: &str, v: &str) -> Result<()> {
-    if v.chars().count() > 64 || v.chars().any(|c| c.is_control()) {
+    if v.chars().count() > 64
+        || v.chars()
+            .any(|c| c.is_control() || crate::clip::is_invisible(c))
+    {
         return Err(invalid(format!(
             "{name}: at most 64 characters, no control characters"
         )));
@@ -170,7 +175,13 @@ impl Theme {
             return Err(invalid("id: 1-40 characters of a-z, 0-9 and -"));
         }
         let n = self.name.chars().count();
-        if n == 0 || n > 60 || self.name.chars().any(|c| c.is_control()) {
+        if n == 0
+            || n > 60
+            || self
+                .name
+                .chars()
+                .any(|c| c.is_control() || crate::clip::is_invisible(c))
+        {
             return Err(invalid("name: 1-60 characters, no control characters"));
         }
         for k in self.colors.keys() {
@@ -308,6 +319,12 @@ impl Themes {
             ));
         }
         let p = self.path(&t.id);
+        if !p.exists() && self.user().len() >= MAX_USER_THEMES {
+            return Err(Error::new(
+                "too_many",
+                format!("at most {MAX_USER_THEMES} saved themes; remove one first"),
+            ));
+        }
         if p.exists() && !force {
             return Err(Error::new(
                 "exists",
@@ -356,7 +373,21 @@ fn read_import(file: &Path) -> Result<String> {
             format!("{} is larger than 64 KiB", file.display()),
         ));
     }
-    let bytes = fs::read(file).map_err(io)?;
+    let mut bytes = Vec::new();
+    fs::File::open(file)
+        .and_then(|f| {
+            std::io::Read::read_to_end(
+                &mut std::io::Read::take(f, store::MAX_INPUT + 1),
+                &mut bytes,
+            )
+        })
+        .map_err(io)?;
+    if bytes.len() as u64 > store::MAX_INPUT {
+        return Err(Error::new(
+            "too_large",
+            format!("{} is larger than 64 KiB", file.display()),
+        ));
+    }
     String::from_utf8(bytes).map_err(|_| invalid("theme file is not UTF-8"))
 }
 
@@ -443,6 +474,9 @@ mod tests {
         let mut t = ok.clone();
         t.id = "../x".into();
         assert!(t.validate().is_err());
+        let mut t = ok.clone();
+        t.name = "evil\u{202E}txt".into();
+        assert!(t.validate().is_err(), "bidi override");
         let mut t = ok.clone();
         t.metrics.opacity = 0.1;
         assert!(t.validate().is_err());

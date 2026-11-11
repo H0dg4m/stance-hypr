@@ -450,7 +450,7 @@ fn shell_checks() -> Vec<Check> {
 }
 
 /// Command lines of running processes (read from /proc, nothing is executed).
-fn cmdlines() -> Vec<Vec<String>> {
+pub fn cmdlines() -> Vec<Vec<String>> {
     let Ok(rd) = fs::read_dir("/proc") else {
         return Vec::new();
     };
@@ -500,6 +500,23 @@ pub fn clip_check(state_dir: &Path) -> Check {
     } else {
         ""
     };
+    if let Ok(c) = crate::clip::Clip::open(state_dir)
+        && let Ok(rd) = std::fs::read_dir(&c.dir)
+        && let Some(d) = rd.flatten().find(|d| {
+            d.file_name()
+                .to_string_lossy()
+                .starts_with(crate::clip::CORRUPT)
+        })
+    {
+        return check(
+            "clip",
+            Status::Warn,
+            format!(
+                "a damaged clipboard index was set aside with its content in {}; delete that folder once you no longer need it",
+                d.path().display()
+            ),
+        );
+    }
     match enabled {
         Err(e) => check("clip", Status::Warn, format!("clip config: {}", e.message)),
         Ok(false) => check(
@@ -507,6 +524,17 @@ pub fn clip_check(state_dir: &Path) -> Check {
             Status::Info,
             "clipboard shelf off (optional: stance clip config put --data '{\"enabled\":true}' and systemctl --user enable --now stance-clip-text stance-clip-image)",
         ),
+        Ok(true)
+            if crate::clip::Clip::open(state_dir)
+                .and_then(|c| c.config())
+                .is_ok_and(|c| c.paused(crate::clip::now()).is_some()) =>
+        {
+            check(
+                "clip",
+                Status::Info,
+                format!("clipboard shelf paused (stance clip resume){note}"),
+            )
+        }
         Ok(true) => match (watching("text"), watching("image")) {
             (true, true) => check(
                 "clip",

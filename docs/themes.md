@@ -40,6 +40,7 @@ Built-in themes are compiled into the binary (`themes/*.json` in the repo):
 stance-dark, stance-light, catppuccin-mocha, catppuccin-macchiato, catppuccin-frappe,
 catppuccin-latte, nord, gruvbox-dark, gruvbox-light, dracula, tokyo-night, rose-pine,
 rose-pine-dawn, everforest-dark, kanagawa, one-dark, solarized-dark.
+Palette credits and licences: [NOTICE](../NOTICE).
 User themes live in `~/.config/stance/themes/<id>.json` (0600).
 
 ## CLI
@@ -79,6 +80,8 @@ Side effects (user units only, never sudo):
   (if installed); `clip on` → enabled=true and `enable --now`. Stored items are kept.
 - `deck off|on` → `stance-deck.service`; `rules off|on` → `stance.service`.
 - `quick` has no side effect (panel only).
+The choice is saved before the units change; if a unit cannot be changed the
+reply's `notes` name it and the choice stays saved (not atomic across both).
 `feature list --json` → `{"data":{"features":[{"name":"clip","on":true,
 "unit":"stance-clip-text.service"|null,"unit_active":true|null}]}}`.
 The panel hides the sections of features that are off; the clip shelf IPC shows a

@@ -34,6 +34,18 @@ switchers. stance is built for the bar:
 - **Zero idle cost** – the CLI runs per click and exits (~1 ms, ~1.5 MB
   binary); the optional daemon blocks on Hyprland's event socket (~3 MB RSS).
 
+## Support
+
+| | Status |
+|---|---|
+| Hyprland | 0.55, 0.56, 0.57 (Lua config and hyprlang). Newer versions: reading works, changing screens needs `--force-version` until tested |
+| Bars / shells | end4 / illogical-impulse (built-in button + clipboard shelf), any bar through the standalone panel (`stance setup`), Waybar module |
+| Quickshell | 0.2.x |
+| Phone | Android 8+ ([stance-deck-android](https://github.com/H0dg4m/stance-deck-android)) |
+| Other desktops (KDE, GNOME, Windows) | planned after 1.0 |
+
+stance is alpha. Reporting a bug: run `stance doctor --report` and paste the block.
+
 ## Install
 
 Arch: `stance-hypr` / `stance-hypr-git` (PKGBUILDs in `packaging/aur`; AUR upload pending). From source:
