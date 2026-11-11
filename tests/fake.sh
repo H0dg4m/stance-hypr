@@ -143,6 +143,12 @@ case "$(s theme system)" in dark|light|unknown) ok "theme system answers";; *) b
 # phone deck, protocol v2 (loopback, own control socket dir)
 export STANCE_DECK_DIR=$WORK/deck XDG_RUNTIME_DIR=$WORK/run
 mkdir -p -m 700 "$STANCE_DECK_DIR" "$XDG_RUNTIME_DIR"
+# fake wl-copy / notify-send for the transfer tests (the server needs them)
+export STANCE_TEST_TOOLS=$WORK/tools
+mkdir -p "$STANCE_TEST_TOOLS" "$WORK/dl" "$WORK/got"
+printf '#!/bin/sh\ncat > "%s/clipboard"\n' "$WORK" > "$STANCE_TEST_TOOLS/wl-copy"
+printf '#!/bin/sh\necho "$@" >> "%s/notes"\ncase "$*" in *--wait*) cat "%s/answer" 2>/dev/null;; esac\n' "$WORK" "$WORK" > "$STANCE_TEST_TOOLS/notify-send"
+chmod +x "$STANCE_TEST_TOOLS"/*
 "$BIN" deck serve --loopback --port 0 2>"$WORK/deck.log" & DECK=$!
 trap 'kill $DECK 2>/dev/null; rm -rf "$WORK"' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$STANCE_DECK_DIR/control.sock" ] || [ -n "$(ls "$STANCE_DECK_DIR" 2>/dev/null)" ] && break; sleep 0.2; done
@@ -151,8 +157,8 @@ PAY=$(s deck pair --json 2>/dev/null | j "d['data']['payload']" 2>/dev/null)
 s deck test pair "$PAY" --name ci >/dev/null 2>&1; check "deck pairs" 0 $?
 check "deck v2 client negotiates and pings" pong "$(s deck test ping 2>&1)"
 case "$(s deck test offer clip.text 2>&1)" in
-  *"offer declined: unsupported"*) ok "deck declines offers (no caps in 0.6)";;
-  *) bad "deck declines offers (no caps in 0.6)" "$(s deck test offer clip.text 2>&1)";;
+  *"offer declined: unsupported"*) ok "deck declines offers it does not offer";;
+  *) bad "deck declines offers it does not offer" "$(s deck test offer clip.text 2>&1)";;
 esac
 case "$(s deck test stray-data 2>&1)" in
   *"session ended"*) ok "deck ends the session on a stray data frame";;
@@ -160,6 +166,43 @@ case "$(s deck test stray-data 2>&1)" in
 esac
 check "deck serves the next session" pong "$(s deck test ping 2>&1)"
 grep -q "data for unknown stream" "$WORK/deck.log" && ok "deck logs the protocol error" || bad "deck logs the protocol error" "$(cat "$WORK/deck.log")"
+
+check "transfers off by default" "stance: cannot offer clip.text: not negotiated" "$(s deck test send-clip hi 2>&1)"
+s deck transfer put --data "{\"clip_to_phone\":true,\"clip_from_phone\":\"notify\",\"files_from_phone\":\"ask\",\"download_dir\":\"$WORK/dl\"}" >/dev/null
+check "settings change ends old sessions; new one negotiates" pong "$(s deck test ping 2>&1)"
+check "clipboard from phone" done "$(s deck test send-clip 'from phone' 2>&1)"
+sleep 0.3
+check "clipboard set with wl-copy" "from phone" "$(cat "$WORK/clipboard" 2>/dev/null)"
+grep -q "Clipboard from ci" "$WORK/notes" && ok "clipboard apply is announced" || bad "clipboard apply is announced"
+head -c 40000 /dev/urandom > "$WORK/f.bin"
+echo accept > "$WORK/answer"
+check "file from phone, accepted" done "$(s deck test push "$WORK/f.bin" 2>&1)"
+cmp -s "$WORK/f.bin" "$WORK/dl/f.bin" && ok "file saved intact" || bad "file saved intact"
+check "file mode 0644" 644 "$(stat -c %a "$WORK/dl/f.bin" 2>/dev/null)"
+check "second copy gets a new name" done "$(s deck test push "$WORK/f.bin" 2>&1)"
+[ -f "$WORK/dl/f (2).bin" ] && ok "no overwrite" || bad "no overwrite" "$(ls "$WORK/dl")"
+echo decline > "$WORK/answer"
+check "file from phone, declined" "declined: declined" "$(s deck test push "$WORK/f.bin" 2>&1)"
+[ -z "$(ls -A "$WORK/dl" | grep stance-part)" ] && ok "no temp files left" || bad "no temp files left"
+s deck test receive "$WORK/got" 15 > "$WORK/recv.out" 2>&1 & R=$!
+sleep 1.2
+s deck send "$WORK/f.bin" --to ci >/dev/null
+wait $R
+cmp -s "$WORK/f.bin" "$WORK/got/f.bin" && ok "file to phone" || bad "file to phone" "$(cat "$WORK/recv.out")"
+s clip config put --data '{"enabled":true}' >/dev/null
+s deck test receive "$WORK/got" 10 > "$WORK/recv.out" 2>&1 & R=$!
+sleep 1.2
+printf 'from pc' | CLIPBOARD_STATE=data s clip ingest
+wait $R
+check "clipboard to phone" "clip: from pc" "$(cat "$WORK/recv.out")"
+s deck test send-clip 'round trip' >/dev/null
+s deck test receive "$WORK/got" 3 > "$WORK/recv.out" 2>&1 & R=$!
+sleep 1.2
+printf 'round trip' | CLIPBOARD_STATE=data s clip ingest
+wait $R
+case "$(cat "$WORK/recv.out")" in *"nothing received"*) ok "phone's own text is not echoed back";; *) bad "phone's own text is not echoed back" "$(cat "$WORK/recv.out")";; esac
+s deck transfers --json | grep -q '"state":"done"' && ok "transfers are listed" || bad "transfers are listed"
+check "send refuses a directory" 2 "$(s deck send "$WORK" >/dev/null 2>&1; echo $?)"
 kill $DECK; wait $DECK 2>/dev/null
 
 echo "passed $PASS, failed $FAIL"

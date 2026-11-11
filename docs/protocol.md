@@ -295,8 +295,13 @@ and old PCs keep working.
    that wants v2 answers **once** with `{"t":"caps","proto":2,"caps":[...]}`.
    The PC answers once with `caps` holding the intersection; that is final.
    Unknown cap names are ignored. Names: `clip.text`, `clip.image`,
-   `file.push` (phone → PC), `file.pull` (PC → phone). stance 0.6 offers
-   none: it declines every offer.
+   `file.push` (phone → PC), `file.pull` (PC → phone). Since 0.7 the PC
+   offers `file.pull` always and the others as `transfer.toml` allows
+   (docs/deck.md); when that file changes what is offered, the PC ends the
+   session with `bye "settings changed"` and the app negotiates again.
+   `clip.text` goes both ways; the PC sends a `clip.text` offer with
+   `mime: "text/plain"` for each new copy. Decline reasons from the PC
+   also include `off`, `cooldown`, `no space`, `declined`, `no answer`.
 2. Until the client sent `caps`, stream messages and data frames are
    protocol errors, and the PC never sends any (a client that did not ask
    for v2 never sees one). A second `caps` is an error.

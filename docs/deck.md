@@ -102,10 +102,25 @@ server picks the change up and sends a new `hello` to connected phones.
 | Local process on the PC | Loopback is not exempt from authentication. The pairing control socket and key files are 0600 in private directories. |
 | USB (`adb reverse`) | The phone reaches the PC at 127.0.0.1; same handshakes, no extra trust. The per-IP limit sees loopback only, so it must not be the only guard. |
 
-### Clipboard and file transfers (protocol v2, enforced from 0.7)
+### Clipboard and file transfers (0.7)
 
-The wire format exists since 0.6 (docs/protocol.md §3.7); stance offers no
-transfer capability yet. When it does, these rules hold:
+Design: [ADR 0004](adr/0004-phone-transfers.md); wire format: protocol.md
+§3.7. Everything is off until set in `~/.config/stance/transfer.toml`
+(`stance deck transfer put --data JSON`):
+
+| key | default | |
+| --- | --- | --- |
+| `clip_to_phone` | false | text you copy on the PC (the clip shelf's new copies) goes to connected phones; needs `stance clip` on |
+| `clip_from_phone` | `"off"` | `"notify"`: the phone's "send clipboard" sets the PC clipboard and shows a notification with a preview |
+| `files_from_phone` | `"off"` | `"ask"`: each file asks (notification with Accept / Decline, or `stance deck transfer accept ID`), 60 s, then declined |
+| `download_dir` | `~/Downloads/stance` | received files land only here |
+| `max_file_mb` | 512 | 1..512 |
+
+`stance deck send FILE [--to PHONE]` offers a file to a connected phone
+(the phone asks its user); `stance deck transfers` lists recent transfers.
+Clipboard text from the phone is the one exception to "every transfer
+asks": the person pressed send on the phone, and the PC shows what it
+received. Images over the clipboard come later (0.7.1).
 
 | Threat | Handling |
 | --- | --- |

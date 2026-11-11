@@ -5,10 +5,12 @@
 pub mod actions;
 pub mod client;
 pub mod config;
+pub mod link;
 pub mod net;
 pub mod noise;
 pub mod pair;
 pub mod proto;
 pub mod stream;
+pub mod transfer;
 #[cfg(test)]
 mod vectors;

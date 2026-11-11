@@ -45,7 +45,13 @@ pub fn size_cap(kind: &str) -> Option<u64> {
 pub enum Decision {
     Accept,
     Decline(String),
+    /// Ask a person: the offer waits (no `accept` yet) until `accept` or
+    /// `decline` is called, the peer cancels, or `CONSENT_WAIT` passes.
+    Defer,
 }
+
+/// How long a deferred offer waits for an answer.
+pub const CONSENT_WAIT: Duration = Duration::from_secs(60);
 
 /// What the session does next.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +64,9 @@ pub enum Out {
     /// An incoming stream is over. `ok`: all bytes arrived and the SHA-256
     /// matched; otherwise its temp data must be deleted.
     Finished { sid: u32, kind: String, ok: bool },
+    /// A deferred offer went away before it was accepted (the peer
+    /// cancelled, or nobody answered): drop its prompt.
+    Withdrawn { sid: u32 },
 }
 
 #[derive(Debug)]
@@ -69,6 +78,8 @@ struct Inbound {
     granted: u64,
     hasher: Sha256,
     last: Instant,
+    /// Deferred: waiting for `accept` / `decline`.
+    pending: bool,
 }
 
 #[derive(Debug)]
@@ -173,6 +184,7 @@ impl Streams {
                     self.offers.pop_front();
                 }
                 // Every offer counts toward the rate limit, even unsupported ones.
+                let mut defer = false;
                 let refused = if self.offers.len() >= OFFERS_MAX {
                     Some("too fast".to_string())
                 } else {
@@ -192,6 +204,10 @@ impl Streams {
                         match decide(&kind, size, name.as_deref()) {
                             Decision::Decline(r) => Some(r),
                             Decision::Accept => None,
+                            Decision::Defer => {
+                                defer = true;
+                                None
+                            }
                         }
                     }
                 };
@@ -200,7 +216,7 @@ impl Streams {
                     self.close(sid);
                     return Ok(vec![Out::Send(StreamMsg::Decline { sid, reason })]);
                 }
-                let window = size.min(WINDOW_MAX);
+                let window = if defer { 0 } else { size.min(WINDOW_MAX) };
                 self.inbound.insert(
                     sid,
                     Inbound {
@@ -211,8 +227,12 @@ impl Streams {
                         granted: window,
                         hasher: Sha256::new(),
                         last: now,
+                        pending: defer,
                     },
                 );
+                if defer {
+                    return Ok(vec![]);
+                }
                 Ok(vec![Out::Send(StreamMsg::Accept { sid, window })])
             }
             StreamMsg::End { sid } => {
@@ -245,6 +265,9 @@ impl Streams {
             StreamMsg::Cancel { sid, .. } => {
                 if let Some(s) = self.inbound.remove(&sid) {
                     self.close(sid);
+                    if s.pending {
+                        return Ok(vec![Out::Withdrawn { sid }]);
+                    }
                     return Ok(vec![Out::Finished {
                         sid,
                         kind: s.kind,
@@ -434,13 +457,76 @@ impl Streams {
         Ok(None)
     }
 
-    /// Cancels streams idle for `IDLE`.
+    /// Answers a deferred offer. `None` if `sid` is not waiting (any more).
+    pub fn accept(&mut self, sid: u32, now: Instant) -> Option<Out> {
+        let s = self.inbound.get_mut(&sid).filter(|s| s.pending)?;
+        let window = s.size.min(WINDOW_MAX);
+        s.pending = false;
+        s.granted = window;
+        s.last = now;
+        Some(Out::Send(StreamMsg::Accept { sid, window }))
+    }
+
+    /// Declines a deferred offer.
+    pub fn decline(&mut self, sid: u32, reason: &str) -> Option<Out> {
+        self.inbound.get(&sid).filter(|s| s.pending)?;
+        self.inbound.remove(&sid);
+        self.close(sid);
+        Some(Out::Send(StreamMsg::Decline {
+            sid,
+            reason: reason.into(),
+        }))
+    }
+
+    /// Ends one of our streams or an accepted incoming one early.
+    pub fn cancel(&mut self, sid: u32, reason: &str) -> Vec<Out> {
+        let msg = Out::Send(StreamMsg::Cancel {
+            sid,
+            reason: reason.into(),
+        });
+        if let Some(s) = self.inbound.remove(&sid) {
+            self.close(sid);
+            let gone = if s.pending {
+                Out::Withdrawn { sid }
+            } else {
+                Out::Finished {
+                    sid,
+                    kind: s.kind,
+                    ok: false,
+                }
+            };
+            return vec![msg, gone];
+        }
+        if self.outbound.remove(&sid).is_some() {
+            self.close(sid);
+            return vec![msg];
+        }
+        vec![]
+    }
+
+    /// Cancels streams idle for `IDLE`; declines offers nobody answered
+    /// within `CONSENT_WAIT`.
     pub fn tick(&mut self, now: Instant) -> Vec<Out> {
         let mut out = Vec::new();
+        let unanswered: Vec<u32> = self
+            .inbound
+            .iter()
+            .filter(|(_, s)| s.pending && now.duration_since(s.last) >= CONSENT_WAIT)
+            .map(|(k, _)| *k)
+            .collect();
+        for sid in unanswered {
+            self.inbound.remove(&sid);
+            self.close(sid);
+            out.push(Out::Send(StreamMsg::Decline {
+                sid,
+                reason: "no answer".into(),
+            }));
+            out.push(Out::Withdrawn { sid });
+        }
         let idle_in: Vec<u32> = self
             .inbound
             .iter()
-            .filter(|(_, s)| now.duration_since(s.last) >= IDLE)
+            .filter(|(_, s)| !s.pending && now.duration_since(s.last) >= IDLE)
             .map(|(k, _)| *k)
             .collect();
         for sid in idle_in {
@@ -478,14 +564,20 @@ impl Streams {
         let mut out: Vec<Out> = self
             .inbound
             .drain()
-            .map(|(sid, s)| Out::Finished {
-                sid,
-                kind: s.kind,
-                ok: false,
+            .map(|(sid, s)| {
+                if s.pending {
+                    Out::Withdrawn { sid }
+                } else {
+                    Out::Finished {
+                        sid,
+                        kind: s.kind,
+                        ok: false,
+                    }
+                }
             })
             .collect();
         out.sort_by_key(|o| match o {
-            Out::Finished { sid, .. } => *sid,
+            Out::Finished { sid, .. } | Out::Withdrawn { sid } => *sid,
             _ => 0,
         });
         self.outbound.clear();
@@ -531,7 +623,7 @@ mod tests {
                     match o {
                         Out::Send(m) => q.push_back(m),
                         Out::Data { payload, .. } => got.extend(payload),
-                        f @ Out::Finished { .. } => fin.push(f),
+                        f @ (Out::Finished { .. } | Out::Withdrawn { .. }) => fin.push(f),
                     }
                 }
             };
@@ -651,6 +743,73 @@ mod tests {
         assert!(pc.on_msg(offer(10, "clip.text", 3), t, accept).is_err());
         assert!(pc.on_msg(offer(9, "clip.text", 3), t, accept).is_err());
         assert!(pc.on_msg(offer(0, "clip.text", 3), t, accept).is_err());
+    }
+
+    #[test]
+    fn deferred_offers_wait_for_an_answer() {
+        let t = Instant::now();
+        let defer = |_: &str, _: u64, _: Option<&str>| Decision::Defer;
+        let mut pc = Streams::new(caps(), true);
+        // No accept yet; it counts as open; data before the answer ends the session.
+        assert_eq!(
+            pc.on_msg(offer(1, "file.push", 10), t, defer).unwrap(),
+            vec![]
+        );
+        assert_eq!(pc.open(), 1);
+        assert!(pc.clone_inbound_for_test().on_data(1, vec![1], t).is_err());
+        // Waiting is not idling: no cancel at 30 s, a decline at 60 s.
+        assert_eq!(pc.tick(t + IDLE), vec![]);
+        let outs = pc.tick(t + CONSENT_WAIT);
+        assert_eq!(
+            outs,
+            vec![
+                Out::Send(StreamMsg::Decline {
+                    sid: 1,
+                    reason: "no answer".into()
+                }),
+                Out::Withdrawn { sid: 1 }
+            ]
+        );
+        assert_eq!(pc.accept(1, t), None);
+        // Accepted later: a normal stream.
+        pc.on_msg(offer(3, "file.push", 10), t, defer).unwrap();
+        assert_eq!(
+            pc.accept(3, t),
+            Some(Out::Send(StreamMsg::Accept { sid: 3, window: 10 }))
+        );
+        assert_eq!(pc.accept(3, t), None);
+        assert!(matches!(
+            pc.on_data(3, vec![1; 10], t).unwrap()[0],
+            Out::Data { .. }
+        ));
+        // The peer withdraws a waiting offer; a declined one is answered once.
+        pc.on_msg(offer(5, "clip.text", 10), t, defer).unwrap();
+        assert_eq!(
+            pc.on_msg(
+                StreamMsg::Cancel {
+                    sid: 5,
+                    reason: "x".into()
+                },
+                t,
+                defer
+            )
+            .unwrap(),
+            vec![Out::Withdrawn { sid: 5 }]
+        );
+        pc.on_msg(offer(7, "clip.text", 10), t + OFFER_PERIOD * 2, defer)
+            .unwrap_or_default();
+        assert_eq!(
+            pc.decline(7, "no"),
+            Some(Out::Send(StreamMsg::Decline {
+                sid: 7,
+                reason: "no".into()
+            }))
+        );
+        assert_eq!(pc.decline(7, "no"), None);
+        // A session ending with a waiting offer withdraws it.
+        pc.on_msg(offer(9, "clip.text", 10), t + OFFER_PERIOD * 2, defer)
+            .unwrap();
+        assert!(pc.close_all().contains(&Out::Withdrawn { sid: 9 }));
     }
 
     #[test]
@@ -942,6 +1101,26 @@ mod tests {
     }
 
     impl Streams {
+        fn clone_inbound_for_test(&self) -> Streams {
+            let mut c = self.clone_for_test();
+            for (k, s) in &self.inbound {
+                c.inbound.insert(
+                    *k,
+                    Inbound {
+                        kind: s.kind.clone(),
+                        size: s.size,
+                        sha256: s.sha256.clone(),
+                        received: s.received,
+                        granted: s.granted,
+                        hasher: s.hasher.clone(),
+                        last: s.last,
+                        pending: s.pending,
+                    },
+                );
+            }
+            c
+        }
+
         fn clone_for_test(&self) -> Streams {
             Streams {
                 agreed: self.agreed.clone(),

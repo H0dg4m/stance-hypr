@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phone transfers (0.7.0 work, docs/adr/0004-phone-transfers.md)
+- Clipboard text both ways and files both ways with paired phones, all off by default: `stance deck transfer [show | put --data JSON]` (`transfer.toml`), `stance deck send FILE [--to PHONE]`, `stance deck transfers`, `stance deck transfer pending | accept ID | decline ID`.
+- Files from a phone always ask (notification with Accept / Decline, one prompt at a time server-wide, 60 s), land in `~/Downloads/stance` through a temp file in the same folder, are checked (size, SHA-256) before they get their cleaned name, never overwrite, and are never opened. Cooldown after 3 refusals, free-space and 1 GiB in-flight limits.
+- Clipboard text from a phone is applied with a notification showing it; text a phone sent is not sent back to it; only copies made after the phone connected go out (never pins, undo or old items).
+- Button actions run on a worker thread: a slow action no longer stalls the session.
+- `deck test send-clip | push | receive`; tests/fake.sh covers every path with fake `wl-copy` and `notify-send`.
+
 ### Phone deck protocol v2 (0.6.0 work, docs/adr/0003-deck-protocol-v2.md)
 - `hello` carries `proto: 2` and `caps`; a v2 client answers with `caps` once and gets the agreed set. Old apps and old PCs keep working (the handshakes do not change).
 - Streams: `offer`/`accept`/`decline`/`window`/`end`/`done`/`cancel` and binary data frames with credit-based flow control, size caps, SHA-256 check, sid rules, offer rate limit, idle timeout (`src/deck/stream.rs`). stance 0.6 offers no capability and declines every offer; clipboard and file transfers come in 0.7.

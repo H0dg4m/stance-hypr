@@ -78,6 +78,10 @@ Usage:
   stance deck status | devices | unpair NAME   Server state, paired phones
   stance deck buttons | put --data JSON | reset   The phone's buttons (deck.toml)
   stance deck test …                   Reference client (pair PAYLOAD, buttons, press ID)
+  stance deck transfer [show | put --data JSON]   Clipboard/file settings (transfer.toml)
+  stance deck transfer pending | accept ID | decline ID   Answer a file offer from a phone
+  stance deck send FILE [--to NAME]    Send a file to a connected phone
+  stance deck transfers                Recent transfers and their state
   stance clip list [--kind K] [--query Q] [--limit N]   Clipboard shelf (text, link, image)
   stance clip copy | get | pin | unpin | rm ID…   stance clip undo | prune | clear [--all]
   stance clip config [show | put --data JSON]   enabled, text, image, retention_days
@@ -117,6 +121,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--limit",
     "--out",
     "--backend",
+    "--to",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -784,9 +789,165 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
             Ok(())
         }
         "test" => deck::client::run(&a.pos[2..], a.val("--name"), json),
+        "transfer" => deck_transfer(a, json),
+        "transfers" => {
+            a.max_pos(2)?;
+            let r = deck::net::ask("transfers")?;
+            if json {
+                ok_json(&r);
+            } else {
+                if let Some(p) = r["pending"].as_object() {
+                    println!(
+                        "waiting for you: {} from {} (accept: stance deck transfer accept {})",
+                        p["name"].as_str().unwrap_or("?"),
+                        p["device"].as_str().unwrap_or("?"),
+                        p["id"]
+                    );
+                }
+                let list = r["transfers"].as_array().cloned().unwrap_or_default();
+                if list.is_empty() {
+                    println!("no transfers yet");
+                }
+                for t in list {
+                    println!(
+                        "#{} {} {} {} ({} B): {}{}",
+                        t["id"],
+                        if t["direction"] == "to_phone" {
+                            "→"
+                        } else {
+                            "←"
+                        },
+                        t["device"].as_str().unwrap_or("?"),
+                        t["name"].as_str().unwrap_or("?"),
+                        t["size"],
+                        t["state"].as_str().unwrap_or("?"),
+                        t["detail"]
+                            .as_str()
+                            .map(|d| format!(" ({d})"))
+                            .unwrap_or_default()
+                    );
+                }
+            }
+            Ok(())
+        }
+        "send" => {
+            let file = a.arg(2, "file")?;
+            a.max_pos(3)?;
+            // Checked here on the open file; the server opens and hashes it again.
+            let path = std::fs::canonicalize(file)
+                .map_err(|e| Error::new("io", format!("{file}: {e}")))?;
+            let meta = std::fs::File::open(&path)
+                .and_then(|f| f.metadata())
+                .map_err(|e| Error::new("io", format!("{file}: {e}")))?;
+            if !meta.is_file() || meta.len() == 0 || meta.len() > 512 << 20 {
+                return Err(Error::new(
+                    "usage",
+                    "only a regular file of 1 byte to 512 MB can be sent",
+                ));
+            }
+            let r = deck::net::ask_with(json!({
+                "cmd": "send",
+                "path": path,
+                "to": a.val("--to"),
+                "size": meta.len(),
+            }))?;
+            if r["ok"] != true {
+                return Err(Error::new(
+                    "deck",
+                    r["error"].as_str().unwrap_or("send failed").to_string(),
+                ));
+            }
+            if json {
+                ok_json(&r);
+            } else {
+                println!("queued as #{}; see: stance deck transfers", r["id"]);
+            }
+            Ok(())
+        }
         other => Err(Error::new(
             "usage",
             format!("unknown deck subcommand `{other}`"),
+        )),
+    }
+}
+
+/// `stance deck transfer [show | put --data JSON | pending | accept ID | decline ID]`
+fn deck_transfer(a: &Args, json: bool) -> Result<()> {
+    match a.pos.get(2).map(String::as_str).unwrap_or("show") {
+        "show" => {
+            a.max_pos(3)?;
+            let (s, warn) = deck::transfer::load_settings();
+            if json {
+                ok_json(&json!({ "settings": s, "warning": warn }));
+            } else {
+                if let Some(w) = warn {
+                    println!("warning: {w} (everything off)");
+                }
+                print!("{}", toml::to_string(&s).unwrap_or_default());
+            }
+            Ok(())
+        }
+        "put" => {
+            a.max_pos(3)?;
+            store::ensure_private_dir(&store::config_dir()?)?;
+            let s = deck::transfer::put_settings(
+                a.val("--data")
+                    .ok_or_else(|| Error::new("usage", "transfer put needs --data JSON"))?,
+            )?;
+            if json {
+                ok_json(&json!({ "settings": s }));
+            } else {
+                println!("saved");
+            }
+            Ok(())
+        }
+        "pending" => {
+            a.max_pos(3)?;
+            let r = deck::net::ask("transfers")?;
+            if json {
+                ok_json(&json!({ "pending": r["pending"] }));
+            } else if let Some(p) = r["pending"].as_object() {
+                println!(
+                    "#{}: {} ({} B) from {}",
+                    p["id"],
+                    p["name"].as_str().unwrap_or("?"),
+                    p["size"],
+                    p["device"].as_str().unwrap_or("?")
+                );
+            } else {
+                println!("nothing is waiting");
+            }
+            Ok(())
+        }
+        verb @ ("accept" | "decline") => {
+            let id: u64 = a
+                .arg(3, "transfer id")?
+                .parse()
+                .map_err(|_| Error::new("usage", "transfer id is a number"))?;
+            a.max_pos(4)?;
+            let r = deck::net::ask_with(
+                json!({ "cmd": "answer", "id": id, "accept": verb == "accept" }),
+            )?;
+            if r["ok"] != true {
+                return Err(Error::new(
+                    "deck",
+                    r["error"].as_str().unwrap_or("failed").to_string(),
+                ));
+            }
+            simple(
+                json,
+                if verb == "accept" {
+                    "accepted"
+                } else {
+                    "declined"
+                },
+                true,
+            );
+            Ok(())
+        }
+        other => Err(Error::new(
+            "usage",
+            format!("unknown transfer subcommand `{other}`"),
         )),
     }
 }

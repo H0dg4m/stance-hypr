@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::noise::{self, Keypair, Session, fingerprint};
 use super::pair;
 use super::proto::{self, ClientMsg, PROTO, Plain, SCHEMA, ServerMsg, State, StreamMsg};
+use super::stream::{Decision, Out, Streams};
 use crate::error::{Error, Result};
 use crate::store;
 
@@ -154,6 +155,132 @@ fn negotiate(s: &mut Session, caps: &[&str]) -> Result<Vec<String>> {
     Err(Error::new("deck_client", "no caps answer from the PC"))
 }
 
+/// A v2 session asking for `caps`; returns it with the client's stream state.
+fn v2(caps: &[&str]) -> Result<(Session, Streams)> {
+    let c = load()?;
+    let mut s = first_ok(&addrs(&c.hosts, c.port), |a| {
+        noise::connect_ik(a, &c.pc_public, &c.keypair)
+    })?;
+    let (_, _, _, proto) = expect_hello(&mut s)?;
+    if proto < 2 {
+        return Err(Error::new("deck_client", "the PC speaks protocol 1"));
+    }
+    let agreed = negotiate(&mut s, caps)?;
+    Ok((s, Streams::new(agreed, false)))
+}
+
+/// Offers `data` as `kind` and sends it once accepted (test client; waits
+/// up to 70 s for a person to answer on the PC).
+fn offer_bytes(kind: &str, data: &[u8], name: Option<String>) -> Result<String> {
+    let (mut s, mut st) = v2(&[kind])?;
+    let now = Instant::now();
+    let hash = super::transfer::sha256_hex(data);
+    let offer = st
+        .offer(kind, data.len() as u64, &hash, name, None, now)
+        .map_err(|e| Error::new("deck_client", format!("cannot offer {kind}: {e}")))?;
+    let StreamMsg::Offer { sid, .. } = offer else {
+        unreachable!()
+    };
+    s.send(&offer)?;
+    let end = Instant::now() + Duration::from_secs(70);
+    let mut pos = 0usize;
+    while Instant::now() < end {
+        while st.quota(sid) > 0 && pos < data.len() {
+            let n = (st.quota(sid) as usize)
+                .min(proto::CHUNK)
+                .min(data.len() - pos);
+            s.send_plain(&proto::data_frame(sid, &data[pos..pos + n]))?;
+            pos += n;
+            if let Some(m) = st
+                .sent(sid, n as u64, Instant::now())
+                .map_err(|e| Error::new("deck_client", e))?
+            {
+                s.send(&m)?;
+            }
+        }
+        if let Some(Plain::Stream(m)) = s.recv_any::<ServerMsg>(Duration::from_millis(200))? {
+            let answer = match &m {
+                StreamMsg::Decline { reason, .. } => Some(format!("declined: {reason}")),
+                StreamMsg::Done { ok: true, .. } => Some("done".to_string()),
+                StreamMsg::Done { error, .. } => {
+                    Some(format!("failed: {}", error.as_deref().unwrap_or("?")))
+                }
+                StreamMsg::Cancel { reason, .. } => Some(format!("cancelled: {reason}")),
+                _ => None,
+            };
+            st.on_msg(m, Instant::now(), |_, _, _| {
+                Decision::Decline("unsupported".into())
+            })
+            .map_err(|e| Error::new("deck_client", e))?;
+            if let Some(a) = answer {
+                return Ok(a);
+            }
+        }
+    }
+    Err(Error::new("deck_client", "no answer from the PC"))
+}
+
+/// Accepts the PC's offers for `secs` seconds; writes files into `dir` and
+/// prints clipboard text. Returns after the first finished item.
+fn receive(dir: &str, secs: u64) -> Result<String> {
+    let (mut s, mut st) = v2(&["clip.text", "file.pull"])?;
+    let end = Instant::now() + Duration::from_secs(secs);
+    let mut bufs: std::collections::HashMap<u32, (String, Vec<u8>)> = Default::default();
+    let mut names: std::collections::HashMap<u32, (String, String)> = Default::default();
+    while Instant::now() < end {
+        let outs = match s.recv_any::<ServerMsg>(Duration::from_millis(200))? {
+            Some(Plain::Stream(m)) => {
+                if let StreamMsg::Offer {
+                    sid, kind, name, ..
+                } = &m
+                {
+                    names.insert(
+                        *sid,
+                        (kind.clone(), name.clone().unwrap_or_else(|| "file".into())),
+                    );
+                }
+                st.on_msg(m, Instant::now(), |_, _, _| Decision::Accept)
+                    .map_err(|e| Error::new("deck_client", e))?
+            }
+            Some(Plain::Data { sid, payload }) => st
+                .on_data(sid, payload, Instant::now())
+                .map_err(|e| Error::new("deck_client", e))?,
+            _ => Vec::new(),
+        };
+        for o in outs {
+            match o {
+                Out::Send(m) => s.send(&m)?,
+                Out::Data { sid, payload } => {
+                    let (kind, _) = names.get(&sid).cloned().unwrap_or_default();
+                    bufs.entry(sid)
+                        .or_insert((kind, Vec::new()))
+                        .1
+                        .extend(payload);
+                }
+                Out::Finished { sid, ok, .. } => {
+                    let (kind, name) = names.remove(&sid).unwrap_or_default();
+                    let data = bufs.remove(&sid).map(|b| b.1).unwrap_or_default();
+                    if !ok {
+                        return Ok(format!("failed: {name}"));
+                    }
+                    if kind == "clip.text" {
+                        return Ok(format!("clip: {}", String::from_utf8_lossy(&data)));
+                    }
+                    let path = std::path::Path::new(dir).join(super::transfer::clean_name(&name));
+                    std::fs::write(&path, &data).map_err(|e| Error::new("io", e.to_string()))?;
+                    return Ok(format!(
+                        "received {} ({} bytes)",
+                        path.display(),
+                        data.len()
+                    ));
+                }
+                Out::Withdrawn { .. } => {}
+            }
+        }
+    }
+    Err(Error::new("deck_client", "nothing received"))
+}
+
 /// Protocol v2 checks against a running PC (tests): an offer of `kind` (the
 /// PC's answer is printed), or a data frame for a stream that does not exist
 /// (the PC must end the session).
@@ -262,7 +389,7 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
     let usage = || {
         Error::new(
             "usage",
-            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds] | offer [kind] | stray-data",
+            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds] | offer [kind] | stray-data | send-clip TEXT | push FILE | receive DIR [seconds]",
         )
     };
     let msg = |m: String| {
@@ -291,6 +418,16 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
         ["offer"] => msg(probe("offer", None)?),
         ["offer", kind] => msg(probe("offer", Some(kind))?),
         ["stray-data"] => msg(probe("data", None)?),
+        ["send-clip", text] => msg(offer_bytes("clip.text", text.as_bytes(), None)?),
+        ["push", file] => {
+            let data = std::fs::read(file).map_err(|e| Error::new("io", format!("{file}: {e}")))?;
+            let name = std::path::Path::new(file)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            msg(offer_bytes("file.push", &data, name)?)
+        }
+        ["receive", dir] => msg(receive(dir, 30)?),
+        ["receive", dir, secs] => msg(receive(dir, secs.parse().map_err(|_| usage())?)?),
         ["watch"] => watch(30)?,
         ["watch", secs] => watch(secs.parse().map_err(|_| usage())?)?,
         _ => return Err(usage()),

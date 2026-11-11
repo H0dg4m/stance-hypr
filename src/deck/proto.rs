@@ -17,8 +17,6 @@ pub const PROLOGUE: &[u8] = b"stance-deck/1";
 pub const PROTO: u32 = 2;
 /// Capability names (a closed set; unknown names are ignored).
 pub const CAP_NAMES: &[&str] = &["clip.text", "clip.image", "file.push", "file.pull"];
-/// What this PC offers. 0.6 has the stream layer but no feature using it.
-pub const OFFERED_CAPS: &[&str] = &[];
 /// First plaintext byte of a binary data frame (JSON starts with `{`).
 pub const DATA_TAG: u8 = 0x00;
 /// Data frame header: tag + u32 BE stream id.
@@ -159,11 +157,11 @@ pub fn data_frame(sid: u32, payload: &[u8]) -> Vec<u8> {
 }
 
 /// Our offered caps that the client also named, in our order.
-pub fn agree_caps(client: &[String]) -> Vec<String> {
-    OFFERED_CAPS
+pub fn agree_caps(offered: &[String], client: &[String]) -> Vec<String> {
+    offered
         .iter()
-        .filter(|c| client.iter().any(|x| x == *c))
-        .map(|c| c.to_string())
+        .filter(|c| client.contains(c) && CAP_NAMES.contains(&c.as_str()))
+        .cloned()
         .collect()
 }
 

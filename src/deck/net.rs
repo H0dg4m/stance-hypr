@@ -15,10 +15,12 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::json;
 
 use super::actions::Deck;
+use super::link::Link;
 use super::noise::{self, Incoming, Keypair, Session};
 use super::pair::{self, QrPayload};
-use super::proto::{self, ClientMsg, OFFERED_CAPS, PROTO, Plain, SCHEMA, ServerMsg, State};
-use super::stream::{Decision, Out, Streams};
+use super::proto::{self, ClientMsg, PROTO, Plain, SCHEMA, ServerMsg, State};
+use super::stream::Streams;
+use super::transfer::{self, Hub};
 use crate::error::{Error, Result};
 use crate::store;
 
@@ -85,6 +87,8 @@ struct Shared {
     deck_gen: AtomicUsize,
     state: Mutex<State>,
     deck: Mutex<Deck>,
+    /// Transfers (docs/adr/0004): settings, consent, queue, history.
+    hub: Arc<Hub>,
 }
 
 impl Shared {
@@ -140,7 +144,7 @@ impl Shared {
         ServerMsg::Hello {
             schema: SCHEMA,
             proto: PROTO,
-            caps: OFFERED_CAPS.iter().map(|c| c.to_string()).collect(),
+            caps: self.hub.settings().offered_caps(),
             name: pair::pc_name(),
             hosts: self.hosts(),
             port: self.port,
@@ -249,8 +253,15 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
         deck_gen: AtomicUsize::new(0),
         state: Mutex::new(State::default()),
         deck: Mutex::new(Deck::load()?),
+        hub: Arc::new(Hub::new()),
     });
     shared.refresh_devices();
+    // Temp files a crash left in the download folder.
+    if let Ok(dir) = shared.hub.settings().download_dir()
+        && dir.is_dir()
+    {
+        transfer::sweep(&dir);
+    }
     log(&format!(
         "listening on {} (fingerprint {}), {} paired device(s)",
         listener
@@ -281,6 +292,10 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
                             Err(e) => log(&format!("deck.toml: {}", e.message)),
                         }
                     }
+                }
+                {
+                    let connected = sh.connected.lock().map(|c| c.clone()).unwrap_or_default();
+                    sh.hub.expire_queue(&connected, QUEUE_WAIT_S);
                 }
                 // Only poll when someone is listening.
                 if sh.sessions.load(Ordering::Relaxed) > 0 {
@@ -420,6 +435,43 @@ fn control(sh: &Shared, c: UnixStream) -> Result<()> {
                 "devices": devices,
             })
         }
+        Some("transfers") => {
+            let connected = sh.connected.lock().map(|c| c.clone()).unwrap_or_default();
+            sh.hub.expire_queue(&connected, QUEUE_WAIT_S);
+            json!({ "ok": true, "transfers": sh.hub.list(), "pending": sh.hub.consent_pending().map(|c| json!({
+                "id": c.id, "device": c.device, "name": c.name, "size": c.size,
+            })) })
+        }
+        Some("answer") => {
+            let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let yes = req.get("accept").and_then(|v| v.as_bool()).unwrap_or(false);
+            if sh.hub.consent_answer(id, yes) {
+                json!({ "ok": true })
+            } else {
+                json!({ "ok": false, "error": "no such pending transfer" })
+            }
+        }
+        Some("send") => {
+            let path = req.get("path").and_then(|v| v.as_str()).map(PathBuf::from);
+            let to = req.get("to").and_then(|v| v.as_str()).map(str::to_string);
+            let size = req.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+            match path {
+                Some(p) if p.is_absolute() && p.as_os_str().len() < 4096 => {
+                    let name = transfer::clean_name(
+                        &p.file_name()
+                            .map(|n| n.to_string_lossy())
+                            .unwrap_or_default(),
+                    );
+                    let dev = to.clone().unwrap_or_else(|| "any phone".into());
+                    let id =
+                        sh.hub
+                            .new_transfer("to_phone", &dev, &name, size, transfer::State::Queued);
+                    sh.hub.queue(transfer::Outgoing { id, to, path: p });
+                    json!({ "ok": true, "id": id })
+                }
+                _ => json!({ "ok": false, "error": "send needs an absolute path" }),
+            }
+        }
         _ => json!({ "ok": false, "error": "unknown command" }),
     };
     let mut c = c;
@@ -452,6 +504,11 @@ fn peer_uid(c: &UnixStream) -> Result<u32> {
 
 /// Asks the running `serve` over the control socket.
 pub fn ask(cmd: &str) -> Result<serde_json::Value> {
+    ask_with(json!({ "cmd": cmd }))
+}
+
+/// A control request with arguments (`{"cmd": ..., ...}`).
+pub fn ask_with(req: serde_json::Value) -> Result<serde_json::Value> {
     let path = control_path()?;
     let mut c = UnixStream::connect(&path).map_err(|_| {
         Error::new(
@@ -460,7 +517,7 @@ pub fn ask(cmd: &str) -> Result<serde_json::Value> {
         )
     })?;
     c.set_read_timeout(Some(Duration::from_secs(3))).ok();
-    writeln!(c, "{}", json!({ "cmd": cmd })).map_err(|e| Error::new("io", e.to_string()))?;
+    writeln!(c, "{req}").map_err(|e| Error::new("io", e.to_string()))?;
     let mut line = String::new();
     BufReader::new(c)
         .take(64 * 1024)
@@ -584,7 +641,7 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
     // Protocol v2 (docs/adr/0003): set once the client sent `caps`. Before
     // that, stream messages and data frames end the session, and the PC
     // never sends any (an old app treats them as fatal).
-    let mut streams: Option<Streams> = None;
+    let mut v2: Option<(Streams, Link)> = None;
     // Button actions run on a worker (one at a time, in order), so the loop
     // keeps reading while an action or its subprocess takes its time.
     let r = std::thread::scope(|sc| {
@@ -613,7 +670,7 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
             sh,
             s,
             key,
-            &mut streams,
+            &mut v2,
             &mut presses,
             &mut sent_version,
             &mut deck_gen,
@@ -621,24 +678,12 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
         )
         // Dropping `jobs` ends the worker after its current action.
     });
-    // Every open incoming stream failed with the session. 0.6 stores no
-    // stream data, so there is nothing to delete yet.
-    if let Some(st) = streams.as_mut() {
-        let _ = st.close_all();
+    // Every open stream failed with the session: temp files go, prompts close.
+    if let Some((st, link)) = v2.as_mut() {
+        let outs = st.close_all();
+        link.close(&sh.hub, outs);
     }
     r
-}
-
-/// Applies what the stream state asks for. 0.6 offers no caps, so no stream
-/// is ever accepted and no data reaches here.
-fn stream_out(s: &mut Session, outs: Vec<Out>) -> Result<()> {
-    for o in outs {
-        match o {
-            Out::Send(m) => s.send(&m)?,
-            Out::Data { .. } | Out::Finished { .. } => {}
-        }
-    }
-    Ok(())
 }
 
 enum Job {
@@ -654,15 +699,20 @@ struct Jobs {
     open: usize,
 }
 
+/// A file queued for a phone that is not connected fails after this long.
+const QUEUE_WAIT_S: u64 = 120;
+
 /// Poll quickly while something is in flight.
 const BUSY_TICK: Duration = Duration::from_millis(100);
+/// Barely wait while data is ready to go out.
+const SEND_TICK: Duration = Duration::from_millis(1);
 
 #[allow(clippy::too_many_arguments)]
 fn session_loop(
     sh: &Shared,
     s: &mut Session,
     key: &str,
-    streams: &mut Option<Streams>,
+    v2: &mut Option<(Streams, Link)>,
     presses: &mut VecDeque<Instant>,
     sent_version: &mut u64,
     deck_gen: &mut usize,
@@ -676,9 +726,17 @@ fn session_loop(
             return Ok(());
         }
         let now = Instant::now();
-        if let Some(st) = streams.as_mut() {
+        if let Some((st, link)) = v2.as_mut() {
             let outs = st.tick(now);
-            stream_out(s, outs)?;
+            link.apply(&sh.hub, st, s, outs)?;
+            if !link.tick(&sh.hub, st, s, now)? {
+                let outs = st.close_all();
+                link.close(&sh.hub, outs);
+                let _ = s.send(&ServerMsg::Bye {
+                    reason: "settings changed".into(),
+                });
+                return Ok(());
+            }
         }
         // Finished actions.
         while let Ok((req, res)) = jobs.rx.try_recv() {
@@ -702,44 +760,63 @@ fn session_loop(
             let snap = sh.deck.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
             *sh.state.lock().unwrap_or_else(|e| e.into_inner()) = snap;
         }
-        let busy = jobs.open > 0 || streams.as_ref().is_some_and(|st| st.open() > 0);
-        let wait = if busy { BUSY_TICK } else { TICK };
+        let busy = jobs.open > 0 || v2.as_ref().is_some_and(|(st, l)| st.open() > 0 || l.busy());
+        let sending = v2.as_ref().is_some_and(|(st, l)| l.can_send(st));
+        let wait = if sending {
+            SEND_TICK
+        } else if busy {
+            BUSY_TICK
+        } else {
+            TICK
+        };
         let msg = match s.recv_any::<ClientMsg>(wait)? {
             None => None,
             Some(Plain::Msg(m)) => Some(m),
             Some(Plain::Stream(m)) => {
-                let st = streams
+                let (st, link) = v2
                     .as_mut()
                     .ok_or_else(|| Error::new("deck_proto", "stream message before caps"))?;
+                link.peer_msg(&sh.hub, &m);
+                let sid = match &m {
+                    proto::StreamMsg::Offer { sid, .. } => *sid,
+                    _ => 0,
+                };
                 let outs = st
-                    .on_msg(m, now, |_, _, _| Decision::Decline("unsupported".into()))
+                    .on_msg(m, now, |kind, size, name| {
+                        link.decide(&sh.hub, sid, kind, size, name)
+                    })
                     .map_err(|e| Error::new("deck_proto", e))?;
-                stream_out(s, outs)?;
+                link.apply(&sh.hub, st, s, outs)?;
                 None
             }
             Some(Plain::Data { sid, payload }) => {
-                let st = streams
+                let (st, link) = v2
                     .as_mut()
                     .ok_or_else(|| Error::new("deck_proto", "data frame before caps"))?;
                 let outs = st
                     .on_data(sid, payload, now)
                     .map_err(|e| Error::new("deck_proto", e))?;
-                stream_out(s, outs)?;
+                link.apply(&sh.hub, st, s, outs)?;
                 None
             }
         };
         match msg {
             None => {}
             Some(ClientMsg::Caps { proto: p, caps }) => {
-                if streams.is_some() || p < 2 {
+                if v2.is_some() || p < 2 {
                     return Err(Error::new("deck_proto", "caps sent twice or for proto 1"));
                 }
-                let agreed = proto::agree_caps(&caps);
+                let offered = sh.hub.settings().offered_caps();
+                let agreed = proto::agree_caps(&offered, &caps);
                 s.send(&ServerMsg::Caps {
                     proto: PROTO,
                     caps: agreed.clone(),
                 })?;
-                *streams = Some(Streams::new(agreed, true));
+                let device = sh.device_name(key).unwrap_or_default();
+                *v2 = Some((
+                    Streams::new(agreed.clone(), true),
+                    Link::new(&device, offered, agreed),
+                ));
             }
             Some(ClientMsg::Bye) => return Ok(()),
             Some(ClientMsg::Ping { req }) => s.send(&ServerMsg::Pong { req })?,

@@ -1,6 +1,6 @@
 # ADR 0004 — Phone transfers: clipboard sync and files (0.7.0)
 
-Status: proposed · 2026-11-12
+Status: accepted, revised after review · 2026-11-12 (see "Revision")
 
 ## Context
 0.6 shipped the stream layer (ADR 0003) with no capability offered. 0.7
@@ -70,3 +70,57 @@ changed"`; the app reconnects and negotiates again.
 `deck test` grows `send-clip TEXT`, `push FILE` and `receive` (accepts
 offers, writes to a directory), so tests/fake.sh exercises every path
 with a fake `wl-copy` and `notify-send` on PATH and isolated directories.
+
+## Revision (after review, before code)
+- **Scope 0.7.0:** text clipboard both ways, `file.pull` (PC → phone,
+  started by the user on the PC) and `file.push` with `"ask"`. Images,
+  the panel UI and per-device "always accept" rules move to 0.7.1.
+  `clip_from_phone` is `"off"` (default) or `"notify"`: applied without a
+  prompt (the phone user pressed send) but every apply shows a
+  notification with a short cleaned preview, so a silently replaced
+  clipboard (e.g. a command for a terminal) is visible. docs/deck.md
+  states this exception to "every transfer asks".
+- **Async consent:** `Decision::Defer` keeps the offer pending (counts
+  toward the 2 open streams; not subject to the 30 s idle timer, its own
+  60 s); `accept(sid)` / `decline(sid)` resolve it; data before accept
+  stays a protocol error; a peer `cancel` clears it. **One pending consent
+  for the whole server** (in `Shared`), keyed by a transfer id so a stale
+  click cannot accept a later offer. The prompt is `notify-send --wait -A`
+  on its own thread (killed at 60 s; no output = decline), with markup
+  characters stripped. Fallback for daemons without actions: `stance deck
+  transfer pending | accept ID | decline ID` over the control socket.
+- **Incoming files:** the temp file is `download_dir/.stance-part-<random>`
+  (same filesystem as the target; created `O_EXCL|O_NOFOLLOW`, 0600). On
+  success it is linked to the cleaned name with a collision suffix
+  (`link`, never overwrite) and unlinked; the final file is 0644 like any
+  download. `download_dir` must be a real directory (not a symlink),
+  created 0700 if missing. Stale `.stance-part-*` are swept at start.
+  Before accepting, free space must exceed the size by 64 MiB; at most
+  1 GiB of incoming temp data server-wide.
+- **Names:** last path component; drop NUL/control, invisible and bidi
+  characters (`clip::is_invisible`), `/` `\`; strip leading dots, dashes,
+  spaces and trailing dots/spaces; ≤ 120 bytes keeping an extension of at
+  most 16 bytes; empty → `file`.
+- **Echo guard:** a server-wide set of text hashes from phones with a 30 s
+  TTL, set before `wl-copy` runs; compared on the bytes the shelf stores.
+- **PC → phone clip:** candidates are entries with `id` greater than the
+  highest id at session start, picked by `created` (never `updated` or
+  list order, so pins, `copy`, undo never send old items), not trashed,
+  text/link kinds, ≤ 1 MiB; `enabled` and `paused` re-checked at offer
+  time; not sent back to the phone it came from; one in flight per
+  session, a newer item replaces an unsent older one.
+- **`deck send FILE`:** the CLI opens the file (`O_NOFOLLOW` off: a
+  symlink is resolved once by open), `fstat`s the fd (regular file only,
+  ≤ cap), and passes the **path** to the server, which reopens with
+  `O_NONBLOCK`, re-checks type/size, hashes on a worker thread, then
+  streams exactly `size` bytes from that fd in credit-sized reads; size
+  and mtime are re-checked at the end (changed → `cancel`). The command
+  answers with a transfer id; `stance deck transfers` lists recent ones
+  with their state (queued, offered, sending, done, declined, failed).
+- **Settings:** `transfer.toml` is read into `Shared` (mtime-checked each
+  tick, one snapshot for all sessions); offered caps are computed from it
+  and passed to `agree_caps`. Sessions whose offered caps change cancel
+  their streams and end with `bye "settings changed"`. Unknown keys, bad
+  values or an unreadable file → everything off (logged).
+- **Per-device cooldown:** after 3 declined/expired file offers from a
+  device, its offers are declined "cooldown" for 5 minutes.
