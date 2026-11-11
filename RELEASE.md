@@ -9,19 +9,17 @@ tag and the GitHub release are made by the maintainer.
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo build --release
 tests/nested.sh lua target/release/stance        # needs a running Wayland session
-(cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/release/stance)
-# optional: app on an emulator against a nested Hyprland (skips itself without adb/AVD/APK)
-(cd android && ./gradlew :app:assembleDebug) && tests/e2e-android.sh target/release/stance
+# phone app: in stance-deck-android, ./gradlew :core:test -Dstance.binary=<this>/target/release/stance
+# (and scripts/e2e.sh there for the emulator run)
 ```
 
 All green, and `stance doctor` on a real machine shows no FAIL.
 
 ## 2. Version and changelog
 
-- `Cargo.toml` `version`, `android/app/build.gradle.kts` `versionName` and
-  `versionCode` (increment it on every release: Android refuses to install
-  a lower one over a higher one), `packaging/aur/stance-hypr/PKGBUILD`
-  `pkgver`
+- `Cargo.toml` `version`, `packaging/aur/stance-hypr/PKGBUILD` `pkgver`.
+  The phone app is released from stance-deck-android (its own `versionName` /
+  `versionCode`); its release notes say which stance versions it speaks to
 - `CHANGELOG.md`: replace "unreleased" with the date
 
 Commit: `git commit -am "stance X.Y.Z"` and push.
@@ -42,10 +40,8 @@ cp target/release/stance LICENSE README.md CHANGELOG.md dist/stance-X.Y.Z/
 cp -r quickshell examples contrib docs dist/stance-X.Y.Z/
 tar -C dist -czf dist/stance-X.Y.Z-x86_64-linux.tar.gz stance-X.Y.Z
 
-# Phone app (signing key: see android/README.md)
-(cd android && ./gradlew :app:assembleRelease)
-cp android/app/build/outputs/apk/release/app-release.apk dist/stance-deck-X.Y.Z.apk
-sha256sum dist/*.tar.gz dist/*.apk > dist/SHA256SUMS
+sha256sum dist/*.tar.gz > dist/SHA256SUMS
+# The phone APK is built and signed in stance-deck-android
 ```
 
 ## 5. GitHub release

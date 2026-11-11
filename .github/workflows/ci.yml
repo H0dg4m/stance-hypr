@@ -29,21 +29,6 @@ jobs:
       - run: python3 scripts/i18n-check.py
       - name: Shell scripts parse
         run: for f in tests/*.sh contrib/*.sh; do bash -n "$f"; done
-  android-core:
-    # The phone's Noise/protocol core against test vectors and a real
-    # `stance deck serve` on loopback; app screens and reconnect logic
-    # under Robolectric.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - run: ./gradlew :core:test :app:testDebugUnitTest -Dstance.binary=$GITHUB_WORKSPACE/target/debug/stance
-        working-directory: android
   audit:
     runs-on: ubuntu-latest
     steps:

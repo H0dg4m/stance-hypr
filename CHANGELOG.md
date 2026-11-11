@@ -59,6 +59,9 @@
   hover, a turned-off shelf shows only how to turn it on
 
 ### Getting started and reporting
+- The phone app moved to its own repository,
+  [stance-deck-android](https://github.com/H0dg4m/stance-deck-android); this
+  repository keeps the server, the protocol and the test vectors
 - `stance setup [waybar|quickshell|end4] [--dry-run]`: detects your bar and
   prints the exact steps; enables only stance's own units (new
   `stance-panel.service` runs the standalone panel for Waybar and other bars)

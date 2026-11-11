@@ -159,7 +159,8 @@ allow_extras = false   # true: modun Hyprland ayarları, güç profili, gece ı�
 
 Telefonu Stream Deck benzeri bir kumandaya çevirir: modlar, gece ışığı,
 parlaklık, ses çıkışı ve ekran düzeni tuşları; ekran değişikliğinde
-Koru / Geri al. Android uygulaması [`android/`](android) içinde (Kotlin,
+Koru / Geri al. Android uygulaması ayrı bir repoda:
+[stance-deck-android](https://github.com/H0dg4m/stance-deck-android) (Kotlin,
 Compose; QR okuma ZXing ile, Google hizmeti gerekmez; birden çok bilgisayar;
 cihaz anahtarı Android Keystore ile sarılır). Kaynaktan derle ya da APK'yı
 sürüm sayfasından kur.
@@ -198,7 +199,7 @@ Tuşları panelde (Ayarlar → Phone buttons) ya da `stance deck buttons`,
 
 Ayrıntı ve protokol: [docs/deck.md](docs/deck.md),
 [docs/protocol.md](docs/protocol.md); uygulama derleme ve testler:
-[android/README.md](android/README.md).
+[stance-deck-android](https://github.com/H0dg4m/stance-deck-android).
 
 ### Ekranlar yerini hatırlar
 
@@ -323,8 +324,6 @@ bağla; bkz. [docs/quickshell.md](docs/quickshell.md)). Oklar gezdirir, Boşluk
 ```sh
 cargo test                    # birim testleri (Noise test vektörleri dahil)
 tests/nested.sh lua           # atılabilir iç içe Hyprland'de uçtan uca
-cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/debug/stance
-                              # telefon tarafı: vektörler + deck serve ile canlı uyum
 ```
 
 Yayın adımları: [RELEASE.md](RELEASE.md).

@@ -3,7 +3,7 @@
 A paired phone shows buttons; pressing one runs a stance action on this PC.
 Wi-Fi with QR pairing first; USB through `adb reverse` for those who want it.
 The buttons come from `~/.config/stance/deck.toml` (see `examples/deck.toml`).
-The Android app is in [`../android`](../android); the byte-level format is in
+The Android app is in [stance-deck-android](https://github.com/H0dg4m/stance-deck-android); the byte-level format is in
 [protocol.md](protocol.md) (with test vectors for other implementations).
 
 ## Transport
@@ -113,7 +113,7 @@ generated per PC and wrapped by an Android Keystore key. Pairing codes are
 never put in screenshots (`FLAG_SECURE`). The connection exists only while a
 PC screen is open; there is no background service. Strings from the PC are
 shown as plain text, shortened and stripped of control characters. See
-[../android/README.md](../android/README.md) for building, signing and the
+[stance-deck-android](https://github.com/H0dg4m/stance-deck-android) for building, signing and the
 tests (Noise vectors, live interop, screenshots, an optional emulator run).
 
 ## Running and checking the server
@@ -132,7 +132,7 @@ tests (Noise vectors, live interop, screenshots, an optional emulator run).
 `revert`, `ping`, `watch SECONDS`. State lives in
 `~/.config/stance/deck-test-client.json`.
 
-For the real app without a phone: `tests/e2e-android.sh` runs the debug APK
+For the real app without a phone: `scripts/e2e.sh` in stance-deck-android runs the debug APK
 on an emulator against a nested Hyprland and a loopback server (`adb
 reverse`), pairs, presses a layout button and checks Keep, Revert and the
 automatic revert. It skips itself when adb, an AVD or the APK are missing.

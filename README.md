@@ -159,7 +159,8 @@ Enable with `systemctl --user enable --now stance.service`.
 
 Turn a phone into a Stream Deck–style remote for stance: buttons for modes,
 night light, brightness, audio output and layouts, with Keep / Revert for
-display changes. The Android app lives in [`android/`](android) (Kotlin,
+display changes. The Android app lives in its own repository,
+[stance-deck-android](https://github.com/H0dg4m/stance-deck-android) (Kotlin,
 Compose; QR scan with ZXing, no Google services; several PCs; the device key
 is wrapped by the Android Keystore). Build it from source or install the APK
 from the release page.
@@ -198,7 +199,7 @@ Edit the buttons in the panel (Settings → Phone buttons) or with
 
 Details and the wire protocol: [docs/deck.md](docs/deck.md),
 [docs/protocol.md](docs/protocol.md); app build and tests:
-[android/README.md](android/README.md).
+[stance-deck-android](https://github.com/H0dg4m/stance-deck-android).
 
 ### Screens remember their place
 
@@ -322,8 +323,6 @@ previews, Enter copies, P pins, S removes, `/` searches.
 ```sh
 cargo test                    # unit tests (incl. Noise test vectors)
 tests/nested.sh lua           # end-to-end in a throwaway nested Hyprland
-cd android && ./gradlew :core:test -Dstance.binary=$PWD/../target/debug/stance
-                              # phone side: vectors + live interop with deck serve
 ```
 
 Release steps: [RELEASE.md](RELEASE.md).
