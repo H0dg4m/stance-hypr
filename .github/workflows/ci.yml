@@ -11,7 +11,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - run: cargo build && tests/upgrade.sh target/debug/stance
+      - run: cargo build && tests/upgrade.sh target/debug/stance && tests/fake.sh target/debug/stance
   qml-and-scripts:
     # QML must parse (qmlformat is a strict parser; Quickshell types are not
     # available on the runner, so qmllint would only report those), every

@@ -9,7 +9,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::time::{Duration, Instant};
 
 use crate::apply::Ctx;
-use crate::backend::{Backend, Hyprland, Notice};
+use crate::backend::{Backend, Notice, need_instance};
 use crate::error::{Error, Result};
 use crate::modes;
 
@@ -64,7 +64,7 @@ pub fn added_name(line: &str) -> Option<String> {
     crate::spec::valid_connector(name).then(|| name.to_string())
 }
 
-pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
+pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
     let ctx = Ctx {
         backend: hypr,
         state_dir: state_dir.clone(),
@@ -85,8 +85,9 @@ pub fn run(hypr: &Hyprland, state_dir: std::path::PathBuf) -> Result<()> {
         ));
     }
 
-    let night = crate::night::Night::new(&hypr.instance, &state_dir);
-    let mut events = hypr.instance.events()?;
+    let inst = need_instance(hypr)?;
+    let night = crate::night::Night::new(inst, &state_dir);
+    let mut events = inst.events()?;
     log(&format!("watching Hyprland {}", hypr.session_id()));
 
     let mut hotplug_at: Option<Instant> = None;

@@ -1,8 +1,11 @@
 //! Compositor backends. v1 ships Hyprland only; other desktops implement
 //! the same trait later without touching the interfaces.
 
+pub mod fake;
+
 use std::cell::OnceCell;
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -80,8 +83,15 @@ impl Notice {
 }
 
 pub trait Backend {
+    /// Backend name as `--backend` spells it.
+    fn name(&self) -> &'static str;
     /// Identifies this compositor session; pending state is bound to it.
     fn session_id(&self) -> &str;
+    /// The Hyprland instance behind this backend, for helpers that talk to
+    /// sibling sockets (hyprsunset). `None` elsewhere.
+    fn hypr_instance(&self) -> Option<&Instance> {
+        None
+    }
     fn version(&self) -> Result<String>;
     fn parser(&self) -> Result<Parser>;
     fn monitors(&self) -> Result<Vec<Monitor>>;
@@ -100,6 +110,38 @@ pub trait Backend {
     fn power_set(&self, p: crate::power::PowerProfile) -> Result<()> {
         crate::power::set(p)
     }
+}
+
+/// Picks the backend: `--backend NAME`, else `STANCE_BACKEND`, else the
+/// running session (Hyprland today).
+pub fn connect(name: Option<&str>, state_dir: &Path) -> Result<Box<dyn Backend>> {
+    let env = std::env::var("STANCE_BACKEND")
+        .ok()
+        .filter(|v| !v.is_empty());
+    match name.or(env.as_deref()) {
+        None | Some("hyprland") => Ok(Box::new(Hyprland::connect()?)),
+        Some("fake") => {
+            let path = match std::env::var_os("STANCE_FAKE_STATE").map(std::path::PathBuf::from) {
+                Some(p) if p.is_absolute() => p,
+                _ => state_dir.join("fake.json"),
+            };
+            Ok(Box::new(fake::Fake::open(path)?))
+        }
+        Some(other) => Err(Error::new(
+            "usage",
+            format!("unknown backend `{other}` (hyprland, fake)"),
+        )),
+    }
+}
+
+/// Hyprland-only helpers (hyprsunset) until they move behind the backend.
+pub fn need_instance(b: &dyn Backend) -> Result<&Instance> {
+    b.hypr_instance().ok_or_else(|| {
+        Error::new(
+            "unsupported",
+            format!("not available on the {} backend", b.name()),
+        )
+    })
 }
 
 pub struct Hyprland {
@@ -202,8 +244,16 @@ fn parse_option(key: OptKey, v: &serde_json::Value) -> Result<OptValue> {
 }
 
 impl Backend for Hyprland {
+    fn name(&self) -> &'static str {
+        "hyprland"
+    }
+
     fn session_id(&self) -> &str {
         &self.instance.signature
+    }
+
+    fn hypr_instance(&self) -> Option<&Instance> {
+        Some(&self.instance)
     }
 
     fn version(&self) -> Result<String> {

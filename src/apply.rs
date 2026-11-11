@@ -340,7 +340,7 @@ impl Ctx<'_> {
                 active_mode_before,
             };
             self.write_pending(&p)?;
-            spawn_guardian(generation, &self.state_dir)?;
+            spawn_guardian(generation, &self.state_dir, self.backend.name())?;
             pending = self.pending_info();
         }
         Ok(Outcome {
@@ -495,7 +495,7 @@ pub fn satisfies(m: &Monitor, w: &MonitorSpec) -> bool {
         && vrr_ok
 }
 
-fn spawn_guardian(generation: u64, state_dir: &Path) -> Result<()> {
+fn spawn_guardian(generation: u64, state_dir: &Path, backend: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe()
@@ -504,6 +504,7 @@ fn spawn_guardian(generation: u64, state_dir: &Path) -> Result<()> {
         .arg("guardian")
         .arg(generation.to_string())
         .env("STANCE_STATE_DIR", state_dir)
+        .env("STANCE_BACKEND", backend)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -527,112 +528,8 @@ fn write_json<T: Serialize>(path: &Path, v: &T) -> Result<()> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::model::{Mode, Parser};
-    use std::cell::RefCell;
 
-    /// In-memory compositor that applies specs exactly (optionally ignoring some).
-    pub struct Fake {
-        pub mons: RefCell<Vec<Monitor>>,
-        pub opts: RefCell<BTreeMap<OptKey, OptValue>>,
-        pub power: RefCell<PowerProfile>,
-        pub ignore: Vec<String>,
-        pub ws: RefCell<Vec<(u32, String)>>,
-    }
-
-    pub fn mon(name: &str, x: i32) -> Monitor {
-        Monitor {
-            name: name.into(),
-            description: format!("Desc {name}"),
-            make: "Make".into(),
-            model: name.into(),
-            serial: String::new(),
-            enabled: true,
-            focused: false,
-            dpms: true,
-            width: 1920,
-            height: 1080,
-            refresh: 60.0,
-            x,
-            y: 0,
-            scale: 1.0,
-            transform: 0,
-            vrr: false,
-            vrr_capable: false,
-            mirror_of: None,
-            modes: vec![Mode {
-                width: 1920,
-                height: 1080,
-                refresh: 60.0,
-            }],
-        }
-    }
-
-    impl Fake {
-        pub fn new() -> Self {
-            Fake {
-                mons: RefCell::new(vec![mon("A-1", 0), mon("B-1", 1920)]),
-                opts: RefCell::new(BTreeMap::from([(OptKey::Blur, OptValue::Bool(true))])),
-                power: RefCell::new(PowerProfile::Balanced),
-                ignore: vec![],
-                ws: RefCell::new(vec![(1, "A-1".into())]),
-            }
-        }
-    }
-
-    impl Backend for Fake {
-        fn session_id(&self) -> &str {
-            "fake"
-        }
-        fn version(&self) -> Result<String> {
-            Ok("0.57.1".into())
-        }
-        fn parser(&self) -> Result<Parser> {
-            Ok(Parser::Lua)
-        }
-        fn monitors(&self) -> Result<Vec<Monitor>> {
-            Ok(self.mons.borrow().clone())
-        }
-        fn apply_monitor(&self, s: &MonitorSpec) -> Result<()> {
-            s.validate()?;
-            if self.ignore.contains(&s.name) {
-                return Ok(()); // like eval: "ok" but nothing happens
-            }
-            let mut mons = self.mons.borrow_mut();
-            let m = mons.iter_mut().find(|m| m.name == s.name).unwrap();
-            m.enabled = s.enabled;
-            if s.enabled {
-                (m.width, m.height, m.refresh) = (s.width, s.height, s.refresh);
-                (m.x, m.y, m.scale, m.transform) = (s.x, s.y, s.scale, s.transform);
-                m.mirror_of = s.mirror.clone();
-            }
-            Ok(())
-        }
-        fn get_option(&self, k: OptKey) -> Result<OptValue> {
-            Ok(*self.opts.borrow().get(&k).unwrap_or(&OptValue::Bool(true)))
-        }
-        fn set_option(&self, k: OptKey, v: OptValue) -> Result<()> {
-            self.opts.borrow_mut().insert(k, v);
-            Ok(())
-        }
-        fn workspaces(&self) -> Result<Vec<(u32, String)>> {
-            Ok(self.ws.borrow().clone())
-        }
-        fn bind_workspace(&self, id: u32, mon: &str) -> Result<()> {
-            let mut ws = self.ws.borrow_mut();
-            if let Some(w) = ws.iter_mut().find(|(w, _)| *w == id) {
-                w.1 = mon.into();
-            }
-            Ok(())
-        }
-        fn notify(&self, _: Notice) {}
-        fn power_get(&self) -> Result<PowerProfile> {
-            Ok(*self.power.borrow())
-        }
-        fn power_set(&self, p: PowerProfile) -> Result<()> {
-            *self.power.borrow_mut() = p;
-            Ok(())
-        }
-    }
+    pub use crate::backend::fake::{Fake, mon};
 
     pub fn ctx<'a>(b: &'a Fake, tag: &str) -> Ctx<'a> {
         let d = std::env::temp_dir().join(format!("stance-apply-{tag}-{}", std::process::id()));

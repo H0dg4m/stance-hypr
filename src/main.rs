@@ -32,7 +32,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use apply::{Ctx, DEFAULT_TIMEOUT, Outcome, State};
-use backend::{Backend, Hyprland};
+use backend::Backend;
 use error::{Error, Result};
 use model::Monitor;
 use plan::{Layout, SetArgs};
@@ -111,6 +111,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--query",
     "--limit",
     "--out",
+    "--backend",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -288,9 +289,10 @@ fn run(a: &Args) -> Result<ExitCode> {
         return audio_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
 
-    let hypr = Hyprland::connect()?;
+    let backend = backend::connect(a.val("--backend"), &state_dir()?)?;
+    let hypr: &dyn Backend = &*backend;
     let ctx = Ctx {
-        backend: &hypr,
+        backend: hypr,
         state_dir: state_dir()?,
     };
 
@@ -491,7 +493,7 @@ fn run(a: &Args) -> Result<ExitCode> {
         }
         "waybar" => {
             a.max_pos(1)?;
-            waybar_line(&ctx, &hypr);
+            waybar_line(&ctx, hypr);
         }
         "confirm" => {
             a.max_pos(1)?;
@@ -517,18 +519,18 @@ fn run(a: &Args) -> Result<ExitCode> {
         }
         "persist" => {
             a.max_pos(1)?;
-            persist_cmd(&ctx, &hypr, a.has("--print"), json)?;
+            persist_cmd(&ctx, hypr, a.has("--print"), json)?;
         }
-        "mode" => mode_cmd(a, &ctx, &hypr, json)?,
-        "night" => night_cmd(a, &ctx, &hypr, json)?,
-        "brightness" => brightness_cmd(a, &hypr, json)?,
+        "mode" => mode_cmd(a, &ctx, hypr, json)?,
+        "night" => night_cmd(a, &ctx, hypr, json)?,
+        "brightness" => brightness_cmd(a, hypr, json)?,
         "quick" => {
             a.max_pos(1)?;
-            quick_cmd(&ctx, &hypr, json)?;
+            quick_cmd(&ctx, hypr, json)?;
         }
         "daemon" => {
             a.max_pos(1)?;
-            daemon::run(&hypr, ctx.state_dir.clone())?;
+            daemon::run(hypr, ctx.state_dir.clone())?;
         }
         "guardian" => {
             let generation: u64 = a
@@ -547,7 +549,7 @@ fn run(a: &Args) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
+fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
     match a.arg(1, "mode subcommand (list, show, apply, save, rm)")? {
         "list" => {
             a.max_pos(2)?;
@@ -601,7 +603,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
             out.warnings.extend(warnings);
             out.warnings.extend(qwarn);
             if !quick.is_empty() {
-                let n = night::Night::new(&hypr.instance, &ctx.state_dir);
+                let n = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir);
                 let (changed, w) = modes::apply_quick(&quick, Some(&n));
                 out.changed.extend(changed);
                 out.warnings.extend(w);
@@ -616,7 +618,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
             // Opt-in: a display mode that silently switches the audio
             // output on the next hotplug would be a surprise.
             if a.has("--with-quick") {
-                let ns = night::Night::new(&hypr.instance, &ctx.state_dir).status();
+                let ns = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir).status();
                 if ns.running {
                     m.night_light = Some(match ns.temperature {
                         Some(k) if ns.on => night::NightSetting::Kelvin(k),
@@ -664,7 +666,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
 
 /// `{"text","tooltip","class","alt"}` for a Waybar custom module
 /// (`return-type: json`). Never fails: a broken line would blank the bar.
-fn waybar_line(ctx: &Ctx, hypr: &Hyprland) {
+fn waybar_line(ctx: &Ctx, hypr: &dyn Backend) {
     let mons = hypr.monitors().unwrap_or_default();
     let active: Vec<&Monitor> = mons
         .iter()
@@ -1238,8 +1240,8 @@ fn rules_cmd(a: &Args, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn night_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
-    let n = night::Night::new(&hypr.instance, &ctx.state_dir);
+fn night_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
+    let n = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir);
     let kelvin = |i: usize| -> Result<u32> {
         let v = a.arg(i, "temperature in K")?;
         v.parse()
@@ -1290,7 +1292,7 @@ fn night_cmd(a: &Args, ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn connectors(hypr: &Hyprland) -> Result<Vec<String>> {
+fn connectors(hypr: &dyn Backend) -> Result<Vec<String>> {
     Ok(hypr
         .monitors()?
         .into_iter()
@@ -1303,7 +1305,7 @@ fn print_brightness(d: &brightness::Display) {
     println!("{:<8} {:>3}%  ({})", d.monitor, d.percent, d.kind);
 }
 
-fn brightness_cmd(a: &Args, hypr: &Hyprland, json: bool) -> Result<()> {
+fn brightness_cmd(a: &Args, hypr: &dyn Backend, json: bool) -> Result<()> {
     match a.pos.get(1).map(String::as_str) {
         None | Some("list") => {
             a.max_pos(2)?;
@@ -1387,9 +1389,9 @@ fn audio_cmd(a: &Args, json: bool) -> Result<()> {
 
 /// Everything the panel's quick section shows, in one call. Each part
 /// fails on its own: a missing ddcutil does not hide the night light.
-fn quick_cmd(ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
+fn quick_cmd(ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
     let mut errors = serde_json::Map::new();
-    let night = night::Night::new(&hypr.instance, &ctx.state_dir).status();
+    let night = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir).status();
     let bright = match connectors(hypr).and_then(|c| brightness::list(&c)) {
         Ok(l) => l,
         Err(e) => {
@@ -1422,7 +1424,7 @@ fn quick_cmd(ctx: &Ctx, hypr: &Hyprland, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn persist_cmd(ctx: &Ctx, hypr: &Hyprland, print: bool, json: bool) -> Result<()> {
+fn persist_cmd(ctx: &Ctx, hypr: &dyn Backend, print: bool, json: bool) -> Result<()> {
     let parser = hypr.parser()?;
     let _lock = ctx.lock()?;
     ctx.sweep();
@@ -1509,7 +1511,7 @@ fn bug_report() -> String {
             })
         })
         .unwrap_or_else(|| "unknown".into());
-    let hypr = Hyprland::connect()
+    let hypr = backend::connect(None, &PathBuf::new())
         .and_then(|h| h.version())
         .unwrap_or_else(|e| format!("not reachable ({})", e.code));
     let mut out = String::from("```\n");

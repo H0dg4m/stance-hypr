@@ -1,7 +1,7 @@
 //! Backend-neutral data types. Interfaces only ever see these, never raw
 //! compositor JSON.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -12,7 +12,7 @@ pub enum Parser {
     Legacy,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Mode {
     pub width: u32,
     pub height: u32,
@@ -38,17 +38,23 @@ impl Mode {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Monitor {
     /// Connector, e.g. `DP-1`. The only identifier ever sent back to the compositor.
     pub name: String,
     /// Human description (EDID derived). Display only; never interpolated into config.
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub make: String,
+    #[serde(default)]
     pub model: String,
+    #[serde(default)]
     pub serial: String,
     pub enabled: bool,
+    #[serde(default)]
     pub focused: bool,
+    #[serde(default)]
     pub dpms: bool,
     pub width: u32,
     pub height: u32,
@@ -57,10 +63,14 @@ pub struct Monitor {
     pub y: i32,
     pub scale: f64,
     pub transform: u8,
+    #[serde(default)]
     pub vrr: bool,
+    #[serde(default)]
     pub vrr_capable: bool,
     /// Connector this monitor mirrors, if any.
+    #[serde(default)]
     pub mirror_of: Option<String>,
+    #[serde(default)]
     pub modes: Vec<Mode>,
 }
 
