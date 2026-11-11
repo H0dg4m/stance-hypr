@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::json;
@@ -585,15 +585,42 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
     // that, stream messages and data frames end the session, and the PC
     // never sends any (an old app treats them as fatal).
     let mut streams: Option<Streams> = None;
-    let r = session_loop(
-        sh,
-        s,
-        key,
-        &mut streams,
-        &mut presses,
-        &mut sent_version,
-        &mut deck_gen,
-    );
+    // Button actions run on a worker (one at a time, in order), so the loop
+    // keeps reading while an action or its subprocess takes its time.
+    let r = std::thread::scope(|sc| {
+        let (job_tx, job_rx) = mpsc::channel::<(u32, Job)>();
+        let (res_tx, res_rx) = mpsc::channel::<(u32, Result<String>)>();
+        sc.spawn(move || {
+            for (req, job) in job_rx {
+                let res = {
+                    let deck = sh.deck.lock().unwrap_or_else(|e| e.into_inner());
+                    match &job {
+                        Job::Press(id) => deck.execute(id),
+                        Job::Builtin(b) => deck.execute_builtin(b),
+                    }
+                };
+                if res_tx.send((req, res)).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut jobs = Jobs {
+            tx: job_tx,
+            rx: res_rx,
+            open: 0,
+        };
+        session_loop(
+            sh,
+            s,
+            key,
+            &mut streams,
+            &mut presses,
+            &mut sent_version,
+            &mut deck_gen,
+            &mut jobs,
+        )
+        // Dropping `jobs` ends the worker after its current action.
+    });
     // Every open incoming stream failed with the session. 0.6 stores no
     // stream data, so there is nothing to delete yet.
     if let Some(st) = streams.as_mut() {
@@ -614,6 +641,23 @@ fn stream_out(s: &mut Session, outs: Vec<Out>) -> Result<()> {
     Ok(())
 }
 
+enum Job {
+    Press(String),
+    Builtin(&'static str),
+}
+
+/// The session's side of the action worker.
+struct Jobs {
+    tx: mpsc::Sender<(u32, Job)>,
+    rx: mpsc::Receiver<(u32, Result<String>)>,
+    /// Sent and not answered yet.
+    open: usize,
+}
+
+/// Poll quickly while something is in flight.
+const BUSY_TICK: Duration = Duration::from_millis(100);
+
+#[allow(clippy::too_many_arguments)]
 fn session_loop(
     sh: &Shared,
     s: &mut Session,
@@ -622,6 +666,7 @@ fn session_loop(
     presses: &mut VecDeque<Instant>,
     sent_version: &mut u64,
     deck_gen: &mut usize,
+    jobs: &mut Jobs,
 ) -> Result<()> {
     loop {
         if sh.device_name(key).is_none() {
@@ -635,7 +680,31 @@ fn session_loop(
             let outs = st.tick(now);
             stream_out(s, outs)?;
         }
-        let msg = match s.recv_any::<ClientMsg>(TICK)? {
+        // Finished actions.
+        while let Ok((req, res)) = jobs.rx.try_recv() {
+            jobs.open = jobs.open.saturating_sub(1);
+            let reply = match res {
+                Ok(message) => ServerMsg::Result {
+                    req,
+                    ok: true,
+                    message: Some(message),
+                    error: None,
+                },
+                Err(e) => ServerMsg::Result {
+                    req,
+                    ok: false,
+                    message: None,
+                    error: Some(e.message),
+                },
+            };
+            s.send(&reply)?;
+            // Reflect the change without waiting for the tick.
+            let snap = sh.deck.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+            *sh.state.lock().unwrap_or_else(|e| e.into_inner()) = snap;
+        }
+        let busy = jobs.open > 0 || streams.as_ref().is_some_and(|st| st.open() > 0);
+        let wait = if busy { BUSY_TICK } else { TICK };
+        let msg = match s.recv_any::<ClientMsg>(wait)? {
             None => None,
             Some(Plain::Msg(m)) => Some(m),
             Some(Plain::Stream(m)) => {
@@ -706,32 +775,15 @@ fn session_loop(
                     ok: true,
                     error: None,
                 })?;
-                let res = {
-                    let deck = sh.deck.lock().unwrap_or_else(|e| e.into_inner());
-                    match &m {
-                        ClientMsg::Press { id, .. } => deck.execute(id),
-                        ClientMsg::Confirm { .. } => deck.execute_builtin("confirm"),
-                        _ => deck.execute_builtin("revert"),
-                    }
+                let job = match m {
+                    ClientMsg::Press { id, .. } => Job::Press(id),
+                    ClientMsg::Confirm { .. } => Job::Builtin("confirm"),
+                    _ => Job::Builtin("revert"),
                 };
-                let reply = match res {
-                    Ok(message) => ServerMsg::Result {
-                        req,
-                        ok: true,
-                        message: Some(message),
-                        error: None,
-                    },
-                    Err(e) => ServerMsg::Result {
-                        req,
-                        ok: false,
-                        message: None,
-                        error: Some(e.message),
-                    },
-                };
-                s.send(&reply)?;
-                // Reflect the change without waiting for the tick.
-                let snap = sh.deck.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
-                *sh.state.lock().unwrap_or_else(|e| e.into_inner()) = snap;
+                jobs.tx
+                    .send((req, job))
+                    .map_err(|_| Error::new("deck", "action worker stopped"))?;
+                jobs.open += 1;
             }
         }
         let g = sh.deck_gen.load(Ordering::Relaxed);
