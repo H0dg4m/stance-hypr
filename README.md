@@ -50,7 +50,7 @@ stance is alpha. Something not working? See [docs/troubleshooting.md](docs/troub
 
 ## Install
 
-Arch: `stance-hypr` / `stance-hypr-git` (PKGBUILDs in `packaging/aur`; AUR upload pending). From source:
+Arch: `stance-hypr` / `stance-hypr-git` (PKGBUILDs in `packaging/aur`; AUR upload pending). Nix: `nix run github:H0dg4m/stance-hypr`. Every release has a static tarball. All the ways, optional tools and uninstalling: [docs/install.md](docs/install.md). From source:
 
 ```sh
 cargo build --release

@@ -1,0 +1,55 @@
+name: release
+# A pushed tag vX.Y.Z builds a static (musl) binary, the tarball and
+# SHA256SUMS, and publishes a GitHub release with the CHANGELOG section.
+# Run by hand (workflow_dispatch) it only builds and uploads the artifacts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: cargo test --locked
+      - run: cargo build --release --locked --target x86_64-unknown-linux-musl
+      - name: Static binary
+        run: |
+          b=target/x86_64-unknown-linux-musl/release/stance
+          file "$b"
+          ! ldd "$b" 2>/dev/null | grep -q "=>"
+          STANCE_BACKEND=fake XDG_CONFIG_HOME=$RUNNER_TEMP/c XDG_STATE_HOME=$RUNNER_TEMP/s "$b" --version
+      - name: Tarball
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "v$v" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match Cargo.toml $v"; exit 1
+          fi
+          d=dist/stance-$v
+          mkdir -p "$d"
+          cp target/x86_64-unknown-linux-musl/release/stance LICENSE README.md CHANGELOG.md "$d/"
+          cp -r quickshell examples contrib docs "$d/"
+          tar -C dist -czf "dist/stance-$v-x86_64-linux.tar.gz" "stance-$v"
+          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+          awk -v v="$v" '$0 ~ "^## " v {f=1;next} /^## /{f=0} f' CHANGELOG.md > dist/notes.md
+          [ -s dist/notes.md ] || echo "See CHANGELOG.md" > dist/notes.md
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stance-dist
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "stance ${VERSION}" --notes-file dist/notes.md \
+            dist/*.tar.gz dist/SHA256SUMS

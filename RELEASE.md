@@ -31,26 +31,23 @@ git tag -a vX.Y.Z -m "stance X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-## 4. Artifacts
+## 4. Artifacts and GitHub release (CI)
 
-```sh
-# CLI tarball
-mkdir -p dist/stance-X.Y.Z
-cp target/release/stance LICENSE README.md CHANGELOG.md dist/stance-X.Y.Z/
-cp -r quickshell examples contrib docs dist/stance-X.Y.Z/
-tar -C dist -czf dist/stance-X.Y.Z-x86_64-linux.tar.gz stance-X.Y.Z
+Pushing the tag runs `.github/workflows/release.yml`: tests, a static
+(musl) `stance`, `stance-X.Y.Z-x86_64-linux.tar.gz` (binary, quickshell,
+examples, contrib, docs), `SHA256SUMS`, and a GitHub release whose notes
+are the `## X.Y.Z` section of CHANGELOG.md. It refuses a tag that does not
+match `Cargo.toml`. Run it by hand (Actions → release → Run workflow) to
+get the artifacts without a release.
 
-sha256sum dist/*.tar.gz > dist/SHA256SUMS
-# The phone APK is built and signed in stance-deck-android
-```
+The phone APK is built, signed and released from stance-deck-android;
+attach it to the release afterwards if wanted:
+`gh release upload vX.Y.Z stance-deck-A.B.C.apk`.
 
-## 5. GitHub release
+## 5. Nix
 
-```sh
-awk '/^## X.Y.Z/{f=1;next} /^## /{f=0} f' CHANGELOG.md > dist/notes.md
-gh release create vX.Y.Z --title "stance X.Y.Z" --notes-file dist/notes.md \
-  dist/stance-X.Y.Z-x86_64-linux.tar.gz dist/stance-deck-X.Y.Z.apk dist/SHA256SUMS
-```
+`flake.nix` builds from the tagged tree (`nix build github:H0dg4m/stance-hypr/vX.Y.Z`);
+CI builds it on every push. Nothing to upload.
 
 ## 6. AUR
 

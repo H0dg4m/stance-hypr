@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Packaging (0.8.0 work)
+- Tag → CI release: static musl binary, tarball, SHA256SUMS, GitHub release from the CHANGELOG section (`.github/workflows/release.yml`).
+- `flake.nix` (package with units and panel, dev shell); CI builds it.
+- AUR PKGBUILDs ship every unit (panel, clipboard watchers) and more docs; `wl-clipboard` optional dependency.
+- docs/install.md: Arch, Nix, tarball, source, optional tools, uninstall.
+
 ### 0.8.0 work
 - Panel translations moved out of QML into `quickshell/stance/i18n/<code>.json`; any language with a file can be picked in Settings (or follows `LANG`). Guide: docs/translating.md.
 

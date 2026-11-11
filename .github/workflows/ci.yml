@@ -50,6 +50,16 @@ jobs:
         with:
           name: qml-shots
           path: qml-shots/
+  nix:
+    # flake.nix builds and installs (no flake.lock is committed: nixpkgs
+    # follows nixos-unstable).
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix build .#stance -L
+      - run: ./result/bin/stance --version && ls result/lib/systemd/user result/share/stance
   audit:
     runs-on: ubuntu-latest
     steps:

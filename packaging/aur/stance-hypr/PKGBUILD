@@ -15,7 +15,8 @@ optdepends=('quickshell: bar panel and confirm overlay'
             'pipewire: audio output list (pw-dump)'
             'wireplumber: audio output switching (wpctl)'
             'libnotify: desktop notices (notify-send)'
-            'android-tools: phone deck over USB (adb reverse)')
+            'android-tools: phone deck over USB (adb reverse)'
+            'wl-clipboard: clipboard shelf and phone clipboard sync')
 makedepends=('cargo')
 conflicts=('stance-hypr-git')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
@@ -44,6 +45,9 @@ package() {
   install -Dm755 target/release/stance "$pkgdir/usr/bin/stance"
   install -Dm644 contrib/stance.service "$pkgdir/usr/lib/systemd/user/stance.service"
   install -Dm644 contrib/stance-deck.service "$pkgdir/usr/lib/systemd/user/stance-deck.service"
+  install -Dm644 contrib/stance-panel.service "$pkgdir/usr/lib/systemd/user/stance-panel.service"
+  install -Dm644 contrib/stance-clip-text.service "$pkgdir/usr/lib/systemd/user/stance-clip-text.service"
+  install -Dm644 contrib/stance-clip-image.service "$pkgdir/usr/lib/systemd/user/stance-clip-image.service"
   install -dm755 "$pkgdir/usr/share/stance"
   cp -r quickshell/stance "$pkgdir/usr/share/stance/quickshell"
   cp -r quickshell/integrations "$pkgdir/usr/share/stance/integrations"
@@ -54,4 +58,6 @@ package() {
   install -Dm644 docs/quickshell.md "$pkgdir/usr/share/doc/$pkgname/quickshell.md"
   install -Dm644 docs/deck.md "$pkgdir/usr/share/doc/$pkgname/deck.md"
   install -Dm644 docs/protocol.md "$pkgdir/usr/share/doc/$pkgname/protocol.md"
+  install -Dm644 docs/troubleshooting.md "$pkgdir/usr/share/doc/$pkgname/troubleshooting.md"
+  install -Dm644 docs/translating.md "$pkgdir/usr/share/doc/$pkgname/translating.md"
 }
