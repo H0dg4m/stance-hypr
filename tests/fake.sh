@@ -140,5 +140,27 @@ check "rules put refuses newer file" newer_schema "$(s rules put --data '{"rule"
 check "newer rules file untouched" "schema = 2" "$(cat "$XDG_CONFIG_HOME/stance/rules.toml")"
 case "$(s theme system)" in dark|light|unknown) ok "theme system answers";; *) bad "theme system answers";; esac
 
+# phone deck, protocol v2 (loopback, own control socket dir)
+export STANCE_DECK_DIR=$WORK/deck XDG_RUNTIME_DIR=$WORK/run
+mkdir -p -m 700 "$STANCE_DECK_DIR" "$XDG_RUNTIME_DIR"
+"$BIN" deck serve --loopback --port 0 2>"$WORK/deck.log" & DECK=$!
+trap 'kill $DECK 2>/dev/null; rm -rf "$WORK"' EXIT
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$STANCE_DECK_DIR/control.sock" ] || [ -n "$(ls "$STANCE_DECK_DIR" 2>/dev/null)" ] && break; sleep 0.2; done
+sleep 0.3
+PAY=$(s deck pair --json 2>/dev/null | j "d['data']['payload']" 2>/dev/null)
+s deck test pair "$PAY" --name ci >/dev/null 2>&1; check "deck pairs" 0 $?
+check "deck v2 client negotiates and pings" pong "$(s deck test ping 2>&1)"
+case "$(s deck test offer clip.text 2>&1)" in
+  *"offer declined: unsupported"*) ok "deck declines offers (no caps in 0.6)";;
+  *) bad "deck declines offers (no caps in 0.6)" "$(s deck test offer clip.text 2>&1)";;
+esac
+case "$(s deck test stray-data 2>&1)" in
+  *"session ended"*) ok "deck ends the session on a stray data frame";;
+  *) bad "deck ends the session on a stray data frame";;
+esac
+check "deck serves the next session" pong "$(s deck test ping 2>&1)"
+grep -q "data for unknown stream" "$WORK/deck.log" && ok "deck logs the protocol error" || bad "deck logs the protocol error" "$(cat "$WORK/deck.log")"
+kill $DECK; wait $DECK 2>/dev/null
+
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]

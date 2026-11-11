@@ -17,7 +17,8 @@ use serde_json::json;
 use super::actions::Deck;
 use super::noise::{self, Incoming, Keypair, Session};
 use super::pair::{self, QrPayload};
-use super::proto::{ClientMsg, SCHEMA, ServerMsg, State};
+use super::proto::{self, ClientMsg, OFFERED_CAPS, PROTO, Plain, SCHEMA, ServerMsg, State};
+use super::stream::{Decision, Out, Streams};
 use crate::error::{Error, Result};
 use crate::store;
 
@@ -138,6 +139,8 @@ impl Shared {
         let deck = self.deck.lock().unwrap_or_else(|e| e.into_inner());
         ServerMsg::Hello {
             schema: SCHEMA,
+            proto: PROTO,
+            caps: OFFERED_CAPS.iter().map(|c| c.to_string()).collect(),
             name: pair::pc_name(),
             hosts: self.hosts(),
             port: self.port,
@@ -578,6 +581,48 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
     let mut sent_version = sh.state.lock().map(|st| st.version).unwrap_or(0);
     let mut deck_gen = sh.deck_gen.load(Ordering::Relaxed);
     let mut presses: VecDeque<Instant> = VecDeque::new();
+    // Protocol v2 (docs/adr/0003): set once the client sent `caps`. Before
+    // that, stream messages and data frames end the session, and the PC
+    // never sends any (an old app treats them as fatal).
+    let mut streams: Option<Streams> = None;
+    let r = session_loop(
+        sh,
+        s,
+        key,
+        &mut streams,
+        &mut presses,
+        &mut sent_version,
+        &mut deck_gen,
+    );
+    // Every open incoming stream failed with the session. 0.6 stores no
+    // stream data, so there is nothing to delete yet.
+    if let Some(st) = streams.as_mut() {
+        let _ = st.close_all();
+    }
+    r
+}
+
+/// Applies what the stream state asks for. 0.6 offers no caps, so no stream
+/// is ever accepted and no data reaches here.
+fn stream_out(s: &mut Session, outs: Vec<Out>) -> Result<()> {
+    for o in outs {
+        match o {
+            Out::Send(m) => s.send(&m)?,
+            Out::Data { .. } | Out::Finished { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn session_loop(
+    sh: &Shared,
+    s: &mut Session,
+    key: &str,
+    streams: &mut Option<Streams>,
+    presses: &mut VecDeque<Instant>,
+    sent_version: &mut u64,
+    deck_gen: &mut usize,
+) -> Result<()> {
     loop {
         if sh.device_name(key).is_none() {
             let _ = s.send(&ServerMsg::Bye {
@@ -585,9 +630,48 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
             });
             return Ok(());
         }
-        let msg = s.recv::<ClientMsg>(TICK)?;
+        let now = Instant::now();
+        if let Some(st) = streams.as_mut() {
+            let outs = st.tick(now);
+            stream_out(s, outs)?;
+        }
+        let msg = match s.recv_any::<ClientMsg>(TICK)? {
+            None => None,
+            Some(Plain::Msg(m)) => Some(m),
+            Some(Plain::Stream(m)) => {
+                let st = streams
+                    .as_mut()
+                    .ok_or_else(|| Error::new("deck_proto", "stream message before caps"))?;
+                let outs = st
+                    .on_msg(m, now, |_, _, _| Decision::Decline("unsupported".into()))
+                    .map_err(|e| Error::new("deck_proto", e))?;
+                stream_out(s, outs)?;
+                None
+            }
+            Some(Plain::Data { sid, payload }) => {
+                let st = streams
+                    .as_mut()
+                    .ok_or_else(|| Error::new("deck_proto", "data frame before caps"))?;
+                let outs = st
+                    .on_data(sid, payload, now)
+                    .map_err(|e| Error::new("deck_proto", e))?;
+                stream_out(s, outs)?;
+                None
+            }
+        };
         match msg {
             None => {}
+            Some(ClientMsg::Caps { proto: p, caps }) => {
+                if streams.is_some() || p < 2 {
+                    return Err(Error::new("deck_proto", "caps sent twice or for proto 1"));
+                }
+                let agreed = proto::agree_caps(&caps);
+                s.send(&ServerMsg::Caps {
+                    proto: PROTO,
+                    caps: agreed.clone(),
+                })?;
+                *streams = Some(Streams::new(agreed, true));
+            }
             Some(ClientMsg::Bye) => return Ok(()),
             Some(ClientMsg::Ping { req }) => s.send(&ServerMsg::Pong { req })?,
             Some(ClientMsg::Pair { .. }) => return Err(Error::new("deck_proto", "already paired")),
@@ -651,13 +735,13 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
             }
         }
         let g = sh.deck_gen.load(Ordering::Relaxed);
-        if g != deck_gen {
-            deck_gen = g;
+        if g != *deck_gen {
+            *deck_gen = g;
             s.send(&sh.hello())?;
         }
         let st = sh.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if st.version != sent_version {
-            sent_version = st.version;
+        if st.version != *sent_version {
+            *sent_version = st.version;
             s.send(&ServerMsg::State { state: st })?;
         }
     }

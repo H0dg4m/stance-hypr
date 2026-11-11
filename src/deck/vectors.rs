@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use snow::Builder;
 
 use super::noise::{MODE_PAIR, MODE_SESSION, PAIR_PATTERN, SESSION_PATTERN};
-use super::proto::PROLOGUE;
+use super::proto::{ClientMsg, PROLOGUE, PROTO, StreamMsg, data_frame};
 
 fn bytes(seed: u8) -> [u8; 32] {
     let mut k = [0u8; 32];
@@ -80,6 +80,32 @@ pub fn generate() -> Value {
     rt.read_message(&t1[..tn1], &mut tmp).unwrap();
     let tn2 = rt.write_message(pong, &mut t2).unwrap();
     it.read_message(&t2[..tn2], &mut tmp).unwrap();
+    // Protocol v2: the next initiator message (nonce 1) is a data frame.
+    let frame = data_frame(1, b"hello");
+    let mut t3 = vec![0u8; 128];
+    let tn3 = it.write_message(&frame, &mut t3).unwrap();
+    let n = rt.read_message(&t3[..tn3], &mut tmp).unwrap();
+    assert_eq!(&tmp[..n], &frame[..]);
+    let caps = serde_json::to_string(&ClientMsg::Caps {
+        proto: PROTO,
+        caps: vec!["clip.text".into()],
+    })
+    .unwrap();
+    let offer = serde_json::to_string(&StreamMsg::Offer {
+        sid: 1,
+        kind: "clip.text".into(),
+        size: 5,
+        sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into(),
+        name: None,
+        mime: None,
+    })
+    .unwrap();
+    let v2 = json!({
+        "comment": "Protocol v2 (docs/adr/0003). data_frame = 0x00, sid u32 BE, payload. Its ciphertext continues the ik transport above: initiator nonce 1, after the ping.",
+        "caps_json": caps,
+        "offer_json": offer,
+        "data_frame": {"sid": 1, "payload": "hello", "plaintext_hex": h(&frame), "ciphertext_hex": h(&t3[..tn3])},
+    });
     let ik = json!({
         "pattern": SESSION_PATTERN,
         "prologue_hex": h(&pro),
@@ -160,6 +186,7 @@ pub fn generate() -> Value {
         "phone_public_b64url": B64.encode(&phone_pub),
         "ik": ik,
         "xxpsk3": xx,
+        "v2": v2,
     })
 }
 

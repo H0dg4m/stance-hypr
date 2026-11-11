@@ -102,6 +102,21 @@ server picks the change up and sends a new `hello` to connected phones.
 | Local process on the PC | Loopback is not exempt from authentication. The pairing control socket and key files are 0600 in private directories. |
 | USB (`adb reverse`) | The phone reaches the PC at 127.0.0.1; same handshakes, no extra trust. The per-IP limit sees loopback only, so it must not be the only guard. |
 
+### Clipboard and file transfers (protocol v2, enforced from 0.7)
+
+The wire format exists since 0.6 (docs/protocol.md §3.7); stance offers no
+transfer capability yet. When it does, these rules hold:
+
+| Threat | Handling |
+| --- | --- |
+| A paired phone writes files the user did not want | Pressing buttons and writing files are different trust: file push is off until the user turns it on, and every transfer asks on the receiving side unless the user set an explicit per-device rule. |
+| Huge or endless transfers | Per-kind size caps (text 1 MiB, images 32 MiB, files 512 MiB), credit-based flow control (at most 256 KiB granted ahead), 2 open streams per direction, 4 offers per 10 s, idle streams cancelled after 30 s. |
+| Corrupt or swapped content | Data streams into a temp file in a private directory; the SHA-256 and size are checked before the file becomes visible; a mismatch deletes it. |
+| Path tricks in names | Names are cleaned: no path separators, no leading dot or dash, no control characters, length capped, a suffix on collision. Files land only in the quarantine folder (`~/Downloads/stance` by default). |
+| Running received content | Nothing is ever opened or executed automatically. Clipboard images must be an allowed MIME type (PNG, JPEG, WebP, GIF). |
+| Secrets leaving the PC | Clipboard entries marked sensitive (password managers) and everything copied while `stance clip pause` is on are never sent. |
+| Old apps | A client that did not negotiate v2 never receives stream traffic (old apps treat binary frames as fatal). |
+
 Not covered: a compromised PC account (it owns the keys anyway), and denial
 of service by someone who can saturate the Wi-Fi.
 

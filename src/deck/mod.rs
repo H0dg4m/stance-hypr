@@ -9,5 +9,6 @@ pub mod net;
 pub mod noise;
 pub mod pair;
 pub mod proto;
+pub mod stream;
 #[cfg(test)]
 mod vectors;

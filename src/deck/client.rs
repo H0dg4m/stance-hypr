@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::noise::{self, Keypair, Session, fingerprint};
 use super::pair;
-use super::proto::{ClientMsg, SCHEMA, ServerMsg, State};
+use super::proto::{self, ClientMsg, PROTO, Plain, SCHEMA, ServerMsg, State, StreamMsg};
 use crate::error::{Error, Result};
 use crate::store;
 
@@ -70,10 +70,13 @@ fn first_ok<T>(addrs: &[SocketAddr], mut f: impl FnMut(SocketAddr) -> Result<T>)
     Err(last)
 }
 
-fn expect_hello(s: &mut Session) -> Result<(String, Vec<super::proto::Button>, State)> {
+type Hello = (String, Vec<super::proto::Button>, State, u32);
+
+fn expect_hello(s: &mut Session) -> Result<Hello> {
     match s.recv::<ServerMsg>(HELLO_WAIT)? {
         Some(ServerMsg::Hello {
             schema,
+            proto,
             name,
             buttons,
             state,
@@ -85,7 +88,7 @@ fn expect_hello(s: &mut Session) -> Result<(String, Vec<super::proto::Button>, S
                     format!("server speaks schema {schema}, this client {SCHEMA}"),
                 ));
             }
-            Ok((name, buttons, state))
+            Ok((name, buttons, state, proto))
         }
         Some(ServerMsg::Bye { reason }) => Err(Error::new(
             "deck_closed",
@@ -106,7 +109,7 @@ pub fn pair_qr(payload: &str, device_name: &str) -> Result<String> {
     s.send(&ClientMsg::Pair {
         name: device_name.to_string(),
     })?;
-    let (pc_name, buttons, _) = expect_hello(&mut s)?;
+    let (pc_name, buttons, _, _) = expect_hello(&mut s)?;
     save(&Saved {
         keypair: me,
         pc_public: q.pc_public.clone(),
@@ -126,8 +129,82 @@ fn connect(c: &Saved) -> Result<(Session, String, Vec<super::proto::Button>, Sta
     let mut s = first_ok(&addrs(&c.hosts, c.port), |a| {
         noise::connect_ik(a, &c.pc_public, &c.keypair)
     })?;
-    let (name, buttons, state) = expect_hello(&mut s)?;
+    let (name, buttons, state, proto) = expect_hello(&mut s)?;
+    // A v2 PC: negotiate (this client wants no caps; it checks the exchange).
+    if proto >= 2 {
+        negotiate(&mut s, &[])?;
+    }
     Ok((s, name, buttons, state))
+}
+
+/// Sends `caps` and waits for the PC's answer (other messages may come first).
+fn negotiate(s: &mut Session, caps: &[&str]) -> Result<Vec<String>> {
+    s.send(&ClientMsg::Caps {
+        proto: PROTO,
+        caps: caps.iter().map(|c| c.to_string()).collect(),
+    })?;
+    let end = Instant::now() + HELLO_WAIT;
+    while Instant::now() < end {
+        if let Some(ServerMsg::Caps { caps, .. }) =
+            s.recv::<ServerMsg>(Duration::from_millis(500))?
+        {
+            return Ok(caps);
+        }
+    }
+    Err(Error::new("deck_client", "no caps answer from the PC"))
+}
+
+/// Protocol v2 checks against a running PC (tests): an offer of `kind` (the
+/// PC's answer is printed), or a data frame for a stream that does not exist
+/// (the PC must end the session).
+fn probe(what: &str, kind: Option<&str>) -> Result<String> {
+    let c = load()?;
+    let mut s = first_ok(&addrs(&c.hosts, c.port), |a| {
+        noise::connect_ik(a, &c.pc_public, &c.keypair)
+    })?;
+    let (_, _, _, proto) = expect_hello(&mut s)?;
+    if proto < 2 {
+        return Err(Error::new("deck_client", "the PC speaks protocol 1"));
+    }
+    let wanted: Vec<&str> = kind.into_iter().collect();
+    let agreed = negotiate(&mut s, &wanted)?;
+    match what {
+        "offer" => {
+            s.send(&StreamMsg::Offer {
+                sid: 1,
+                kind: kind.unwrap_or("clip.text").into(),
+                size: 5,
+                sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into(),
+                name: None,
+                mime: None,
+            })?;
+            let end = Instant::now() + HELLO_WAIT;
+            while Instant::now() < end {
+                match s.recv_any::<ServerMsg>(Duration::from_millis(500))? {
+                    Some(Plain::Stream(StreamMsg::Decline { reason, .. })) => {
+                        return Ok(format!("agreed {agreed:?}, offer declined: {reason}"));
+                    }
+                    Some(Plain::Stream(StreamMsg::Accept { window, .. })) => {
+                        return Ok(format!(
+                            "agreed {agreed:?}, offer accepted, window {window}"
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            Err(Error::new("deck_client", "no answer to the offer"))
+        }
+        _ => {
+            s.send_plain(&proto::data_frame(1, b"hello"))?;
+            let end = Instant::now() + HELLO_WAIT;
+            while Instant::now() < end {
+                if let Err(e) = s.recv_any::<ServerMsg>(Duration::from_millis(500)) {
+                    return Ok(format!("session ended: {}", e.message));
+                }
+            }
+            Err(Error::new("deck_client", "the PC kept the session"))
+        }
+    }
 }
 
 fn describe(state: &State) -> String {
@@ -185,7 +262,7 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
     let usage = || {
         Error::new(
             "usage",
-            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds]",
+            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds] | offer [kind] | stray-data",
         )
     };
     let msg = |m: String| {
@@ -211,6 +288,9 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
         ["confirm"] => msg(confirm()?),
         ["revert"] => msg(revert()?),
         ["ping"] => msg(ping()?),
+        ["offer"] => msg(probe("offer", None)?),
+        ["offer", kind] => msg(probe("offer", Some(kind))?),
+        ["stray-data"] => msg(probe("data", None)?),
         ["watch"] => watch(30)?,
         ["watch", secs] => watch(secs.parse().map_err(|_| usage())?)?,
         _ => return Err(usage()),

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phone deck protocol v2 (0.6.0 work, docs/adr/0003-deck-protocol-v2.md)
+- `hello` carries `proto: 2` and `caps`; a v2 client answers with `caps` once and gets the agreed set. Old apps and old PCs keep working (the handshakes do not change).
+- Streams: `offer`/`accept`/`decline`/`window`/`end`/`done`/`cancel` and binary data frames with credit-based flow control, size caps, SHA-256 check, sid rules, offer rate limit, idle timeout (`src/deck/stream.rs`). stance 0.6 offers no capability and declines every offer; clipboard and file transfers come in 0.7.
+- Threat model for transfers in docs/deck.md; wire format in docs/protocol.md §3.7; `v2` test vectors.
+- `stance deck test` negotiates v2; `deck test offer [kind]` and `deck test stray-data` check a running PC (tests/fake.sh runs them in CI).
+
 ### Widget board (0.5.0 work)
 - The panel is a board of widgets (map, screen, night light, brightness,
   audio, modes, clipboard, phone), each in size S, M or L; see `docs/widgets.md`

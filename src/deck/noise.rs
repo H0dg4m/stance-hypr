@@ -16,7 +16,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use snow::{Builder, HandshakeState, TransportState};
 
-use super::proto::PROLOGUE;
+use super::proto::{PROLOGUE, Plain, parse_plain};
 use crate::error::{Error, Result};
 
 pub const SESSION_PATTERN: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
@@ -146,19 +146,44 @@ impl Session {
 
     pub fn send<T: Serialize>(&mut self, msg: &T) -> Result<()> {
         let plain = serde_json::to_vec(msg).map_err(err)?;
+        self.send_plain(&plain)
+    }
+
+    /// One plaintext (JSON, or a data frame from `proto::data_frame`).
+    pub fn send_plain(&mut self, plain: &[u8]) -> Result<()> {
         if plain.len() + 16 > POST_AUTH_MAX {
             return Err(Error::new("deck", "message too large"));
         }
         let mut out = vec![0u8; plain.len() + 16];
-        let n = self
-            .transport
-            .write_message(&plain, &mut out)
-            .map_err(err)?;
+        let n = self.transport.write_message(plain, &mut out).map_err(err)?;
         write_frame(&mut self.stream, &out[..n])
     }
 
-    /// Next message, or `Ok(None)` when `timeout` passes quietly.
+    /// Next JSON message, or `Ok(None)` when `timeout` passes quietly.
+    /// A data frame here is a protocol error (schema 1 sessions).
     pub fn recv<T: DeserializeOwned>(&mut self, timeout: Duration) -> Result<Option<T>> {
+        match self.recv_any::<T>(timeout)? {
+            None => Ok(None),
+            Some(Plain::Msg(m)) => Ok(Some(m)),
+            Some(_) => Err(Error::new(
+                "deck_proto",
+                "stream traffic before negotiation",
+            )),
+        }
+    }
+
+    /// Next plaintext as a message, stream message or data frame.
+    pub fn recv_any<T: DeserializeOwned>(&mut self, timeout: Duration) -> Result<Option<Plain<T>>> {
+        let Some(plain) = self.recv_plain(timeout)? else {
+            return Ok(None);
+        };
+        parse_plain(&plain)
+            .map(Some)
+            .map_err(|e| Error::new("deck_proto", e))
+    }
+
+    /// Next decrypted plaintext, or `Ok(None)` when `timeout` passes quietly.
+    pub fn recv_plain(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>> {
         self.stream.set_read_timeout(Some(timeout)).map_err(err)?;
         // Peek for the length so a timeout before any byte is not an error.
         let mut probe = [0u8; 1];
@@ -185,9 +210,8 @@ impl Session {
             .transport
             .read_message(&frame, &mut plain)
             .map_err(|_| Error::new("deck", "decryption failed"))?;
-        serde_json::from_slice(&plain[..n])
-            .map(Some)
-            .map_err(|e| Error::new("deck_proto", format!("bad message: {e}")))
+        plain.truncate(n);
+        Ok(Some(plain))
     }
 
     pub fn shutdown(&self) {
