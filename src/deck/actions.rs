@@ -28,6 +28,37 @@ struct Snap {
     stale: bool,
 }
 
+/// A button's command, ready to run.
+pub struct Prepared {
+    exe: std::path::PathBuf,
+    args: Vec<String>,
+    label: String,
+}
+
+impl Prepared {
+    pub fn run(&self) -> Result<String> {
+        let refs: Vec<&str> = self.args.iter().map(String::as_str).collect();
+        let out = tool::run_tool(&self.exe, &refs, ACTION_TIMEOUT)?;
+        let line = out
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        Ok(if line.is_empty() {
+            format!(
+                "{}: done",
+                if self.label.is_empty() {
+                    "ok"
+                } else {
+                    &self.label
+                }
+            )
+        } else {
+            crate::model::sanitize(line)
+        })
+    }
+}
+
 pub struct Deck {
     buttons: Vec<Cfg>,
     exe: PathBuf,
@@ -117,45 +148,59 @@ impl Deck {
     }
 
     /// Runs the button's action; returns a short message for the phone.
+    #[cfg(test)]
     pub fn execute(&self, id: &str) -> Result<String> {
+        let p = self.prepare(id)?;
+        let r = p.run();
+        self.mark_stale();
+        r
+    }
+
+    /// The command for button `id`, to run without holding the deck (the
+    /// session worker runs it, so other sessions are not blocked meanwhile).
+    pub fn prepare(&self, id: &str) -> Result<Prepared> {
         let b = self
             .buttons
             .iter()
             .find(|b| b.id == id)
             .ok_or_else(|| Error::new("deck_button", "no such button"))?;
-        self.run_action(&b.label, &b.action)
-    }
-
-    fn run_action(&self, label: &str, action: &Action) -> Result<String> {
-        let args = argv(action);
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let out = tool::run_tool(&self.exe, &refs, ACTION_TIMEOUT)?;
-        if let Ok(mut g) = self.snap.lock()
-            && let Some(s) = g.as_mut()
-        {
-            s.stale = true; // the next snapshot must see the change
-        }
-        let line = out
-            .lines()
-            .map(str::trim)
-            .find(|l| !l.is_empty())
-            .unwrap_or("");
-        Ok(if line.is_empty() {
-            format!("{}: done", if label.is_empty() { "ok" } else { label })
-        } else {
-            crate::model::sanitize(line)
-        })
+        Ok(self.prepared(&b.label, &b.action))
     }
 
     /// `confirm` / `revert` for the proto messages of the same name,
     /// independent of the buttons in deck.toml.
-    pub fn execute_builtin(&self, what: &str) -> Result<String> {
+    pub fn prepare_builtin(&self, what: &str) -> Result<Prepared> {
         let action = match what {
             "confirm" => Action::Confirm,
             "revert" => Action::Revert,
             _ => return Err(Error::new("deck_button", "no such action")),
         };
-        self.run_action("", &action)
+        Ok(self.prepared("", &action))
+    }
+
+    #[cfg(test)]
+    pub fn execute_builtin(&self, what: &str) -> Result<String> {
+        let p = self.prepare_builtin(what)?;
+        let r = p.run();
+        self.mark_stale();
+        r
+    }
+
+    fn prepared(&self, label: &str, action: &Action) -> Prepared {
+        Prepared {
+            exe: self.exe.clone(),
+            args: argv(action),
+            label: label.to_string(),
+        }
+    }
+
+    /// After an action: the next snapshot must see the change.
+    pub fn mark_stale(&self) {
+        if let Ok(mut g) = self.snap.lock()
+            && let Some(s) = g.as_mut()
+        {
+            s.stale = true;
+        }
     }
 
     /// Active mode, pending change and night light. Two short `stance`

@@ -206,9 +206,18 @@ impl Link {
         outs: Vec<Out>,
     ) -> Result<()> {
         let mut cancel = Vec::new();
+        // Every output is handled (cleanup included) even if a send fails;
+        // the first send error is returned at the end.
+        let mut failed = None;
         for o in outs {
             match o {
-                Out::Send(m) => s.send(&m)?,
+                Out::Send(m) => {
+                    if failed.is_none()
+                        && let Err(e) = s.send(&m)
+                    {
+                        failed = Some(e);
+                    }
+                }
                 Out::Data { sid, payload } => match self.incoming.get_mut(&sid) {
                     Some(In::Clip(buf)) => buf.extend_from_slice(&payload),
                     Some(In::File { part: Some(p), .. }) => {
@@ -223,12 +232,22 @@ impl Link {
                     if let Some(cid) = self.consents.remove(&sid) {
                         hub.consent_close(cid);
                     }
-                    if let Some(In::File { tid, .. }) = self.incoming.remove(&sid) {
+                    if let Some(In::File { tid, name, .. }) = self.incoming.remove(&sid) {
                         hub.update(tid, State::Declined, Some("not answered".into()));
                         hub.refused(&self.device);
+                        transfer::notify(
+                            &format!("File from {}", self.device),
+                            &format!(
+                                "{} was not accepted in time, or the phone cancelled it",
+                                plain(&name, 80)
+                            ),
+                        );
                     }
                 }
             }
+        }
+        if let Some(e) = failed {
+            return Err(e);
         }
         for sid in cancel {
             let outs = st.cancel(sid, "write failed");
@@ -263,7 +282,11 @@ impl Link {
                 ..
             }) => {
                 hub.incoming.fetch_sub(reserved, Ordering::Relaxed);
-                let Some(part) = part else { return };
+                let Some(part) = part else {
+                    // Still waiting for an answer when the session ended.
+                    hub.update(tid, State::Failed, Some("connection lost".into()));
+                    return;
+                };
                 if !ok {
                     part.discard();
                     hub.update(
@@ -424,10 +447,11 @@ impl Link {
             return Ok(());
         }
         if let Some(o) = hub.take_for(&self.device) {
+            let max = hub.settings().max_file();
             let (tx, rx) = mpsc::channel();
             let path = o.path.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(Source::open(&path, 512 << 20));
+                let _ = tx.send(Source::open(&path, max));
             });
             hub.update(
                 o.id,
@@ -620,6 +644,11 @@ impl Link {
                 }
                 _ => {}
             }
+        }
+        // Whatever the stream state no longer reports (an error mid-apply).
+        let left: Vec<u32> = self.incoming.keys().copied().collect();
+        for sid in left {
+            self.finished(hub, sid, false);
         }
         for (_, cid) in self.consents.drain() {
             hub.consent_close(cid);

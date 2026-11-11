@@ -307,6 +307,13 @@ pub struct Part {
     name: String,
 }
 
+impl Drop for Part {
+    /// Unfinished or failed: the temp file goes (`finish` links it first).
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.tmp);
+    }
+}
+
 impl Part {
     pub fn create(dir: &Path, name: &str) -> Result<Self> {
         let tmp = dir.join(format!("{PART_PREFIX}{}", random_hex()));
@@ -354,17 +361,45 @@ impl Part {
                 match fs::hard_link(&self.tmp, &target) {
                     Ok(()) => return Ok(target),
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(e) => return Err(Error::new("io", e.to_string())),
+                    // FAT, exFAT, some FUSE: no hard links; rename, never overwriting.
+                    Err(_) => match rename_noreplace(&self.tmp, &target) {
+                        Ok(()) => return Ok(target),
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                        Err(e) => return Err(Error::new("io", e.to_string())),
+                    },
                 }
             }
             Err(Error::new("io", "no free name"))
         })();
-        let _ = fs::remove_file(&self.tmp);
+        // Drop removes the temp name (the file lives on under its new one).
         r
     }
 
-    pub fn discard(self) {
-        let _ = fs::remove_file(&self.tmp);
+    /// Drop removes the temp file.
+    pub fn discard(self) {}
+}
+
+fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let (a, b) = (
+        CString::new(from.as_os_str().as_bytes())?,
+        CString::new(to.as_os_str().as_bytes())?,
+    );
+    // SAFETY: valid C strings, AT_FDCWD.
+    let r = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if r == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -521,11 +556,14 @@ pub fn notify(summary: &str, body: &str) {
     };
     let (summary, body) = (plain(summary, 80), plain(body, 200));
     std::thread::spawn(move || {
-        let _ = crate::tool::run_tool(
+        // `--`: text from a phone may start with a dash.
+        if let Err(e) = crate::tool::run_tool(
             &n,
-            &["-a", "stance", &summary, &body],
+            &["-a", "stance", "--", &summary, &body],
             Duration::from_secs(3),
-        );
+        ) {
+            eprintln!("stance deck: notify-send: {}", e.message);
+        }
     });
 }
 
@@ -547,6 +585,7 @@ pub fn ask(summary: &str, body: &str) -> Option<bool> {
             "accept=Accept",
             "-A",
             "decline=Decline",
+            "--",
             &summary,
             &body,
         ],
@@ -612,7 +651,9 @@ pub struct Hub {
     consent: Mutex<Option<Consent>>,
     transfers: Mutex<VecDeque<Transfer>>,
     outbox: Mutex<Vec<Outgoing>>,
-    cooldown: Mutex<Vec<(String, u32, Option<Instant>)>>,
+    /// device, refusals, last refusal, cooling until.
+    #[allow(clippy::type_complexity)]
+    cooldown: Mutex<Vec<(String, u32, Instant, Option<Instant>)>>,
     pub incoming: AtomicU64,
     next_id: AtomicU64,
 }
@@ -726,24 +767,31 @@ impl Hub {
     // -- cooldown after declined / unanswered file offers ---------------------
     pub fn cooling(&self, device: &str) -> bool {
         let mut c = self.cooldown.lock().unwrap_or_else(|e| e.into_inner());
-        c.retain(|(_, _, until)| until.is_none_or(|u| u > Instant::now()));
-        c.iter().any(|(d, _, until)| d == device && until.is_some())
+        let now = Instant::now();
+        // Refusals older than the cooldown no longer count.
+        c.retain(|(_, _, last, until)| {
+            until.map_or(now.duration_since(*last) < COOLDOWN, |u| u > now)
+        });
+        c.iter()
+            .any(|(d, _, _, until)| d == device && until.is_some())
     }
     pub fn refused(&self, device: &str) {
         let mut c = self.cooldown.lock().unwrap_or_else(|e| e.into_inner());
-        match c.iter_mut().find(|(d, _, _)| d == device) {
+        let now = Instant::now();
+        match c.iter_mut().find(|x| x.0 == device) {
             Some(x) => {
                 x.1 += 1;
+                x.2 = now;
                 if x.1 >= COOLDOWN_AFTER {
-                    x.2 = Some(Instant::now() + COOLDOWN);
+                    x.3 = Some(now + COOLDOWN);
                 }
             }
-            None => c.push((device.into(), 1, None)),
+            None => c.push((device.into(), 1, now, None)),
         }
     }
     pub fn accepted(&self, device: &str) {
         let mut c = self.cooldown.lock().unwrap_or_else(|e| e.into_inner());
-        c.retain(|(d, _, _)| d != device);
+        c.retain(|x| x.0 != device);
     }
 
     // -- transfer list ---------------------------------------------------------
@@ -825,7 +873,11 @@ impl Hub {
                 Some(d) => connected.contains(d),
                 None => !connected.is_empty(),
             };
-            fresh || reachable
+            // Connected but never taken (an app without file support): give up too.
+            let stuck = list
+                .iter()
+                .any(|t| t.id == o.id && now.saturating_sub(t.at) >= older_than * 5);
+            (fresh || reachable) && !stuck
         });
         for t in list {
             if t.state == State::Queued && !q.iter().any(|o| o.id == t.id) {

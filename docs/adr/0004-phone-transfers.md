@@ -124,3 +124,15 @@ with a fake `wl-copy` and `notify-send` on PATH and isolated directories.
   values or an unreadable file → everything off (logged).
 - **Per-device cooldown:** after 3 declined/expired file offers from a
   device, its offers are declined "cooldown" for 5 minutes.
+
+## After the 0.7.0 scan (docs/scans/0.7.0.md)
+- PC → phone clipboard follows `(updated, id)`, not `created`: `updated`
+  moves on every copy (a new item, the same text again, `stance clip
+  copy`) and not on pin, remove or undo, so re-copying is sent and old
+  entries never are.
+- The echo guard is per device: text from phone A is not sent back to A,
+  but may reach phone B through the shelf (that is a copy on the PC).
+- `stance deck send` without `--to` goes to the first connected phone that
+  takes it, not to all; the size limit is `max_file_mb`.
+- The control socket (same user only) can answer prompts and queue files:
+  anything running as you can do what you can do.

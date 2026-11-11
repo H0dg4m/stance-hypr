@@ -174,6 +174,10 @@ check "clipboard from phone" done "$(s deck test send-clip 'from phone' 2>&1)"
 sleep 0.3
 check "clipboard set with wl-copy" "from phone" "$(cat "$WORK/clipboard" 2>/dev/null)"
 grep -q "Clipboard from ci" "$WORK/notes" && ok "clipboard apply is announced" || bad "clipboard apply is announced"
+printf '%s' '--urgency=critical sneaky' > "$WORK/dash.txt"
+check "dash-led clipboard text" done "$(s deck test send-clip "@$WORK/dash.txt" 2>&1)"
+sleep 0.3
+grep -q -- "-- Clipboard from ci --urgency=critical sneaky" "$WORK/notes" && ok "dash-led text is still announced" || bad "dash-led text is still announced" "$(tail -2 "$WORK/notes")"
 head -c 40000 /dev/urandom > "$WORK/f.bin"
 echo accept > "$WORK/answer"
 check "file from phone, accepted" done "$(s deck test push "$WORK/f.bin" 2>&1)"

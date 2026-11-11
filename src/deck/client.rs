@@ -418,7 +418,14 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
         ["offer"] => msg(probe("offer", None)?),
         ["offer", kind] => msg(probe("offer", Some(kind))?),
         ["stray-data"] => msg(probe("data", None)?),
-        ["send-clip", text] => msg(offer_bytes("clip.text", text.as_bytes(), None)?),
+        // `@FILE`: the text from a file (e.g. text starting with a dash).
+        ["send-clip", text] => {
+            let data = match text.strip_prefix('@') {
+                Some(f) => std::fs::read(f).map_err(|e| Error::new("io", format!("{f}: {e}")))?,
+                None => text.as_bytes().to_vec(),
+            };
+            msg(offer_bytes("clip.text", &data, None)?)
+        }
         ["push", file] => {
             let data = std::fs::read(file).map_err(|e| Error::new("io", format!("{file}: {e}")))?;
             let name = std::path::Path::new(file)

@@ -649,13 +649,20 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
         let (res_tx, res_rx) = mpsc::channel::<(u32, Result<String>)>();
         sc.spawn(move || {
             for (req, job) in job_rx {
-                let res = {
+                // The deck lock covers looking the command up, not running
+                // it: other sessions keep going during a slow action.
+                let prepared = {
                     let deck = sh.deck.lock().unwrap_or_else(|e| e.into_inner());
                     match &job {
-                        Job::Press(id) => deck.execute(id),
-                        Job::Builtin(b) => deck.execute_builtin(b),
+                        Job::Press(id) => deck.prepare(id),
+                        Job::Builtin(b) => deck.prepare_builtin(b),
                     }
                 };
+                let res = prepared.and_then(|p| p.run());
+                sh.deck
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mark_stale();
                 if res_tx.send((req, res)).is_err() {
                     break;
                 }
