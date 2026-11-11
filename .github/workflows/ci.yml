@@ -17,14 +17,19 @@ jobs:
     # available on the runner, so qmllint would only report those), every
     # panel string has a Turkish translation, shell scripts parse.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y qt6-declarative-dev-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # qmlformat from PyPI (PySide6) instead of apt: no dependency on the
+      # Ubuntu mirrors, which have failed DNS on the runners.
+      - run: pip install --quiet "PySide6-Essentials>=6.7"
       - name: QML parses
         run: |
-          fmt=$(ls /usr/lib/qt6/bin/qmlformat /usr/lib/qt6/libexec/qmlformat 2>/dev/null | head -1)
           for f in quickshell/stance/*.qml quickshell/integrations/*/*.qml; do
-            "$fmt" "$f" > /dev/null || { echo "QML parse error: $f"; exit 1; }
+            pyside6-qmlformat "$f" > /dev/null || { echo "QML parse error: $f"; exit 1; }
           done
       - run: python3 scripts/i18n-check.py
       - name: Shell scripts parse
