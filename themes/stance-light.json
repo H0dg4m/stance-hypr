@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "stance-light",
+  "name": "Stance Light",
+  "dark": false,
+  "colors": {
+    "background": "#f5f6f8",
+    "card": "#ffffff",
+    "surface": "#eceef2",
+    "surfaceHover": "#e0e3ea",
+    "border": "#d5d9e0",
+    "text": "#1d1f24",
+    "textDim": "#5d6270",
+    "accent": "#1a73e8",
+    "accentText": "#ffffff",
+    "danger": "#c5221f",
+    "dangerText": "#ffffff",
+    "scrim": "#66000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

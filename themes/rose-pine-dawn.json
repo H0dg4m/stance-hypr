@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "rose-pine-dawn",
+  "name": "Rosé Pine Dawn",
+  "dark": false,
+  "colors": {
+    "background": "#faf4ed",
+    "card": "#fffaf3",
+    "surface": "#f2e9e1",
+    "surfaceHover": "#dfdad9",
+    "border": "#dfdad9",
+    "text": "#575279",
+    "textDim": "#797593",
+    "accent": "#907aa9",
+    "accentText": "#faf4ed",
+    "danger": "#b4637a",
+    "dangerText": "#faf4ed",
+    "scrim": "#66000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

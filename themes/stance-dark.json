@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "stance-dark",
+  "name": "Stance Dark",
+  "dark": true,
+  "colors": {
+    "background": "#1e1f24",
+    "card": "#26282e",
+    "surface": "#2f323a",
+    "surfaceHover": "#3a3d47",
+    "border": "#3d404b",
+    "text": "#e6e7ec",
+    "textDim": "#9a9daa",
+    "accent": "#8ab4f8",
+    "accentText": "#10213a",
+    "danger": "#f28b82",
+    "dangerText": "#3b0b08",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

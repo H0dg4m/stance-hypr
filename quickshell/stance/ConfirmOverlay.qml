@@ -49,7 +49,7 @@ LazyLoader {
             implicitWidth: 380
             implicitHeight: col.implicitHeight + 40
             radius: root.theme.radius
-            color: root.theme.background
+            color: root.theme.backgroundSolid
             border.width: 1
             border.color: root.theme.border
             focus: true
@@ -98,7 +98,7 @@ LazyLoader {
                         Layout.fillWidth: true
                         spacing: 2
                         Text {
-                            text: "Keep these display settings?"
+                            text: StanceI18n.t("Keep these display settings?")
                             color: root.theme.text
                             font.family: root.theme.fontFamily
                             font.pixelSize: root.theme.fontSize + 3
@@ -137,7 +137,7 @@ LazyLoader {
                     }
                 }
                 Text {
-                    text: "Reverting automatically in " + card.secs + " s if you do nothing."
+                    text: StanceI18n.f("Reverting automatically in %1 s if you do nothing.", card.secs)
                     color: root.theme.textDim
                     font.family: root.theme.fontFamily
                     font.pixelSize: root.theme.fontSize - 1
@@ -152,7 +152,7 @@ LazyLoader {
                         Layout.preferredHeight: 42
                         theme: root.theme
                         icon: "undo"
-                        label: "Revert · Esc"
+                        label: StanceI18n.t("Revert · Esc")
                         onClicked: root.service.revert()
                     }
                     StanceChip {
@@ -160,7 +160,7 @@ LazyLoader {
                         Layout.preferredHeight: 42
                         theme: root.theme
                         icon: "check"
-                        label: "Keep · Enter"
+                        label: StanceI18n.t("Keep · Enter")
                         selected: true
                         onClicked: root.service.confirm()
                     }

@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "gruvbox-light",
+  "name": "Gruvbox Light",
+  "dark": false,
+  "colors": {
+    "background": "#fbf1c7",
+    "card": "#f2e5bc",
+    "surface": "#ebdbb2",
+    "surfaceHover": "#d5c4a1",
+    "border": "#d5c4a1",
+    "text": "#3c3836",
+    "textDim": "#7c6f64",
+    "accent": "#b57614",
+    "accentText": "#fbf1c7",
+    "danger": "#9d0006",
+    "dangerText": "#fbf1c7",
+    "scrim": "#66000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

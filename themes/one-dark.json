@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "one-dark",
+  "name": "One Dark",
+  "dark": true,
+  "colors": {
+    "background": "#282c34",
+    "card": "#21252b",
+    "surface": "#2c313a",
+    "surfaceHover": "#3e4451",
+    "border": "#3e4451",
+    "text": "#abb2bf",
+    "textDim": "#7f848e",
+    "accent": "#61afef",
+    "accentText": "#282c34",
+    "danger": "#e06c75",
+    "dangerText": "#282c34",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

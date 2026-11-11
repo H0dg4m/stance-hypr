@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "dracula",
+  "name": "Dracula",
+  "dark": true,
+  "colors": {
+    "background": "#282a36",
+    "card": "#21222c",
+    "surface": "#44475a",
+    "surfaceHover": "#565a70",
+    "border": "#44475a",
+    "text": "#f8f8f2",
+    "textDim": "#a4acc4",
+    "accent": "#bd93f9",
+    "accentText": "#282a36",
+    "danger": "#ff5555",
+    "dangerText": "#282a36",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "everforest-dark",
+  "name": "Everforest Dark",
+  "dark": true,
+  "colors": {
+    "background": "#2d353b",
+    "card": "#343f44",
+    "surface": "#3d484d",
+    "surfaceHover": "#475258",
+    "border": "#475258",
+    "text": "#d3c6aa",
+    "textDim": "#9da9a0",
+    "accent": "#a7c080",
+    "accentText": "#2d353b",
+    "danger": "#e67e80",
+    "dangerText": "#2d353b",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

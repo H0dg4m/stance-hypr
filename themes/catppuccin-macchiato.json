@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "catppuccin-macchiato",
+  "name": "Catppuccin Macchiato",
+  "dark": true,
+  "colors": {
+    "background": "#24273a",
+    "card": "#1e2030",
+    "surface": "#363a4f",
+    "surfaceHover": "#494d64",
+    "border": "#494d64",
+    "text": "#cad3f5",
+    "textDim": "#a5adcb",
+    "accent": "#c6a0f6",
+    "accentText": "#181926",
+    "danger": "#ed8796",
+    "dangerText": "#181926",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

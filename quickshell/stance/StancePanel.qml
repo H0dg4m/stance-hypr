@@ -95,13 +95,13 @@ ColumnLayout {
             visible: panel.page !== "main"
             theme: panel.theme
             icon: "arrow_back"
-            label: panel.theme.iconFont === "" ? "Back" : ""
+            label: panel.theme.iconFont === "" ? StanceI18n.t("Back") : ""
             // The mode editor may hold unsaved edits and ask first.
             onClicked: editorLoader.item && panel.page.startsWith("mode:") ? editorLoader.item.requestBack() : panel.page = "main"
         }
         StanceIcon { visible: panel.page === "main" && theme.iconFont !== ""; theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
         Text {
-            text: panel.page.startsWith("mode:") ? "Mode · " + panel.page.slice(5) : "Displays"
+            text: panel.page.startsWith("mode:") ? StanceI18n.f("Mode · %1", panel.page.slice(5)) : StanceI18n.t("Displays")
             color: panel.theme.text
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.fontSize + 3
@@ -133,14 +133,14 @@ ColumnLayout {
             visible: panel.page === "main" && panel.service.monitors.length > 1
             theme: panel.theme
             icon: "screen_search_desktop"
-            label: panel.theme.iconFont === "" ? "Identify" : ""
+            label: panel.theme.iconFont === "" ? StanceI18n.t("Identify") : ""
             onClicked: identify.active = true
         }
         StanceChip {
             visible: panel.page === "main"
             theme: panel.theme
             icon: "settings"
-            label: panel.theme.iconFont === "" ? "Settings" : ""
+            label: panel.theme.iconFont === "" ? StanceI18n.t("Settings") : ""
             onClicked: panel.settingsRequested()
         }
     }
@@ -366,7 +366,7 @@ ColumnLayout {
                         if (ok)
                             map.commit(scr.modelData, scr.dragX, scr.dragY);
                         else
-                            map.showHint("Screens must touch and must not overlap");
+                            map.showHint(StanceI18n.t("Screens must touch and must not overlap"));
                     }
                     onCanceled: { scr.dragging = false; map.dragActive = false; }
                 }
@@ -385,7 +385,7 @@ ColumnLayout {
                 required property var modelData
                 theme: panel.theme
                 icon: modelData.enabled ? "content_copy" : "desktop_access_disabled"
-                label: modelData.name + (modelData.enabled ? " · mirror" : " · off")
+                label: StanceI18n.f(modelData.enabled ? "%1 · mirror" : "%1 · off", modelData.name)
                 selected: panel.selected && panel.selected.name === modelData.name
                 onClicked: panel.selectedName = modelData.name
             }
@@ -430,7 +430,7 @@ ColumnLayout {
             StanceChip {
                 theme: panel.theme
                 icon: "power_settings_new"
-                label: detail.m && detail.m.enabled ? "Turn off" : "Turn on"
+                label: detail.m && detail.m.enabled ? StanceI18n.t("Turn off") : StanceI18n.t("Turn on")
                 danger: detail.m && detail.m.enabled
                 enabled: detail.m && !panel.service.busy && !(detail.active && panel.activeCount() <= 1)
                 onClicked: panel.service.run(["set", detail.m.name, detail.m.enabled ? "--off" : "--on"])
@@ -441,7 +441,7 @@ ColumnLayout {
             visible: detail.m && detail.m.enabled && !!detail.m.mirror_of
             theme: panel.theme
             icon: "close"
-            label: "Stop mirroring " + (detail.m && detail.m.mirror_of ? detail.m.mirror_of : "")
+            label: StanceI18n.f("Stop mirroring %1", detail.m && detail.m.mirror_of ? detail.m.mirror_of : "")
             enabled: !panel.service.busy
             onClicked: panel.service.run(["layout", "right-of", detail.m.name, detail.m.mirror_of])
         }
@@ -449,7 +449,7 @@ ColumnLayout {
         RowLayout {
             visible: detail.active
             Layout.fillWidth: true
-            RowLabel { theme: panel.theme; text: "Refresh" }
+            RowLabel { theme: panel.theme; text: StanceI18n.t("Refresh") }
             StanceSegmented {
                 Layout.fillWidth: true
                 theme: panel.theme
@@ -470,7 +470,7 @@ ColumnLayout {
         RowLayout {
             visible: detail.active
             Layout.fillWidth: true
-            RowLabel { theme: panel.theme; text: "Scale" }
+            RowLabel { theme: panel.theme; text: StanceI18n.t("Scale") }
             StanceSegmented {
                 Layout.fillWidth: true
                 theme: panel.theme
@@ -486,7 +486,7 @@ ColumnLayout {
             visible: detail.active
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignTop
-            RowLabel { theme: panel.theme; text: "Resolution"; Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
+            RowLabel { theme: panel.theme; text: StanceI18n.t("Resolution"); Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
             Flow {
                 Layout.fillWidth: true
                 spacing: 6
@@ -507,16 +507,16 @@ ColumnLayout {
         RowLayout {
             visible: detail.active && !!detail.ref
             Layout.fillWidth: true
-            RowLabel { theme: panel.theme; text: "Place"; Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
+            RowLabel { theme: panel.theme; text: StanceI18n.t("Place"); Layout.alignment: Qt.AlignTop; Layout.topMargin: 6 }
             Flow {
                 Layout.fillWidth: true
                 spacing: 6
                 Repeater {
                     model: [
-                        { label: "Left", icon: "west", args: ["layout", "left-of"] },
-                        { label: "Right", icon: "east", args: ["layout", "right-of"] },
-                        { label: "Above", icon: "north", args: ["layout", "above"] },
-                        { label: "Mirror", icon: "content_copy", args: ["layout", "mirror"] }
+                        { label: StanceI18n.t("Left"), icon: "west", args: ["layout", "left-of"] },
+                        { label: StanceI18n.t("Right"), icon: "east", args: ["layout", "right-of"] },
+                        { label: StanceI18n.t("Above"), icon: "north", args: ["layout", "above"] },
+                        { label: StanceI18n.t("Mirror"), icon: "content_copy", args: ["layout", "mirror"] }
                     ]
                     delegate: StanceChip {
                         required property var modelData
@@ -530,7 +530,7 @@ ColumnLayout {
                 StanceChip {
                     theme: panel.theme
                     icon: "crop_square"
-                    label: "Only this"
+                    label: StanceI18n.t("Only this")
                     enabled: !panel.service.busy
                     onClicked: panel.service.run(["layout", "single", detail.m.name])
                 }
@@ -538,7 +538,7 @@ ColumnLayout {
         }
         Text {
             visible: detail.active && !!detail.ref
-            text: "relative to " + (detail.ref ? detail.ref.name : "")
+            text: StanceI18n.f("relative to %1", detail.ref ? detail.ref.name : "")
             color: panel.theme.textDim
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.fontSize - 3

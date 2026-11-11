@@ -7,6 +7,7 @@ mod daemon;
 mod deck;
 mod doctor;
 mod error;
+mod feature;
 mod hypr;
 mod memory;
 mod model;
@@ -17,6 +18,7 @@ mod plan;
 mod power;
 mod spec;
 mod store;
+mod theme;
 mod tool;
 mod uevent;
 
@@ -75,6 +77,9 @@ Usage:
   stance clip copy | get | pin | unpin | rm ID…   stance clip undo | prune | clear [--all]
   stance clip config [show | put --data JSON]   enabled, text, image, retention_days
   stance clip ingest [--image]         Store one copy (run by `wl-paste --watch`)
+  stance theme list | show ID          Panel themes (built-in and yours)
+  stance theme put --data JSON | import FILE | export ID [--out FILE] | rm ID   [--force]
+  stance feature list | on NAME | off NAME   Optional parts: clip, deck, rules, quick
   stance daemon                        Hotplug rules (optional, long-running)
   stance doctor                        Check the environment (read-only)
 
@@ -100,6 +105,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--kind",
     "--query",
     "--limit",
+    "--out",
 ];
 const BOOL_FLAGS: &[&str] = &[
     "--json",
@@ -195,6 +201,17 @@ impl Args {
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    // `stance theme list | head` should end quietly like other CLI tools,
+    // not panic. Long-running servers keep Rust's default (ignored SIGPIPE).
+    if !matches!(
+        raw.first().map(String::as_str),
+        Some("deck" | "daemon" | "guardian")
+    ) {
+        // SAFETY: called before any thread starts; restores the default action.
+        unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        }
+    }
     let json = raw.iter().any(|a| a == "--json");
     let res = Args::parse(raw).and_then(|a| run(&a));
     match res {
@@ -239,6 +256,12 @@ fn run(a: &Args) -> Result<ExitCode> {
 
     if cmd == "deck" {
         return deck_cmd(a, json).map(|_| ExitCode::SUCCESS);
+    }
+    if cmd == "theme" {
+        return theme_cmd(a, json).map(|_| ExitCode::SUCCESS);
+    }
+    if cmd == "feature" {
+        return feature_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
     if cmd == "clip" {
         return clip_cmd(a, json).map(|_| ExitCode::SUCCESS);
@@ -844,6 +867,125 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
             format!("unknown deck subcommand `{other}`"),
         )),
     }
+}
+
+fn theme_cmd(a: &Args, json: bool) -> Result<()> {
+    let th = theme::Themes::open()?;
+    let force = a.has("--force");
+    match a.pos.get(1).map(String::as_str).unwrap_or("list") {
+        "list" => {
+            a.max_pos(2)?;
+            let l = th.list();
+            if json {
+                ok_json(&json!({ "themes": l }));
+            } else {
+                for t in &l {
+                    let tag = if t.builtin { "" } else { " (yours)" };
+                    println!("{:<22} {}{tag}", t.theme.id, t.theme.name);
+                }
+            }
+        }
+        "show" | "export" => {
+            a.max_pos(3)?;
+            let t = th.get(a.arg(2, "theme id")?)?;
+            match a.val("--out") {
+                Some(out) => {
+                    theme::export_to(&t, std::path::Path::new(out), force)?;
+                    if json {
+                        ok_json(&json!({ "path": out }));
+                    } else {
+                        println!("exported {} to {out}", t.id);
+                    }
+                }
+                None if json => ok_json(&t),
+                None => println!("{}", serde_json::to_string_pretty(&t).unwrap_or_default()),
+            }
+        }
+        "put" => {
+            a.max_pos(2)?;
+            let data = a
+                .val("--data")
+                .ok_or_else(|| Error::new("usage", "theme put needs --data JSON"))?;
+            let t = theme::Theme::parse(data)?;
+            th.put(&t, force)?;
+            if json {
+                ok_json(&t);
+            } else {
+                println!("saved theme {}", t.id);
+            }
+        }
+        "import" => {
+            a.max_pos(3)?;
+            let t = th.import(std::path::Path::new(a.arg(2, "theme file")?), force)?;
+            if json {
+                ok_json(&t);
+            } else {
+                println!("imported theme {} ({})", t.id, t.name);
+            }
+        }
+        "rm" => {
+            a.max_pos(3)?;
+            let id = a.arg(2, "theme id")?;
+            th.rm(id)?;
+            if json {
+                ok_json(&json!({ "removed": id }));
+            } else {
+                println!("removed theme {id}");
+            }
+        }
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown theme command `{other}` (list, show, put, import, export, rm)"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn feature_cmd(a: &Args, json: bool) -> Result<()> {
+    match a.pos.get(1).map(String::as_str).unwrap_or("list") {
+        "list" => {
+            a.max_pos(2)?;
+            let l = feature::list()?;
+            if json {
+                ok_json(&json!({ "features": l }));
+            } else {
+                for f in &l {
+                    let unit = match (f.unit, f.unit_active) {
+                        (Some(u), Some(true)) => format!("{u} running"),
+                        (Some(u), _) => format!("{u} stopped"),
+                        (None, _) => String::new(),
+                    };
+                    println!(
+                        "{:<6} {:<4} {unit}",
+                        f.name,
+                        if f.on { "on" } else { "off" }
+                    );
+                }
+            }
+        }
+        verb @ ("on" | "off") => {
+            a.max_pos(3)?;
+            let name = a.arg(2, "feature name")?;
+            let notes = feature::set(name, verb == "on", &state_dir()?)?;
+            if json {
+                ok_json(&json!({ "name": name, "on": verb == "on", "notes": notes }));
+            } else {
+                println!("{name}: {verb}");
+                for n in notes {
+                    eprintln!("note: {n}");
+                }
+            }
+        }
+        other => {
+            return Err(Error::new(
+                "usage",
+                format!("unknown feature command `{other}` (list, on, off)"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn clip_cmd(a: &Args, json: bool) -> Result<()> {

@@ -9,7 +9,7 @@ StanceSection {
 
     required property StanceService service
     icon: "dashboard_customize"
-    title: "Phone buttons"
+    title: StanceI18n.t("Phone buttons")
 
     property var buttons: []
     property bool custom: false
@@ -31,13 +31,13 @@ StanceSection {
     property string fRef: ""
 
     readonly property var actions: [
-        { value: "mode", label: "Mode", icon: "bookmarks" },
-        { value: "night", label: "Night light", icon: "bedtime" },
-        { value: "brightness", label: "Brightness", icon: "light_mode" },
-        { value: "audio", label: "Audio output", icon: "volume_up" },
-        { value: "layout", label: "Screen layout", icon: "monitor" },
-        { value: "confirm", label: "Keep", icon: "check" },
-        { value: "revert", label: "Revert", icon: "undo" }
+        { value: "mode", label: StanceI18n.t("Mode"), icon: "bookmarks" },
+        { value: "night", label: StanceI18n.t("Night light"), icon: "bedtime" },
+        { value: "brightness", label: StanceI18n.t("Brightness"), icon: "light_mode" },
+        { value: "audio", label: StanceI18n.t("Audio output"), icon: "volume_up" },
+        { value: "layout", label: StanceI18n.t("Screen layout"), icon: "monitor" },
+        { value: "confirm", label: StanceI18n.t("Keep"), icon: "check" },
+        { value: "revert", label: StanceI18n.t("Revert"), icon: "undo" }
     ]
     readonly property var kinds: ["left-of", "right-of", "above", "below", "mirror", "single"]
     readonly property bool kindNeedsRef: fKind !== "single"
@@ -52,14 +52,14 @@ StanceSection {
 
     function describe(b) {
         switch (b.action) {
-        case "mode": return "Mode " + (b.name || "?");
-        case "night": return "Night light " + (b.op === "set" ? "at " + b.kelvin + " K" : b.op || "toggle")
-            + (b.op === "on" && b.kelvin ? " at " + b.kelvin + " K" : "");
-        case "brightness": return "Brightness " + (b.monitor || "?") + " " + (b.value || "");
-        case "audio": return "Audio output " + (b.sink || "?");
-        case "layout": return "Layout: " + (b.monitor || "?") + " " + (b.kind || "") + (b.reference ? " " + b.reference : "");
-        case "confirm": return "Keep the pending display change";
-        case "revert": return "Revert the pending display change";
+        case "mode": return StanceI18n.f("Mode %1", b.name || "?");
+        case "night": return StanceI18n.t("Night light") + " " + (b.op === "set" ? StanceI18n.f("at %1 K", b.kelvin) : StanceI18n.t(b.op || "toggle"))
+            + (b.op === "on" && b.kelvin ? " " + StanceI18n.f("at %1 K", b.kelvin) : "");
+        case "brightness": return StanceI18n.t("Brightness") + " " + (b.monitor || "?") + " " + (b.value || "");
+        case "audio": return StanceI18n.t("Audio output") + " " + (b.sink || "?");
+        case "layout": return StanceI18n.t("Layout") + ": " + (b.monitor || "?") + " " + (b.kind ? StanceI18n.t(b.kind) : "") + (b.reference ? " " + b.reference : "");
+        case "confirm": return StanceI18n.t("Keep the pending display change");
+        case "revert": return StanceI18n.t("Revert the pending display change");
         default: return b.action;
         }
     }
@@ -72,7 +72,7 @@ StanceSection {
                 custom = r.data && r.data.custom === true;
                 loaded = true;
             } else {
-                error = r && r.error ? r.error.message : "stance returned no output";
+                error = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -85,7 +85,7 @@ StanceSection {
                 load();
                 if (after) after();
             } else {
-                error = r && r.error ? r.error.message : "stance returned no output";
+                error = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -112,7 +112,7 @@ StanceSection {
         error = "";
         service.deckReset(r => {
             if (r && r.ok) load();
-            else error = r && r.error ? r.error.message : "stance returned no output";
+            else error = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
         });
     }
 
@@ -126,16 +126,16 @@ StanceSection {
 
     function defaultLabel() {
         switch (fAction) {
-        case "mode": return fName ? "Mode: " + fName : "";
-        case "night": return fOp === "set" ? "Night " + fKelvin + " K" : "Night light";
+        case "mode": return fName ? StanceI18n.f("Mode: %1", fName) : "";
+        case "night": return fOp === "set" ? StanceI18n.f("Night %1 K", fKelvin) : StanceI18n.t("Night light");
         case "brightness": return fMonitor ? fMonitor + " " + fValue + " %" : "";
         case "audio": {
             const s = service.sinks.find(x => x.name === fSink);
             return s ? s.short : "";
         }
         case "layout": return fMonitor ? fMonitor + " " + fKind : "";
-        case "confirm": return "Keep";
-        case "revert": return "Revert";
+        case "confirm": return StanceI18n.t("Keep");
+        case "revert": return StanceI18n.t("Revert");
         }
         return "";
     }
@@ -161,22 +161,22 @@ StanceSection {
 
     // Why the form cannot be saved yet ("" when it can).
     readonly property string problem: {
-        if (fLabel.trim() === "" && defaultLabel() === "") return "Pick what the button does.";
+        if (fLabel.trim() === "" && defaultLabel() === "") return StanceI18n.t("Pick what the button does.");
         switch (fAction) {
-        case "mode": return fName === "" ? "Pick a mode." : "";
+        case "mode": return fName === "" ? StanceI18n.t("Pick a mode.") : "";
         case "night":
             if (fOp === "set") {
                 const k = parseInt(fKelvin);
-                return isNaN(k) || k < 1000 || k > 10000 ? "Temperature: 1000–10000 K." : "";
+                return isNaN(k) || k < 1000 || k > 10000 ? StanceI18n.t("Temperature: 1000–10000 K.") : "";
             }
             return "";
         case "brightness":
-            if (fMonitor === "") return "Pick a screen.";
-            return /^[+-]?[0-9]{1,3}$/.test(fValue.trim()) ? "" : "Value like 40, +10 or -10.";
-        case "audio": return fSink === "" ? "Pick an output." : "";
+            if (fMonitor === "") return StanceI18n.t("Pick a screen.");
+            return /^[+-]?[0-9]{1,3}$/.test(fValue.trim()) ? "" : StanceI18n.t("Value like 40, +10 or -10.");
+        case "audio": return fSink === "" ? StanceI18n.t("Pick an output.") : "";
         case "layout":
-            if (fMonitor === "") return "Pick the screen to move.";
-            if (kindNeedsRef && (fRef === "" || fRef === fMonitor)) return "Pick a different reference screen.";
+            if (fMonitor === "") return StanceI18n.t("Pick the screen to move.");
+            if (kindNeedsRef && (fRef === "" || fRef === fMonitor)) return StanceI18n.t("Pick a different reference screen.");
             return "";
         }
         return "";
@@ -200,7 +200,7 @@ StanceSection {
         StanceChip {
             theme: sec.theme
             icon: sec.adding ? "close" : "add"
-            label: sec.adding ? "Cancel" : "Add"
+            label: sec.adding ? StanceI18n.t("Cancel") : StanceI18n.t("Add")
             enabled: sec.loaded && !sec.service.callBusy
             onClicked: sec.adding ? sec.adding = false : sec.openForm()
         }
@@ -223,7 +223,7 @@ StanceSection {
     // ---- the list ---------------------------------------------------------
     Dim {
         visible: !sec.loaded && sec.error === ""
-        text: "Checking…"
+        text: StanceI18n.t("Checking…")
     }
     RowLayout {
         visible: sec.loaded
@@ -237,14 +237,14 @@ StanceSection {
             Text {
                 id: badge
                 anchors.centerIn: parent
-                text: sec.custom ? "custom set" : "default set"
+                text: sec.custom ? StanceI18n.t("custom set") : StanceI18n.t("default set")
                 color: sec.custom ? sec.theme.text : sec.theme.textDim
                 font.family: sec.theme.fontFamily
                 font.pixelSize: sec.theme.fontSize - 3
             }
         }
         Dim {
-            text: sec.custom ? "From deck.toml." : "Built in. Adding a button saves your own set."
+            text: sec.custom ? StanceI18n.t("From deck.toml.") : StanceI18n.t("Built in. Adding a button saves your own set.")
             font.pixelSize: sec.theme.fontSize - 2
         }
     }
@@ -295,7 +295,7 @@ StanceSection {
     }
     Dim {
         visible: sec.loaded && sec.buttons.length === 0
-        text: "No buttons: the phone shows an empty deck."
+        text: StanceI18n.t("No buttons: the phone shows an empty deck.")
     }
 
     // ---- add form -----------------------------------------------------------
@@ -304,7 +304,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
 
-        Dim { text: "What it does" }
+        Dim { text: StanceI18n.t("What it does") }
         Flow {
             Layout.fillWidth: true
             spacing: 6
@@ -322,7 +322,7 @@ StanceSection {
         }
 
         // mode
-        Dim { visible: sec.fAction === "mode"; text: "Mode" }
+        Dim { visible: sec.fAction === "mode"; text: StanceI18n.t("Mode") }
         Flow {
             visible: sec.fAction === "mode"
             Layout.fillWidth: true
@@ -338,21 +338,21 @@ StanceSection {
                 }
             }
         }
-        Dim { visible: sec.fAction === "mode" && sec.modeNames.length === 0; text: "No saved modes yet." }
+        Dim { visible: sec.fAction === "mode" && sec.modeNames.length === 0; text: StanceI18n.t("No saved modes yet.") }
 
         // night
         Flow {
             visible: sec.fAction === "night"
             Layout.fillWidth: true
             spacing: 6
-            StanceChip { theme: sec.theme; label: "Toggle"; selected: sec.fOp === "toggle"; onClicked: sec.fOp = "toggle" }
-            StanceChip { theme: sec.theme; label: "Set temperature"; selected: sec.fOp === "set"; onClicked: sec.fOp = "set" }
+            StanceChip { theme: sec.theme; label: StanceI18n.t("Toggle"); selected: sec.fOp === "toggle"; onClicked: sec.fOp = "toggle" }
+            StanceChip { theme: sec.theme; label: StanceI18n.t("Set temperature"); selected: sec.fOp === "set"; onClicked: sec.fOp = "set" }
         }
         RowLayout {
             visible: sec.fAction === "night" && sec.fOp === "set"
             Layout.fillWidth: true
             spacing: 8
-            Dim { text: "Kelvin"; Layout.fillWidth: false }
+            Dim { text: StanceI18n.t("Kelvin"); Layout.fillWidth: false }
             StanceField {
                 theme: sec.theme
                 Layout.preferredWidth: 100
@@ -364,7 +364,7 @@ StanceSection {
         }
 
         // brightness
-        Dim { visible: sec.fAction === "brightness"; text: "Screen" }
+        Dim { visible: sec.fAction === "brightness"; text: StanceI18n.t("Screen") }
         Flow {
             visible: sec.fAction === "brightness"
             Layout.fillWidth: true
@@ -385,7 +385,7 @@ StanceSection {
             visible: sec.fAction === "brightness"
             Layout.fillWidth: true
             spacing: 8
-            Dim { text: "Value"; Layout.fillWidth: false }
+            Dim { text: StanceI18n.t("Value"); Layout.fillWidth: false }
             StanceField {
                 theme: sec.theme
                 Layout.preferredWidth: 100
@@ -393,11 +393,11 @@ StanceSection {
                 maxLength: 4
                 onEdited: v => sec.fValue = v
             }
-            Dim { text: "40 sets, +10 / -10 steps"; font.pixelSize: sec.theme.fontSize - 3 }
+            Dim { text: StanceI18n.t("40 sets, +10 / -10 steps"); font.pixelSize: sec.theme.fontSize - 3 }
         }
 
         // audio
-        Dim { visible: sec.fAction === "audio"; text: "Output" }
+        Dim { visible: sec.fAction === "audio"; text: StanceI18n.t("Output") }
         Flow {
             visible: sec.fAction === "audio"
             Layout.fillWidth: true
@@ -417,7 +417,7 @@ StanceSection {
         }
 
         // layout
-        Dim { visible: sec.fAction === "layout"; text: "Arrangement" }
+        Dim { visible: sec.fAction === "layout"; text: StanceI18n.t("Arrangement") }
         Flow {
             visible: sec.fAction === "layout"
             Layout.fillWidth: true
@@ -450,7 +450,7 @@ StanceSection {
                 }
             }
         }
-        Dim { visible: sec.fAction === "layout" && sec.kindNeedsRef; text: "Relative to" }
+        Dim { visible: sec.fAction === "layout" && sec.kindNeedsRef; text: StanceI18n.t("Relative to") }
         Flow {
             visible: sec.fAction === "layout" && sec.kindNeedsRef
             Layout.fillWidth: true
@@ -468,7 +468,7 @@ StanceSection {
             }
         }
 
-        Dim { text: "Label on the phone (optional)" }
+        Dim { text: StanceI18n.t("Label on the phone (optional)") }
         StanceField {
             theme: sec.theme
             Layout.fillWidth: true
@@ -491,7 +491,7 @@ StanceSection {
             StanceChip {
                 theme: sec.theme
                 icon: "add"
-                label: "Add button"
+                label: StanceI18n.t("Add button")
                 selected: true
                 enabled: sec.problem === "" && !sec.service.callBusy
                 onClicked: sec.addButton()
@@ -507,7 +507,7 @@ StanceSection {
         StanceChip {
             theme: sec.theme
             icon: "restart_alt"
-            label: sec.resetAsk ? "Sure? Click again" : "Reset to defaults"
+            label: sec.resetAsk ? StanceI18n.t("Sure? Click again") : StanceI18n.t("Reset to defaults")
             danger: true
             enabled: !sec.service.callBusy
             onClicked: sec.reset()

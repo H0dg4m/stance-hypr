@@ -234,6 +234,21 @@ if you use it. stance never edits your main config.
 
 `stance doctor` reports which of these are available.
 
+## Themes and features
+
+The panel ships 17 themes (Catppuccin, Nord, Gruvbox, Dracula, Tokyo Night,
+Rosé Pine, Everforest, Kanagawa, One Dark, Solarized, Stance dark/light) and a
+detailed editor; themes are plain JSON files you can export and share.
+The panel speaks English and Turkish.
+
+```sh
+stance theme list
+stance theme export catppuccin-mocha --out ~/mocha.json
+stance theme import ~/friend-theme.json
+stance feature off clip          # also: deck, rules, quick
+```
+Format and rules: [docs/themes.md](docs/themes.md).
+
 ## Clipboard shelf
 
 `stance clip` keeps what you copy on three shelves (images, texts, links) and

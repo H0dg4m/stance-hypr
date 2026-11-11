@@ -13,10 +13,10 @@ StanceSection {
     readonly property var sinks: q ? q.sinks.filter(s => !s.virtual || s.default) : []
     readonly property bool busy: service.quickBusy
     readonly property bool compact: service.prefs.compact === true
-    function shows(key) { return !(service.prefs.show && service.prefs.show[key] === false); }
+    function shows(key) { return service.featureOn("quick") && !(service.prefs.show && service.prefs.show[key] === false); }
 
     icon: "tune"
-    title: "Quick"
+    title: StanceI18n.t("Quick")
     visible: q !== null && ((shows("night") && night !== null) || (shows("brightness") && displays.length > 0) || (shows("audio") && sinks.length > 0))
 
     function sinkIcon(s) {
@@ -35,7 +35,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
         Text {
-            text: "Night"
+            text: StanceI18n.t("Night")
             color: quick.theme.textDim
             font.family: quick.theme.fontFamily
             font.pixelSize: quick.theme.fontSize - 1
@@ -45,7 +45,7 @@ StanceSection {
             Layout.fillWidth: true
             theme: quick.theme
             enabled: !quick.busy
-            model: [{ label: "Off", value: 0 }, { label: "3.5k", value: 3500 }, { label: "4.5k", value: 4500 }, { label: "5.5k", value: 5500 }]
+            model: [{ label: StanceI18n.t("Off"), value: 0 }, { label: "3.5k", value: 3500 }, { label: "4.5k", value: 4500 }, { label: "5.5k", value: 5500 }]
             current: quick.night && quick.night.on ? quick.night.temperature : 0
             onPicked: v => quick.service.runQuick(v === 0 ? ["night", "off"] : ["night", "set", String(v)])
         }
@@ -103,7 +103,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 4
         Text {
-            text: "Output"
+            text: StanceI18n.t("Output")
             color: quick.theme.textDim
             font.family: quick.theme.fontFamily
             font.pixelSize: quick.theme.fontSize - 1

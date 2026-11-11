@@ -472,6 +472,13 @@ fn cmdlines() -> Vec<Vec<String>> {
 
 /// Clipboard shelf: enabled, both watchers running, and the cliphist caveat.
 pub fn clip_check(state_dir: &Path) -> Check {
+    if !crate::feature::is_on("clip") {
+        return check(
+            "clip",
+            Status::Info,
+            "clipboard shelf turned off (stance feature on clip)",
+        );
+    }
     let enabled = crate::clip::Clip::open(state_dir)
         .and_then(|c| c.config())
         .map(|c| c.enabled);

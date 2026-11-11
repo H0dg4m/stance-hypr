@@ -17,6 +17,8 @@ Scope {
 
     StanceService {
         id: stanceService
+        themeTarget: stanceTheme
+        defaultTheme: "shell"
     }
 
     StanceClipService {
@@ -26,23 +28,26 @@ Scope {
 
     StanceTheme {
         id: stanceTheme
-        background: Appearance.m3colors.m3surfaceContainerLow
-        card: Appearance.colors.colLayer2
-        surface: Appearance.colors.colLayer3
-        surfaceHover: Appearance.colors.colLayer3Hover
-        border: Appearance.colors.colLayer0Border
-        text: Appearance.colors.colOnLayer2
-        textDim: Appearance.colors.colSubtext
-        accent: Appearance.colors.colPrimary
-        accentText: Appearance.colors.colOnPrimary
-        danger: Appearance.colors.colError
-        dangerText: Appearance.m3colors.m3onError
-        radius: Appearance.rounding.normal
-        chipRadius: Appearance.rounding.small
-        fontFamily: Appearance.font.family.main
-        fontSize: Appearance.font.pixelSize.small
-        iconFont: "Material Symbols Rounded"
-        animMs: Appearance.animation.elementMoveFast.duration
+        // What the shell looks like; a theme picked in the settings wins over it.
+        shell: ({
+            background: Appearance.m3colors.m3surfaceContainerLow,
+            card: Appearance.colors.colLayer2,
+            surface: Appearance.colors.colLayer3,
+            surfaceHover: Appearance.colors.colLayer3Hover,
+            border: Appearance.colors.colLayer0Border,
+            text: Appearance.colors.colOnLayer2,
+            textDim: Appearance.colors.colSubtext,
+            accent: Appearance.colors.colPrimary,
+            accentText: Appearance.colors.colOnPrimary,
+            danger: Appearance.colors.colError,
+            dangerText: Appearance.m3colors.m3onError,
+            radius: Appearance.rounding.normal,
+            chipRadius: Appearance.rounding.small,
+            fontFamily: Appearance.font.family.main,
+            fontSize: Appearance.font.pixelSize.small,
+            iconFont: "Material Symbols Rounded",
+            animMs: Appearance.animation.elementMoveFast.duration
+        })
     }
 
     readonly property var focusedScreen: {
@@ -58,6 +63,8 @@ Scope {
         clip: clipService
         theme: stanceTheme
         screen: root.focusedScreen
+        featureOn: stanceService.featureOn("clip")
+        onEnableRequested: stanceService.setFeature("clip", true, () => clipService.reload())
         onSettingsRequested: {
             shelf.open = false;
             settingsWindow.open = true;

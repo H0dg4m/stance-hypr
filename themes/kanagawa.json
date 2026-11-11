@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "kanagawa",
+  "name": "Kanagawa",
+  "dark": true,
+  "colors": {
+    "background": "#1f1f28",
+    "card": "#2a2a37",
+    "surface": "#363646",
+    "surfaceHover": "#54546d",
+    "border": "#54546d",
+    "text": "#dcd7ba",
+    "textDim": "#c8c093",
+    "accent": "#7e9cd8",
+    "accentText": "#1f1f28",
+    "danger": "#e46876",
+    "dangerText": "#1f1f28",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

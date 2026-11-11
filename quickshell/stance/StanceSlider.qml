@@ -16,6 +16,8 @@ Item {
     readonly property real shown: dragging || awaiting ? dragValue : value
     readonly property real handleSize: mouse.pressed || mouse.containsMouse ? 20 : 16
     signal committed(real value)
+    // While dragging or wheeling (live preview); `committed` still fires once on release.
+    signal moved(real value)
 
     onValueChanged: awaiting = false
     onCommitted: { awaiting = true; holdTimer.restart(); }
@@ -60,8 +62,8 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: slider.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onPressed: e => slider.dragValue = slider.valueAt(e.x)
-        onPositionChanged: e => { if (pressed) slider.dragValue = slider.valueAt(e.x); }
+        onPressed: e => { slider.dragValue = slider.valueAt(e.x); slider.moved(slider.dragValue); }
+        onPositionChanged: e => { if (pressed) { slider.dragValue = slider.valueAt(e.x); slider.moved(slider.dragValue); } }
         onReleased: e => {
             slider.dragValue = slider.valueAt(e.x);
             if (slider.dragValue !== slider.value)
@@ -73,6 +75,7 @@ Item {
                 return;
             const base = (wheelTimer.running || slider.awaiting) ? slider.dragValue : slider.value;
             slider.dragValue = Math.max(slider.from, Math.min(slider.to, base + (w.angleDelta.y > 0 ? 5 : -5)));
+            slider.moved(slider.dragValue);
             wheelTimer.restart();
         }
     }

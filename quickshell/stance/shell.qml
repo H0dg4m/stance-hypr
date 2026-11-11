@@ -15,6 +15,7 @@ ShellRoot {
         id: stanceService
         // STANCE_BIN points the shell at another binary (tests use contrib/fake-clip.sh).
         bin: Quickshell.env("STANCE_BIN") || "stance"
+        themeTarget: stanceTheme
     }
 
     StanceClipService {
@@ -57,6 +58,8 @@ ShellRoot {
         clip: clipService
         theme: stanceTheme
         screen: popup.screen
+        featureOn: stanceService.featureOn("clip")
+        onEnableRequested: stanceService.setFeature("clip", true, () => clipService.reload())
         onSettingsRequested: popup.settingsOpen = true
     }
 

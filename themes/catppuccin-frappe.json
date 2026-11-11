@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "catppuccin-frappe",
+  "name": "Catppuccin Frappé",
+  "dark": true,
+  "colors": {
+    "background": "#303446",
+    "card": "#292c3c",
+    "surface": "#414559",
+    "surfaceHover": "#51576d",
+    "border": "#51576d",
+    "text": "#c6d0f5",
+    "textDim": "#a5adce",
+    "accent": "#ca9ee6",
+    "accentText": "#232634",
+    "danger": "#e78284",
+    "dangerText": "#232634",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

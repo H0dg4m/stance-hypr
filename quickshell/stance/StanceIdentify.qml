@@ -38,7 +38,7 @@ Scope {
                 implicitWidth: col.implicitWidth + 64
                 implicitHeight: col.implicitHeight + 40
                 radius: root.theme.radius * 1.5
-                color: root.theme.background
+                color: root.theme.backgroundSolid
                 border.width: 2
                 border.color: root.theme.accent
                 opacity: 0

@@ -12,7 +12,9 @@ particular shell:
 | `StancePopup` | The panel in a layer-shell popup, under a bar button or top-right; owns the settings window (`settingsOpen`) |
 | `StanceSettingsWindow` | Panel settings in their own centred, scrolling window (opened from the panel's settings chip) |
 | `ConfirmOverlay` | "Keep these display settings?" card; create one per screen |
-| `StanceTheme` | Colours / radii / font / spacing; override to match your shell. Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
+| `StanceTheme` | Colours / metrics (`docs/themes.md`). Resolved as overrides > named theme (`apply()`) > `shell` > default. An embedding shell passes its own look through `shell: ({ accent: ..., radius: ... })` and sets `StanceService { themeTarget: theTheme; defaultTheme: "shell" }`; the panel's `theme` / `themeOverrides` / `lang` prefs then pick named themes. `backgroundSolid` / `cardSolid` are for overlays (never translucent). Set `iconFont` to a Material Symbols family ("Material Symbols Rounded") for icons; empty = text only |
+| `StanceI18n` | Singleton: `StanceI18n.t("English text")` / `f("... %1", x)`; English and Turkish, `lang` auto/en/tr from the panel prefs |
+| `StanceAppearance` | Settings cards for language, theme picker + live editor (save / import / export) and the feature switches (`stance feature`) |
 | `StanceSection`, `StanceSegmented`, `StanceIcon`, `StanceSwitch`, `StanceField` | Building blocks: titled card, segmented buttons, icon glyph, switch, text field |
 | `StanceModes`, `StanceModeEditor`, `StanceSettings` | Modes card (add / edit), mode editor page, panel settings (prefs in `~/.config/stance/panel.json`) |
 | `StanceDeckButtons` | Phone-buttons editor card in the settings window (`deck buttons / put / reset`) |
@@ -131,6 +133,8 @@ set `open`. To try it without the real core:
 ```sh
 STANCE_BIN=$PWD/contrib/fake-clip.sh STANCE_CLIP_DIR=/tmp/stance-clip-fixture qs -p quickshell/stance
 ```
+
+(`contrib/fake-stance.sh` forwards to `target/release/stance` but handles `feature on|off` without touching systemd units; use it with an isolated `XDG_CONFIG_HOME` when testing the settings.)
 
 (`STANCE_CLIP_DIR` is the directory image paths must live under; the default is
 `$XDG_DATA_HOME/stance/clip`. `STANCE_FAKE_OFF=1` shows the disabled state,

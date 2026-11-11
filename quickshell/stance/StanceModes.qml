@@ -16,12 +16,12 @@ StanceSection {
     readonly property string nameProblem: newName === "" ? "" : !nameValid ? "Letters, digits, - and _ only" : nameTaken ? "A mode with this name exists" : ""
 
     icon: "bookmarks"
-    title: "Modes"
+    title: StanceI18n.t("Modes")
     trailing: [
         StanceChip {
             theme: modesCard.theme
             icon: modesCard.adding ? "close" : "add"
-            label: modesCard.adding ? "Cancel" : "Add"
+            label: modesCard.adding ? StanceI18n.t("Cancel") : StanceI18n.t("Add")
             onClicked: modesCard.toggleAdd()
         }
     ]
@@ -45,7 +45,7 @@ StanceSection {
                 adding = false;
                 edit(n);
             } else {
-                error = r && r.error ? r.error.message : "stance returned no output";
+                error = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -56,7 +56,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
         Text {
-            text: "Saves the current screens, power profile and workspaces as a new mode."
+            text: StanceI18n.t("Saves the current screens, power profile and workspaces as a new mode.")
             color: modesCard.theme.textDim
             font.family: modesCard.theme.fontFamily
             font.pixelSize: modesCard.theme.fontSize - 2
@@ -67,7 +67,7 @@ StanceSection {
             id: nameField
             Layout.fillWidth: true
             theme: modesCard.theme
-            placeholder: "Mode name"
+            placeholder: StanceI18n.t("Mode name")
             maxLength: 64
             invalid: modesCard.nameProblem !== ""
             validator: RegularExpressionValidator { regularExpression: /[A-Za-z0-9_-]*/ }
@@ -90,7 +90,7 @@ StanceSection {
                 onToggled: v => modesCard.withQuick = v
             }
             Text {
-                text: "Include night light and audio output"
+                text: StanceI18n.t("Include night light and audio output")
                 color: modesCard.theme.text
                 font.family: modesCard.theme.fontFamily
                 font.pixelSize: modesCard.theme.fontSize - 1
@@ -112,7 +112,7 @@ StanceSection {
             Layout.preferredHeight: 36
             theme: modesCard.theme
             icon: "check"
-            label: modesCard.service.callBusy ? "Saving…" : "Create and edit"
+            label: modesCard.service.callBusy ? StanceI18n.t("Saving…") : StanceI18n.t("Create and edit")
             selected: true
             enabled: modesCard.nameValid && !modesCard.nameTaken && !modesCard.service.callBusy
             onClicked: modesCard.create()
@@ -141,7 +141,7 @@ StanceSection {
                 StanceChip {
                     theme: modesCard.theme
                     icon: "edit"
-                    tip: "Edit " + item.modelData.name
+                    tip: StanceI18n.f("Edit %1", item.modelData.name)
                     enabled: !item.modelData.error
                     implicitWidth: 34
                     onClicked: modesCard.edit(item.modelData.name)
@@ -151,7 +151,7 @@ StanceSection {
     }
     Text {
         visible: modesCard.service.modes.length === 0 && !modesCard.adding
-        text: "No modes yet. Add one to save the current screens."
+        text: StanceI18n.t("No modes yet. Add one to save the current screens.")
         color: modesCard.theme.textDim
         font.family: modesCard.theme.fontFamily
         font.pixelSize: modesCard.theme.fontSize - 2

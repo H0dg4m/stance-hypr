@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "nord",
+  "name": "Nord",
+  "dark": true,
+  "colors": {
+    "background": "#2e3440",
+    "card": "#3b4252",
+    "surface": "#434c5e",
+    "surfaceHover": "#4c566a",
+    "border": "#4c566a",
+    "text": "#eceff4",
+    "textDim": "#d8dee9",
+    "accent": "#88c0d0",
+    "accentText": "#2e3440",
+    "danger": "#bf616a",
+    "dangerText": "#eceff4",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

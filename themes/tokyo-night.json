@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "tokyo-night",
+  "name": "Tokyo Night",
+  "dark": true,
+  "colors": {
+    "background": "#1a1b26",
+    "card": "#16161e",
+    "surface": "#292e42",
+    "surfaceHover": "#3b4261",
+    "border": "#3b4261",
+    "text": "#c0caf5",
+    "textDim": "#a9b1d6",
+    "accent": "#7aa2f7",
+    "accentText": "#1a1b26",
+    "danger": "#f7768e",
+    "dangerText": "#1a1b26",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

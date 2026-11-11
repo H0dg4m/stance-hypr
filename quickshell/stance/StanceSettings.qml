@@ -14,12 +14,12 @@ ColumnLayout {
 
     readonly property var prefs: service.prefs
     readonly property var toggles: [
-        { key: "map", label: "Screen map", icon: "grid_view" },
-        { key: "screen", label: "Screen settings", icon: "monitor" },
-        { key: "night", label: "Night light", icon: "bedtime" },
-        { key: "brightness", label: "Brightness", icon: "light_mode" },
-        { key: "audio", label: "Audio output", icon: "volume_up" },
-        { key: "modes", label: "Modes", icon: "bookmarks" }
+        { key: "map", label: StanceI18n.t("Screen map"), icon: "grid_view" },
+        { key: "screen", label: StanceI18n.t("Screen settings"), icon: "monitor" },
+        { key: "night", label: StanceI18n.t("Night light"), icon: "bedtime" },
+        { key: "brightness", label: StanceI18n.t("Brightness"), icon: "light_mode" },
+        { key: "audio", label: StanceI18n.t("Audio output"), icon: "volume_up" },
+        { key: "modes", label: StanceI18n.t("Modes"), icon: "bookmarks" }
     ]
 
     // ---- rules state ------------------------------------------------------
@@ -46,7 +46,7 @@ ColumnLayout {
                 rules = (r.data && r.data.rule) || [];
                 rulesLoaded = true;
             } else {
-                rulesError = r && r.error ? r.error.message : "stance returned no output";
+                rulesError = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -62,7 +62,7 @@ ColumnLayout {
                 newExtras = false;
                 newPower = "";
             } else {
-                rulesError = r && r.error ? r.error.message : "stance returned no output";
+                rulesError = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -132,7 +132,7 @@ ColumnLayout {
                 pairNow = Date.now();
                 pair = { payload: r.data.payload, svg: r.data.svg, fingerprint: r.data.fingerprint, until: Date.now() + r.data.expires_ms, baseline: n };
             } else {
-                pairError = r && r.error ? (r.error.code === "deck_not_running" ? "The deck server is not running." : r.error.message) : "stance returned no output";
+                pairError = r && r.error ? (r.error.code === "deck_not_running" ? "The deck server is not running." : r.error.message) : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -144,7 +144,7 @@ ColumnLayout {
         unpairAsk = "";
         service.deckUnpair(name, r => {
             if (r && !r.ok)
-                pairError = r.error ? r.error.message : "unpair failed";
+                pairError = r.error ? r.error.message : StanceI18n.t("unpair failed");
             loadDeck();
         });
     }
@@ -184,7 +184,7 @@ ColumnLayout {
                 clipCfg = r.data;
                 clipError = "";
             } else {
-                clipError = r && r.error ? r.error.message : "this stance has no clip support";
+                clipError = r && r.error ? r.error.message : StanceI18n.t("this stance has no clip support");
             }
         });
     }
@@ -203,7 +203,7 @@ ColumnLayout {
                 clipCfg = r.data && r.data.enabled !== undefined ? r.data : next;
                 clipError = "";
             } else {
-                clipError = r && r.error ? r.error.message : "stance returned no output";
+                clipError = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
             }
         });
     }
@@ -219,12 +219,18 @@ ColumnLayout {
         font.pixelSize: page.theme.fontSize
     }
 
+    StanceAppearance {
+        Layout.fillWidth: true
+        service: page.service
+        theme: page.theme
+    }
+
     // ---- show in panel ----------------------------------------------------
     StanceSection {
         Layout.fillWidth: true
         theme: page.theme
         icon: "visibility"
-        title: "Show in panel"
+        title: StanceI18n.t("Show in panel")
         Repeater {
             model: page.toggles
             delegate: RowLayout {
@@ -247,12 +253,12 @@ ColumnLayout {
         Layout.fillWidth: true
         theme: page.theme
         icon: "tune"
-        title: "Behaviour"
+        title: StanceI18n.t("Behaviour")
         trailing: [
             StanceChip {
                 theme: page.theme
                 icon: "restart_alt"
-                label: "Reset"
+                label: StanceI18n.t("Reset")
                 onClicked: page.service.resetPrefs()
             }
         ]
@@ -261,7 +267,7 @@ ColumnLayout {
             spacing: 4
             RowLayout {
                 Layout.fillWidth: true
-                Body { text: "Confirm window"; Layout.fillWidth: true }
+                Body { text: StanceI18n.t("Confirm window"); Layout.fillWidth: true }
                 Body { text: Math.round(cs.shown) + " s" }
             }
             StanceSlider {
@@ -274,7 +280,7 @@ ColumnLayout {
                 onCommitted: v => page.service.setPref("confirmTimeout", Math.round(v))
             }
             Dim {
-                text: "Display changes revert on their own after this time unless you keep them."
+                text: StanceI18n.t("Display changes revert on their own after this time unless you keep them.")
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
                 font.pixelSize: page.theme.fontSize - 2
@@ -283,7 +289,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
-            Body { text: "Compact quick controls"; Layout.fillWidth: true }
+            Body { text: StanceI18n.t("Compact quick controls"); Layout.fillWidth: true }
             StanceSwitch {
                 theme: page.theme
                 checked: page.prefs.compact === true
@@ -297,10 +303,11 @@ ColumnLayout {
         Layout.fillWidth: true
         theme: page.theme
         icon: "content_paste"
-        title: "Clipboard shelf"
+        visible: page.service.featureOn("clip")
+        title: StanceI18n.t("Clipboard shelf")
         Dim {
             visible: page.clipCfg === null
-            text: page.clipError !== "" ? page.clipError : "Loading\u2026"
+            text: page.clipError !== "" ? page.clipError : StanceI18n.t("Loading…")
             wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
@@ -311,7 +318,7 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                Body { text: "Keep a clipboard history"; Layout.fillWidth: true }
+                Body { text: StanceI18n.t("Keep a clipboard history"); Layout.fillWidth: true }
                 StanceSwitch {
                     theme: page.theme
                     checked: page.clipCfg !== null && page.clipCfg.enabled === true
@@ -321,7 +328,7 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                Body { text: "Capture text and links"; Layout.fillWidth: true }
+                Body { text: StanceI18n.t("Capture text and links"); Layout.fillWidth: true }
                 StanceSwitch {
                     theme: page.theme
                     checked: page.clipCfg !== null && page.clipCfg.text !== false
@@ -331,23 +338,23 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                Body { text: "Capture images"; Layout.fillWidth: true }
+                Body { text: StanceI18n.t("Capture images"); Layout.fillWidth: true }
                 StanceSwitch {
                     theme: page.theme
                     checked: page.clipCfg !== null && page.clipCfg.image !== false
                     onToggled: v => page.setClip("image", v)
                 }
             }
-            Body { text: "Keep unpinned items for" }
+            Body { text: StanceI18n.t("Keep unpinned items for") }
             StanceSegmented {
                 Layout.fillWidth: true
                 theme: page.theme
-                model: page.clipRetention.map(d => ({ label: d + (d === 1 ? " day" : " days"), value: d }))
+                model: page.clipRetention.map(d => ({ label: StanceI18n.f(d === 1 ? "%1 day" : "%1 days", d), value: d }))
                 current: page.clipCfg !== null ? page.clipCfg.retention_days : null
                 onPicked: v => page.setClip("retention_days", v)
             }
             Dim {
-                text: "History is stored unencrypted in your data directory. Copies a password manager marks as sensitive are never kept. Needs the stance-clip units running."
+                text: StanceI18n.t("History is stored unencrypted in your data directory. Copies a password manager marks as sensitive are never kept. Needs the stance-clip units running.")
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
                 font.pixelSize: page.theme.fontSize - 2
@@ -365,22 +372,23 @@ ColumnLayout {
     // ---- hotplug rules --------------------------------------------------------
     StanceSection {
         id: rulesCard
+        visible: page.service.featureOn("rules")
         Layout.fillWidth: true
         theme: page.theme
         icon: "usb"
-        title: "Hotplug rules"
+        title: StanceI18n.t("Hotplug rules")
         trailing: [
             StanceChip {
                 theme: page.theme
                 icon: page.addingRule ? "close" : "add"
-                label: page.addingRule ? "Cancel" : "Add"
+                label: page.addingRule ? StanceI18n.t("Cancel") : StanceI18n.t("Add")
                 enabled: page.rulesLoaded
                 onClicked: page.addingRule = !page.addingRule
             }
         ]
 
         Dim {
-            text: "When exactly these screens are connected, a mode is applied by the background service (`stance daemon`)."
+            text: StanceI18n.t("When exactly these screens are connected, a mode is applied by the background service (`stance daemon`).")
             wrapMode: Text.Wrap
             Layout.fillWidth: true
             font.pixelSize: page.theme.fontSize - 2
@@ -390,7 +398,7 @@ ColumnLayout {
             visible: !page.service.daemon
             readOnly: true
             selectByMouse: true
-            text: "Background service is off — rules and returning re-plugged screens to their last place need it: systemctl --user enable --now stance.service"
+            text: StanceI18n.t("Background service is off — rules and returning re-plugged screens to their last place need it: systemctl --user enable --now stance.service")
             wrapMode: TextEdit.Wrap
             Layout.fillWidth: true
             color: page.theme.textDim
@@ -425,8 +433,8 @@ ColumnLayout {
                         }
                         Dim {
                             text: "→ " + rrow.modelData.mode
-                                + (rrow.modelData.on_power ? " · on " + rrow.modelData.on_power : "")
-                                + (rrow.modelData.allow_extras ? " · with night light, audio, brightness" : "")
+                                + (rrow.modelData.on_power ? " · " + StanceI18n.f("on %1", StanceI18n.t(rrow.modelData.on_power === "ac" ? "charger" : "battery")) : "")
+                                + (rrow.modelData.allow_extras ? " · " + StanceI18n.t("with night light, audio, brightness") : "")
                             wrapMode: Text.Wrap
                             Layout.fillWidth: true
                             font.pixelSize: page.theme.fontSize - 2
@@ -445,7 +453,7 @@ ColumnLayout {
         }
         Dim {
             visible: page.rulesLoaded && page.rules.length === 0 && !page.addingRule
-            text: "No rules. Rules apply a mode on their own when screens are plugged in."
+            text: StanceI18n.t("No rules. Rules apply a mode on their own when screens are plugged in.")
             wrapMode: Text.Wrap
             Layout.fillWidth: true
             font.pixelSize: page.theme.fontSize - 2
@@ -456,7 +464,7 @@ ColumnLayout {
             visible: page.addingRule
             Layout.fillWidth: true
             spacing: 8
-            Dim { text: "When these screens are connected" }
+            Dim { text: StanceI18n.t("When these screens are connected") }
             Flow {
                 Layout.fillWidth: true
                 spacing: 6
@@ -473,7 +481,7 @@ ColumnLayout {
                     }
                 }
             }
-            Dim { text: "Apply this mode" }
+            Dim { text: StanceI18n.t("Apply this mode") }
             Flow {
                 Layout.fillWidth: true
                 spacing: 6
@@ -489,11 +497,11 @@ ColumnLayout {
                     }
                 }
             }
-            Dim { text: "Power source" }
+            Dim { text: StanceI18n.t("Power source") }
             StanceSegmented {
                 Layout.fillWidth: true
                 theme: page.theme
-                model: [{ label: "Any", value: "" }, { label: "Charger", value: "ac" }, { label: "Battery", value: "battery" }]
+                model: [{ label: StanceI18n.t("Any"), value: "" }, { label: StanceI18n.t("Charger"), value: "ac" }, { label: StanceI18n.t("Battery"), value: "battery" }]
                 current: page.newPower
                 onPicked: v => page.newPower = v
             }
@@ -502,7 +510,7 @@ ColumnLayout {
                 spacing: 8
                 StanceSwitch { theme: page.theme; checked: page.newExtras; onToggled: v => page.newExtras = v }
                 Body {
-                    text: "Also set night light, audio and brightness"
+                    text: StanceI18n.t("Also set night light, audio and brightness")
                     font.pixelSize: page.theme.fontSize - 1
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
@@ -513,7 +521,7 @@ ColumnLayout {
                 Layout.preferredHeight: 36
                 theme: page.theme
                 icon: "check"
-                label: page.service.callBusy ? "Saving…" : "Add rule"
+                label: page.service.callBusy ? StanceI18n.t("Saving…") : StanceI18n.t("Add rule")
                 selected: true
                 enabled: page.newMonitors.length > 0 && page.newMode !== "" && !page.service.callBusy
                 onClicked: page.addRule()
@@ -535,12 +543,13 @@ ColumnLayout {
         Layout.fillWidth: true
         theme: page.theme
         icon: "smartphone"
-        title: "Phone"
+        visible: page.service.featureOn("deck")
+        title: StanceI18n.t("Phone")
         trailing: [
             StanceChip {
                 theme: page.theme
                 icon: page.pair ? "close" : "qr_code_2"
-                label: page.pair ? "Hide" : "Pair a phone"
+                label: page.pair ? StanceI18n.t("Hide") : StanceI18n.t("Pair a phone")
                 enabled: page.deckServer !== null && !page.service.callBusy
                 onClicked: page.pair ? page.hidePair() : page.startPair()
             }
@@ -548,11 +557,11 @@ ColumnLayout {
 
         Dim {
             visible: page.deckInfo === null
-            text: "Checking…"
+            text: StanceI18n.t("Checking…")
         }
         Dim {
             visible: page.deckServer !== null
-            text: page.deckServer ? "Running on port " + page.deckServer.port + (page.deckServer.loopback ? " (this PC only)" : "") + (page.deckServer.hosts.length ? " · " + page.deckServer.hosts.join(", ") : "") : ""
+            text: page.deckServer ? StanceI18n.f(page.deckServer.loopback ? "Running on port %1 (this PC only)" : "Running on port %1", page.deckServer.port) + (page.deckServer.hosts.length ? " · " + page.deckServer.hosts.join(", ") : "") : ""
             wrapMode: Text.Wrap
             Layout.fillWidth: true
             font.pixelSize: page.theme.fontSize - 2
@@ -561,7 +570,7 @@ ColumnLayout {
             visible: page.deckInfo !== null && page.deckServer === null
             readOnly: true
             selectByMouse: true
-            text: "Phone deck is off. Start it: systemctl --user enable --now stance-deck.service (or run `stance deck serve`)"
+            text: StanceI18n.t("Phone deck is off. Start it: systemctl --user enable --now stance-deck.service (or run `stance deck serve`)")
             wrapMode: TextEdit.Wrap
             Layout.fillWidth: true
             color: page.theme.textDim
@@ -612,11 +621,11 @@ ColumnLayout {
             }
             Body {
                 Layout.alignment: Qt.AlignHCenter
-                text: "Scan within " + page.pairLeft + " s"
+                text: StanceI18n.f("Scan within %1 s", page.pairLeft)
             }
             Dim {
                 Layout.alignment: Qt.AlignHCenter
-                text: page.pair ? "This PC's key: " + page.pair.fingerprint : ""
+                text: page.pair ? StanceI18n.f("This PC's key: %1", page.pair.fingerprint) : ""
                 font.pixelSize: page.theme.fontSize - 2
             }
             TextEdit {
@@ -638,7 +647,7 @@ ColumnLayout {
                 Layout.alignment: Qt.AlignHCenter
                 theme: page.theme
                 icon: copied ? "check" : "content_copy"
-                label: copied ? "Copied — paste in a terminal" : "Copy test command"
+                label: copied ? StanceI18n.t("Copied — paste in a terminal") : StanceI18n.t("Copy test command")
                 property bool copied: false
                 onClicked: {
                     Quickshell.clipboardText = "stance deck test pair '" + page.pair.payload + "'";
@@ -647,7 +656,7 @@ ColumnLayout {
             }
             Dim {
                 textFormat: Text.PlainText
-                text: "Or give this code to `stance deck test pair`. Anyone who sees it now can pair, so it disappears after use."
+                text: StanceI18n.t("Or give this code to `stance deck test pair`. Anyone who sees it now can pair, so it disappears after use.")
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
                 font.pixelSize: page.theme.fontSize - 2
@@ -682,7 +691,7 @@ ColumnLayout {
                         spacing: 0
                         Body { text: drow.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true }
                         Dim {
-                            text: drow.modelData.connected === true ? "connected" : "not connected"
+                            text: drow.modelData.connected === true ? StanceI18n.t("connected") : StanceI18n.t("not connected")
                             visible: drow.modelData.connected !== undefined
                             font.pixelSize: page.theme.fontSize - 3
                         }
@@ -690,7 +699,7 @@ ColumnLayout {
                     StanceChip {
                         theme: page.theme
                         icon: "link_off"
-                        label: page.unpairAsk === drow.modelData.name ? "Sure?" : "Unpair"
+                        label: page.unpairAsk === drow.modelData.name ? StanceI18n.t("Sure?") : StanceI18n.t("Unpair")
                         danger: true
                         enabled: !page.service.callBusy
                         onClicked: page.unpair(drow.modelData.name)
@@ -700,7 +709,7 @@ ColumnLayout {
         }
         Dim {
             visible: page.deckInfo !== null && page.deckList.length === 0
-            text: "No phones paired."
+            text: StanceI18n.t("No phones paired.")
             font.pixelSize: page.theme.fontSize - 2
         }
         Text {
@@ -716,6 +725,7 @@ ColumnLayout {
 
     // ---- phone buttons --------------------------------------------------------
     StanceDeckButtons {
+        visible: page.service.featureOn("deck")
         Layout.fillWidth: true
         theme: page.theme
         service: page.service
@@ -726,22 +736,22 @@ ColumnLayout {
         Layout.fillWidth: true
         theme: page.theme
         icon: "health_and_safety"
-        title: "Health"
+        title: StanceI18n.t("Health")
         trailing: [
             StanceChip {
                 theme: page.theme
                 icon: page.showAllChecks ? "expand_less" : "expand_more"
-                label: page.showAllChecks ? "Notes" : "All"
+                label: page.showAllChecks ? StanceI18n.t("Notes") : StanceI18n.t("All")
                 onClicked: page.showAllChecks = !page.showAllChecks
             }
         ]
         Dim {
             visible: page.checks.length === 0
-            text: "Checking…"
+            text: StanceI18n.t("Checking…")
         }
         Dim {
             visible: page.checks.length > 0
-            text: (page.checks.length - page.notes.length) + " checks ok" + (page.notes.length ? ", " + page.notes.length + " to look at" : "")
+            text: page.notes.length ? StanceI18n.f("%1 checks ok, %2 to look at", page.checks.length - page.notes.length, page.notes.length) : StanceI18n.f("%1 checks ok", page.checks.length)
         }
         Repeater {
             model: page.showAllChecks ? page.checks : page.notes

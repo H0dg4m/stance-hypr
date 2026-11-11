@@ -99,7 +99,7 @@ Item {
 
     function copy(id) { mutate(["copy", id]); }
     function pin(id, on) { mutate([on ? "pin" : "unpin", id]); }
-    function remove(id) { note = "Removed. Backspace undoes it."; mutate(["rm", id]); }
+    function remove(id) { note = StanceI18n.t("Removed. Backspace undoes it."); mutate(["rm", id]); }
     function undo() { note = ""; mutate(["undo"]); }
 
     // Full text of one item for the preview (`done(string)`).
@@ -129,9 +129,9 @@ Item {
             onStreamFinished: {
                 const r = svc.parse(text);
                 if (!r) {
-                    svc.error = "stance clip returned no output (is stance new enough?)";
+                    svc.error = StanceI18n.t("stance clip returned no output (is stance new enough?)");
                 } else if (!r.ok) {
-                    svc.error = r.error ? r.error.message : "stance clip failed";
+                    svc.error = r.error ? r.error.message : StanceI18n.t("stance clip failed");
                 } else {
                     svc.error = "";
                     svc.capture = r.data.enabled === true;
@@ -153,9 +153,9 @@ Item {
             onStreamFinished: {
                 const r = svc.parse(text);
                 if (!r)
-                    svc.error = "stance clip returned no output";
+                    svc.error = StanceI18n.t("stance clip returned no output");
                 else if (!r.ok)
-                    svc.error = r.error ? r.error.message : "stance clip failed";
+                    svc.error = r.error ? r.error.message : StanceI18n.t("stance clip failed");
                 else
                     svc.error = "";
                 svc.reload();

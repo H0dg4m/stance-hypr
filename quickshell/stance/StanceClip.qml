@@ -17,6 +17,10 @@ Scope {
     property bool open: false
     // "Open settings" button of the disabled state.
     signal settingsRequested
+    // The "clip" feature switch (stance feature). Off: the shelf shows a short
+    // note and a button to turn it on instead of its rows.
+    property bool featureOn: true
+    signal enableRequested
 
     onOpenChanged: {
         if (open)
@@ -202,10 +206,10 @@ Scope {
             // ---- helpers ------------------------------------------------------
             function ago(t) {
                 const s = Math.max(0, Date.now() / 1000 - t);
-                if (s < 60) return "now";
-                if (s < 3600) return Math.floor(s / 60) + " min";
-                if (s < 86400) return Math.floor(s / 3600) + " h";
-                return Math.floor(s / 86400) + " d";
+                if (s < 60) return StanceI18n.t("now");
+                if (s < 3600) return StanceI18n.f("%1 min", Math.floor(s / 60));
+                if (s < 86400) return StanceI18n.f("%1 h", Math.floor(s / 3600));
+                return StanceI18n.f("%1 d", Math.floor(s / 86400));
             }
             function bytes(n) {
                 if (n < 1024) return n + " B";
@@ -222,8 +226,7 @@ Scope {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: "#000000"
-                    opacity: 0.4
+                    color: root.theme.scrim
                     MouseArea { anchors.fill: parent; onClicked: root.open = false }
                 }
 
@@ -233,7 +236,8 @@ Scope {
                     width: Math.min(win.width - 48, 1080)
                     height: Math.min(win.height - 48, 620)
                     radius: root.theme.radius
-                    color: root.theme.background
+                    // Overlay: always opaque, whatever the theme's opacity.
+                    color: root.theme.backgroundSolid
                     border.width: 1
                     border.color: root.theme.border
                     MouseArea { anchors.fill: parent }
@@ -259,7 +263,7 @@ Scope {
                             spacing: 8
                             StanceIcon { theme: root.theme; name: "search"; color: root.theme.textDim; visible: root.theme.iconFont !== "" }
                             Text {
-                                text: root.clip.query !== "" ? root.clip.query : "Type to search, or press /"
+                                text: root.clip.query !== "" ? root.clip.query : StanceI18n.t("Type to search, or press /")
                                 textFormat: Text.PlainText
                                 color: root.clip.query !== "" ? root.theme.text : root.theme.textDim
                                 font.family: root.theme.fontFamily
@@ -276,7 +280,7 @@ Scope {
                         StanceChip {
                             theme: root.theme
                             icon: "close"
-                            label: root.theme.iconFont === "" ? "Close" : ""
+                            label: root.theme.iconFont === "" ? StanceI18n.t("Close") : ""
                             anchors.right: parent.right
                             anchors.rightMargin: 3
                             anchors.verticalCenter: parent.verticalCenter
@@ -288,7 +292,7 @@ Scope {
                     // Empty / disabled / error states
                     Column {
                         id: stateBox
-                        visible: root.clip.items.length === 0
+                        visible: !root.featureOn || root.clip.items.length === 0
                         anchors.centerIn: parent
                         spacing: 12
                         Text {
@@ -298,18 +302,28 @@ Scope {
                             color: root.theme.textDim
                             font.family: root.theme.fontFamily
                             font.pixelSize: root.theme.fontSize + 2
-                            text: root.clip.error !== "" ? root.clip.error
-                                : !root.clip.loaded ? "Loading…"
-                                : !root.clip.capture ? "Clipboard shelf is off — enable in Settings"
-                                : root.clip.query !== "" ? "Nothing matches “" + root.clip.query + "”"
-                                : "Nothing copied yet"
+                            text: !root.featureOn ? StanceI18n.t("Clipboard shelf is turned off")
+                                : root.clip.error !== "" ? root.clip.error
+                                : !root.clip.loaded ? StanceI18n.t("Loading…")
+                                : !root.clip.capture ? StanceI18n.t("Clipboard shelf is off — enable in Settings")
+                                : root.clip.query !== "" ? StanceI18n.f("Nothing matches “%1”", root.clip.query)
+                                : StanceI18n.t("Nothing copied yet")
                         }
                         StanceChip {
-                            visible: root.clip.loaded && !root.clip.capture && root.clip.error === ""
+                            visible: !root.featureOn
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            theme: root.theme
+                            icon: "power_settings_new"
+                            label: StanceI18n.t("Turn on")
+                            selected: true
+                            onClicked: root.enableRequested()
+                        }
+                        StanceChip {
+                            visible: root.featureOn && root.clip.loaded && !root.clip.capture && root.clip.error === ""
                             anchors.horizontalCenter: parent.horizontalCenter
                             theme: root.theme
                             icon: "settings"
-                            label: "Open settings"
+                            label: StanceI18n.t("Open settings")
                             onClicked: {
                                 root.open = false;
                                 root.settingsRequested();
@@ -319,7 +333,7 @@ Scope {
 
                     // Three shelves
                     Column {
-                        visible: root.clip.items.length > 0 && !win.previewing
+                        visible: root.featureOn && root.clip.items.length > 0 && !win.previewing
                         x: 16
                         y: searchBox.y + searchBox.height + 12
                         width: parent.width - 32
@@ -327,9 +341,9 @@ Scope {
 
                         Repeater {
                           model: [
-                            { title: "Images", which: 0, cardW: 180, cardH: 120 },
-                            { title: "Texts", which: 1, cardW: 240, cardH: 96 },
-                            { title: "Links", which: 2, cardW: 240, cardH: 68 }
+                            { title: StanceI18n.t("Images"), which: 0, cardW: 180, cardH: 120 },
+                            { title: StanceI18n.t("Texts"), which: 1, cardW: 240, cardH: 96 },
+                            { title: StanceI18n.t("Links"), which: 2, cardW: 240, cardH: 68 }
                           ]
                           delegate: Item {
                             id: shelfRoot
@@ -369,7 +383,7 @@ Scope {
                             Text {
                                 visible: shelfRoot.list.length === 0
                                 y: 22
-                                text: "empty"
+                                text: StanceI18n.t("empty")
                                 color: root.theme.textDim
                                 opacity: 0.7
                                 font.family: root.theme.fontFamily
@@ -426,7 +440,7 @@ Scope {
                                             Text {
                                                 id: pinLabel
                                                 anchors.centerIn: parent
-                                                text: "pinned"
+                                                text: StanceI18n.t("pinned")
                                                 color: root.theme.accentText
                                                 font.family: root.theme.fontFamily
                                                 font.pixelSize: root.theme.fontSize - 4
@@ -459,7 +473,7 @@ Scope {
                         height: 20
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close"
+                            text: StanceI18n.t("←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close")
                             color: root.theme.textDim
                             font.family: root.theme.fontFamily
                             font.pixelSize: root.theme.fontSize - 2
@@ -468,8 +482,9 @@ Scope {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
                             textFormat: Text.PlainText
-                            text: root.clip.error !== "" && root.clip.items.length > 0 ? root.clip.error
-                                : (!root.clip.capture && root.clip.loaded ? "capture is off" : root.clip.note)
+                            text: !root.featureOn ? ""
+                                : root.clip.error !== "" && root.clip.items.length > 0 ? root.clip.error
+                                : (!root.clip.capture && root.clip.loaded ? StanceI18n.t("capture is off") : root.clip.note)
                             color: root.clip.error !== "" ? root.theme.danger : root.theme.accent
                             font.family: root.theme.fontFamily
                             font.pixelSize: root.theme.fontSize - 2
@@ -479,12 +494,15 @@ Scope {
                     // Larger preview of the selected item
                     Rectangle {
                         id: previewBox
-                        visible: win.previewing && win.current !== null
+                        visible: root.featureOn && win.previewing && win.current !== null
+                        // Opaque and below the search line: nothing of the
+                        // shelves (hidden meanwhile) can show through.
                         anchors.fill: parent
                         anchors.margins: 12
+                        anchors.topMargin: searchBox.y + searchBox.height + 12
                         anchors.bottomMargin: 40
                         radius: root.theme.chipRadius
-                        color: root.theme.card
+                        color: root.theme.cardSolid
                         border.width: 1
                         border.color: root.theme.border
                         MouseArea { anchors.fill: parent; onClicked: win.previewing = false }
@@ -537,7 +555,7 @@ Scope {
                     Text {
                         anchors.centerIn: parent
                         visible: item.path === ""
-                        text: "no preview"
+                        text: StanceI18n.t("no preview")
                         color: root.theme.textDim
                         font.family: root.theme.fontFamily
                         font.pixelSize: root.theme.fontSize - 1

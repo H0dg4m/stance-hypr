@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "catppuccin-mocha",
+  "name": "Catppuccin Mocha",
+  "dark": true,
+  "colors": {
+    "background": "#1e1e2e",
+    "card": "#181825",
+    "surface": "#313244",
+    "surfaceHover": "#45475a",
+    "border": "#45475a",
+    "text": "#cdd6f4",
+    "textDim": "#a6adc8",
+    "accent": "#cba6f7",
+    "accentText": "#11111b",
+    "danger": "#f38ba8",
+    "dangerText": "#11111b",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

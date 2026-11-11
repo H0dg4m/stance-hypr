@@ -36,7 +36,7 @@ LazyLoader {
             implicitWidth: 460
             implicitHeight: Math.min(win.maxHeight, header.implicitHeight + settings.implicitHeight + 40)
             radius: root.theme.radius
-            color: root.theme.background
+            color: root.theme.backgroundSolid
             border.width: 1
             border.color: root.theme.border
             focus: true
@@ -54,7 +54,7 @@ LazyLoader {
                 spacing: 8
                 StanceIcon { visible: root.theme.iconFont !== ""; theme: root.theme; name: "settings"; color: root.theme.accent; fill: true }
                 Text {
-                    text: "Panel settings"
+                    text: StanceI18n.t("Panel settings")
                     color: root.theme.text
                     font.family: root.theme.fontFamily
                     font.pixelSize: root.theme.fontSize + 3
@@ -64,7 +64,7 @@ LazyLoader {
                 StanceChip {
                     theme: root.theme
                     icon: "close"
-                    label: root.theme.iconFont === "" ? "Close" : ""
+                    label: root.theme.iconFont === "" ? StanceI18n.t("Close") : ""
                     onClicked: root.open = false
                 }
             }

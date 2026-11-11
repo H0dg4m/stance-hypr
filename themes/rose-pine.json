@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "rose-pine",
+  "name": "Rosé Pine",
+  "dark": true,
+  "colors": {
+    "background": "#191724",
+    "card": "#1f1d2e",
+    "surface": "#26233a",
+    "surfaceHover": "#403d52",
+    "border": "#403d52",
+    "text": "#e0def4",
+    "textDim": "#908caa",
+    "accent": "#c4a7e7",
+    "accentText": "#191724",
+    "danger": "#eb6f92",
+    "dangerText": "#191724",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

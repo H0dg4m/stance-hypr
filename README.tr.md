@@ -185,6 +185,21 @@ daemon açıksa şarj takılıp çıkarılınca kurallar yeniden değerlendirili
 kez `require("stance-monitors")` ekle (nwg-displays kullanıyorsan onun
 `require("monitors")` satırından sonra). stance ana config'ine asla dokunmaz.
 
+## Temalar ve özellikler
+
+Panelde 17 hazır tema (Catppuccin, Nord, Gruvbox, Dracula, Tokyo Night, Rosé
+Pine, Everforest, Kanagawa, One Dark, Solarized, Stance koyu/açık) ve ayrıntılı
+bir düzenleyici var; temalar dışa aktarıp paylaşabileceğin düz JSON
+dosyalarıdır. Panel İngilizce ve Türkçe konuşur.
+
+```sh
+stance theme list
+stance theme export catppuccin-mocha --out ~/mocha.json
+stance theme import ~/arkadas-temasi.json
+stance feature off clip          # ayrıca: deck, rules, quick
+```
+Biçim ve kurallar: [docs/themes.md](docs/themes.md).
+
 ## Pano rafı
 
 `stance clip` kopyaladıklarını üç rafta (görseller, metinler, linkler) tutar,

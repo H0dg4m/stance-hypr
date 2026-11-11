@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "solarized-dark",
+  "name": "Solarized Dark",
+  "dark": true,
+  "colors": {
+    "background": "#002b36",
+    "card": "#073642",
+    "surface": "#0b4452",
+    "surfaceHover": "#586e75",
+    "border": "#586e75",
+    "text": "#93a1a1",
+    "textDim": "#839496",
+    "accent": "#268bd2",
+    "accentText": "#fdf6e3",
+    "danger": "#dc322f",
+    "dangerText": "#fdf6e3",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

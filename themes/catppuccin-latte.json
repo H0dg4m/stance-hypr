@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "catppuccin-latte",
+  "name": "Catppuccin Latte",
+  "dark": false,
+  "colors": {
+    "background": "#eff1f5",
+    "card": "#e6e9ef",
+    "surface": "#ccd0da",
+    "surfaceHover": "#bcc0cc",
+    "border": "#bcc0cc",
+    "text": "#4c4f69",
+    "textDim": "#6c6f85",
+    "accent": "#8839ef",
+    "accentText": "#eff1f5",
+    "danger": "#d20f39",
+    "dangerText": "#eff1f5",
+    "scrim": "#66000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

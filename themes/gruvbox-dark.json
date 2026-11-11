@@ -1,0 +1,31 @@
+{
+  "stance_theme": 1,
+  "id": "gruvbox-dark",
+  "name": "Gruvbox Dark",
+  "dark": true,
+  "colors": {
+    "background": "#282828",
+    "card": "#32302f",
+    "surface": "#3c3836",
+    "surfaceHover": "#504945",
+    "border": "#504945",
+    "text": "#ebdbb2",
+    "textDim": "#a89984",
+    "accent": "#fabd2f",
+    "accentText": "#282828",
+    "danger": "#fb4934",
+    "dangerText": "#282828",
+    "scrim": "#99000000"
+  },
+  "metrics": {
+    "radius": 12,
+    "chipRadius": 8,
+    "fontFamily": "",
+    "fontSize": 13,
+    "iconFont": "",
+    "animMs": 120,
+    "padding": 12,
+    "spacing": 8,
+    "opacity": 1.0
+  }
+}

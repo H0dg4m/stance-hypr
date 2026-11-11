@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Themes, language, features
+- 17 built-in panel themes (Stance dark/light, Catppuccin Mocha/Macchiato/
+  Frappé/Latte, Nord, Gruvbox dark/light, Dracula, Tokyo Night, Rosé Pine and
+  Dawn, Everforest, Kanagawa, One Dark, Solarized dark); `stance theme
+  list|show|put|import|export|rm`, one strict JSON format for all of them
+  (docs/themes.md)
+- `stance feature list|on|off clip|deck|rules|quick`: people who do not want a
+  part turn it off; its user units are stopped and the panel hides it
+- Short commands end quietly on a closed pipe (`stance theme list | head`)
+
 ### Clipboard shelf (`stance clip`)
 - Images, texts and links you copy, on three shelves; inspired by
   ClipBoardLine (MIT), not a fork. Off until enabled; see docs/clip.md
