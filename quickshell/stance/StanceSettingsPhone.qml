@@ -296,6 +296,13 @@ ColumnLayout {
         }
     }
 
+    StanceTransfers {
+        visible: page.service.featureOn("deck")
+        Layout.fillWidth: true
+        theme: page.theme
+        service: page.service
+    }
+
     StanceDeckButtons {
         visible: page.service.featureOn("deck")
         Layout.fillWidth: true
