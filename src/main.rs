@@ -271,6 +271,9 @@ fn run(a: &Args) -> Result<ExitCode> {
     if cmd == "deck" {
         return deck_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
+    if cmd == "rules" {
+        return rules_cmd(a, json).map(|_| ExitCode::SUCCESS);
+    }
     if cmd == "theme" {
         return theme_cmd(a, json).map(|_| ExitCode::SUCCESS);
     }
@@ -440,7 +443,6 @@ fn run(a: &Args) -> Result<ExitCode> {
             out.warnings.extend(warnings);
             report(json, out);
         }
-        "rules" => rules_cmd(a, json)?,
         "lid" => {
             let what = a.arg(1, "close or open")?;
             a.max_pos(2)?;
