@@ -12,8 +12,11 @@ Rectangle {
     radius: 12
     opacity: enabled ? 1 : 0.45
     color: checked ? theme.accent : theme.surface
-    border.width: checked ? 0 : 2
-    border.color: theme.textDim
+    activeFocusOnTab: enabled
+    Keys.onSpacePressed: if (enabled) toggled(!checked)
+    Keys.onReturnPressed: if (enabled) toggled(!checked)
+    border.width: checked && !activeFocus ? 0 : 2
+    border.color: activeFocus ? theme.accent : theme.textDim
     Behavior on color { ColorAnimation { duration: sw.theme.animMs } }
 
     Rectangle {

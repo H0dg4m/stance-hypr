@@ -34,6 +34,22 @@ jobs:
       - run: python3 scripts/i18n-check.py
       - name: Shell scripts parse
         run: for f in tests/*.sh contrib/*.sh; do bash -n "$f"; done
+  qml-smoke:
+    # The panel, every board size and every settings page built offscreen
+    # against the fake backend; fails on any QML error (tests/qml-smoke.sh).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed quickshell qt6-declarative rust gcc jq
+      - uses: actions/checkout@v4
+      - run: cargo build
+      - run: useradd -m runner && chown -R runner . && su runner -c "tests/qml-smoke.sh target/debug/stance qml-shots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qml-shots
+          path: qml-shots/
   audit:
     runs-on: ubuntu-latest
     steps:

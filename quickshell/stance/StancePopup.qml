@@ -19,6 +19,11 @@ Scope {
     property real barHeight: 0
     property real edgeMargin: 8
     property alias settingsOpen: settingsWindow.open
+    // The board's clipboard tile. Unhandled, it asks this shell over IPC for
+    // the end4 shelf (`stanceclip`); the standalone shell opens its own.
+    signal clipRequested
+    property bool clipHandled: false
+    onClipRequested: if (!clipHandled) Quickshell.execDetached(["qs", "-p", Quickshell.shellDir, "ipc", "call", "stanceclip", "open"])
 
     onOpenChanged: if (open) service.refresh()
 
@@ -115,6 +120,10 @@ Scope {
                         onSettingsRequested: {
                             root.settingsOpen = true;
                             root.open = false;
+                        }
+                        onClipRequested: {
+                            root.open = false;
+                            root.clipRequested();
                         }
                     }
                 }

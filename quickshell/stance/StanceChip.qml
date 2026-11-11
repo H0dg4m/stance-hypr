@@ -23,6 +23,11 @@ Rectangle {
     opacity: enabled ? 1 : 0.45
     color: selected ? (danger ? theme.danger : theme.accent)
                     : (mouse.containsMouse && enabled ? theme.surfaceHover : theme.surface)
+    activeFocusOnTab: enabled
+    Keys.onSpacePressed: if (enabled) clicked()
+    Keys.onReturnPressed: if (enabled) clicked()
+    border.width: activeFocus ? 2 : 0
+    border.color: theme.accent
     scale: mouse.pressed && enabled ? 0.97 : 1
 
     Behavior on color { ColorAnimation { duration: chip.theme.animMs } }

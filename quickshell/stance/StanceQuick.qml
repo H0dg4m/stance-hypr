@@ -1,22 +1,26 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Night light, brightness and audio output in one card. Read with a single
+// Night light, brightness or audio output as a card (the M size of those
+// widgets; `part` picks one, "" shows all three). Read with a single
 // `stance quick` call when the panel opens; each part hides when unavailable.
 StanceSection {
     id: quick
 
     required property StanceService service
+    // "night" | "brightness" | "audio" | "" (all)
+    property string part: ""
     readonly property var q: service.quick
     readonly property var night: q ? q.night : null
     readonly property var displays: q ? q.brightness : []
     readonly property var sinks: q ? q.sinks.filter(s => !s.virtual || s.default) : []
     readonly property bool busy: service.quickBusy
     readonly property bool compact: service.prefs.compact === true
-    function shows(key) { return service.featureOn("quick") && !(service.prefs.show && service.prefs.show[key] === false); }
+    function shows(key) { return service.featureOn("quick") && (part === "" || part === key); }
+    readonly property var partWidget: StanceWidgets.byId(part)
 
-    icon: "tune"
-    title: StanceI18n.t("Quick")
+    icon: partWidget ? partWidget.icon : "tune"
+    title: StanceI18n.t(partWidget ? partWidget.title : "Quick")
     visible: q !== null && ((shows("night") && night !== null) || (shows("brightness") && displays.length > 0) || (shows("audio") && sinks.length > 0))
 
     function sinkIcon(s) {
@@ -35,6 +39,8 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
         Text {
+            // The card title says it when the card is only night light.
+            visible: quick.part === ""
             text: StanceI18n.t("Night")
             color: quick.theme.textDim
             font.family: quick.theme.fontFamily
@@ -103,6 +109,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 4
         Text {
+            visible: quick.part === ""
             text: StanceI18n.t("Output")
             color: quick.theme.textDim
             font.family: quick.theme.fontFamily

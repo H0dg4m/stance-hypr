@@ -39,7 +39,10 @@ Item {
     // ---- panel preferences (UI only, ~/.config/stance/panel.json) -----------
     readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/stance"
     readonly property var prefDefaults: ({
-        show: { map: true, screen: true, night: true, brightness: true, audio: true, modes: true },
+        // The widget board (StanceWidgets.qml): ordered {id, size}; absent = hidden.
+        board: StanceWidgets.preset("standard"),
+        // false only for a new user (no panel.json yet): the panel opens on setup.
+        onboarded: true,
         confirmTimeout: 12,
         compact: false,
         theme: "",
@@ -49,10 +52,14 @@ Item {
         lang: "auto",
         settingsPage: "general"
     })
-    readonly property var settingsPages: ["general", "appearance", "displays", "quick", "clip", "phone", "features", "health"]
+    readonly property var settingsPages: ["general", "layout", "appearance", "displays", "quick", "clip", "phone", "features", "health"]
     property var prefs: prefDefaults
     // `schema` of panel.json as read; a newer one is never overwritten.
-    property int prefsSchema: 1
+    property int prefsSchema: 2
+    readonly property int prefsSchemaMax: 2
+    // "loading" until panel.json was tried, then "missing" (first run) or
+    // "present" (read, or there but unreadable: never treated as first run).
+    property string prefsState: "loading"
     readonly property int confirmTimeout: prefs.confirmTimeout
 
     // ---- theme (docs/themes.md) ------------------------------------------------
@@ -115,10 +122,22 @@ Item {
     // Unknown keys, wrong types and out-of-range values fall back to defaults.
     function normPrefs(o) {
         const d = prefDefaults;
-        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeLight: d.themeLight, themeDark: d.themeDark, themeOverrides: {}, lang: "auto", settingsPage: "general" };
-        const show = o && typeof o.show === "object" && o.show ? o.show : {};
-        for (const k of Object.keys(d.show))
-            out.show[k] = typeof show[k] === "boolean" ? show[k] : d.show[k];
+        const out = { board: [], known: [], onboarded: true, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeLight: d.themeLight, themeDark: d.themeDark, themeOverrides: {}, lang: "auto", settingsPage: "general" };
+        // Schema 1 had show.<part> switches; no board at all = the default one.
+        if (o && Array.isArray(o.board))
+            out.board = StanceWidgets.normBoard(o.board);
+        else
+            out.board = StanceWidgets.fromShow(o ? o.show : null);
+        // Widgets added after this file was written join the end of the board
+        // once; removing one later keeps it out (it stays in `known`).
+        const known = o && Array.isArray(o.known) ? o.known.filter(id => StanceWidgets.ids.indexOf(id) >= 0) : StanceWidgets.ids;
+        for (const id of StanceWidgets.ids) {
+            if (known.indexOf(id) < 0 && !out.board.some(e => e.id === id))
+                out.board.push({ id: id, size: StanceWidgets.byId(id).defaultSize });
+        }
+        out.known = StanceWidgets.ids.slice();
+        if (o && typeof o.onboarded === "boolean")
+            out.onboarded = o.onboarded;
         if (o && typeof o.confirmTimeout === "number" && isFinite(o.confirmTimeout))
             out.confirmTimeout = Math.max(5, Math.min(60, Math.round(o.confirmTimeout)));
         if (o && typeof o.compact === "boolean")
@@ -143,22 +162,75 @@ Item {
         return out;
     }
 
-    // key: "show.<name>" | "confirmTimeout" | "compact" | "theme" | "themeLight" | "themeDark" | "lang" | "settingsPage"
+    // key: "confirmTimeout" | "compact" | "theme" | "themeLight" | "themeDark" | "lang" | "settingsPage"
     function setPref(key, value) {
         const p = JSON.parse(JSON.stringify(prefs));
-        if (key.startsWith("show."))
-            p.show[key.slice(5)] = value;
-        else
-            p[key] = value;
+        p[key] = value;
         prefs = normPrefs(p);
         prefsSave.restart();
     }
 
     function resetPrefs() {
-        // Keep the open settings category.
-        prefs = normPrefs({ settingsPage: prefs.settingsPage });
+        // Keep the open settings category and the board (it has its own reset).
+        prefs = normPrefs({ settingsPage: prefs.settingsPage, board: prefs.board, known: prefs.known });
         prefsSave.restart();
     }
+
+    // ---- widget board ----------------------------------------------------------
+    // board: [{id, size}] (StanceWidgets.normBoard cleans it).
+    function setBoard(board) {
+        const p = JSON.parse(JSON.stringify(prefs));
+        p.board = board;
+        prefs = normPrefs(p);
+        prefsSave.restart();
+    }
+    function resetBoard() { setBoard(StanceWidgets.preset("standard")); }
+    function boardHas(id) { return prefs.board.some(e => e.id === id); }
+    function boardSize(id) {
+        const e = prefs.board.find(e => e.id === id);
+        return e ? e.size : "";
+    }
+    // Shown: on the board, and its feature (if any) is on.
+    function widgetShown(id) {
+        const w = StanceWidgets.byId(id);
+        return boardHas(id) && (!w || !w.feature || featureOn(w.feature));
+    }
+    function moveWidget(id, delta) {
+        const b = prefs.board.slice();
+        const i = b.findIndex(e => e.id === id);
+        const j = i + delta;
+        if (i < 0 || j < 0 || j >= b.length)
+            return;
+        const e = b[i];
+        b[i] = b[j];
+        b[j] = e;
+        setBoard(b);
+    }
+    // size "" removes the widget; otherwise adds it (at the end) or resizes it.
+    function setWidget(id, size) {
+        const b = prefs.board.slice();
+        const i = b.findIndex(e => e.id === id);
+        if (size === "") {
+            if (i >= 0)
+                b.splice(i, 1);
+        } else if (i >= 0) {
+            b[i] = { id: id, size: size };
+        } else {
+            b.push({ id: id, size: size });
+        }
+        setBoard(b);
+    }
+    // First-run setup: keep this board and stop showing setup.
+    function finishSetup(board) {
+        const p = JSON.parse(JSON.stringify(prefs));
+        if (board)
+            p.board = board;
+        p.onboarded = true;
+        prefs = normPrefs(p);
+        prefsState = "present";
+        prefsSave.restart();
+    }
+    function rerunSetup() { setPref("onboarded", false); }
 
     // Picking a theme starts from that theme: tweaks are dropped.
     function pickTheme(id) {
@@ -300,10 +372,10 @@ Item {
         onTriggered: {
             // Defaults stay out of the file.
             // A panel.json from a newer stance is read but never rewritten.
-            if (svc.prefsSchema > 1)
+            if (svc.prefsSchema > svc.prefsSchemaMax)
                 return;
             const p = JSON.parse(JSON.stringify(svc.prefs));
-            p.schema = 1;
+            p.schema = svc.prefsSchemaMax;
             if (p.theme === "") delete p.theme;
             if (p.themeLight === "stance-light") delete p.themeLight;
             if (p.themeDark === "stance-dark") delete p.themeDark;
@@ -322,8 +394,17 @@ Item {
             const o = svc.parse(text());
             svc.prefsSchema = o && typeof o.schema === "number" ? o.schema : 1;
             svc.prefs = svc.normPrefs(o);
+            svc.prefsState = "present";
             if (svc.autoTheme)
                 svc.refreshScheme();
+        }
+        // No file = first run (setup). Unreadable = defaults, no setup.
+        onLoadFailed: error => {
+            const missing = error === FileViewError.FileNotFound;
+            svc.prefs = svc.normPrefs(missing ? { onboarded: false } : null);
+            svc.prefsState = missing ? "missing" : "present";
+            // Fail closed: a file we could not read is never overwritten.
+            svc.prefsSchema = missing ? svc.prefsSchemaMax : svc.prefsSchemaMax + 1;
         }
     }
 

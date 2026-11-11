@@ -47,6 +47,8 @@ ShellRoot {
         id: popup
         service: stanceService
         theme: stanceTheme
+        clipHandled: true
+        onClipRequested: clipShelf.open = true
         screen: {
             const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
             return Quickshell.screens.find(s => s.name === name) || Quickshell.screens[0];

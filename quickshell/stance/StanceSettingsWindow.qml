@@ -36,6 +36,7 @@ LazyLoader {
         readonly property bool narrow: screenW < 860
         readonly property var categories: [
             { id: "general", label: StanceI18n.t("General"), icon: "settings" },
+            { id: "layout", label: StanceI18n.t("Layout"), icon: "dashboard_customize" },
             { id: "appearance", label: StanceI18n.t("Appearance"), icon: "palette" },
             { id: "displays", label: StanceI18n.t("Displays & modes"), icon: "monitor" },
             { id: "quick", label: StanceI18n.t("Quick settings"), icon: "tune", feature: "quick" },

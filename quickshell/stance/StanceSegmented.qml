@@ -18,6 +18,18 @@ Rectangle {
     radius: theme.chipRadius + 3
     color: theme.background
     opacity: enabled ? 1 : 0.45
+    activeFocusOnTab: enabled
+    border.width: activeFocus ? 2 : 0
+    border.color: theme.accent
+    // Arrow keys step through the segments.
+    function step(d) {
+        const i = model.findIndex(m => current !== null && same(m.value, current));
+        const j = Math.max(0, Math.min(model.length - 1, (i < 0 ? 0 : i + d)));
+        if (model.length > 0 && j !== i)
+            picked(model[j].value);
+    }
+    Keys.onLeftPressed: if (enabled) step(-1)
+    Keys.onRightPressed: if (enabled) step(1)
 
     RowLayout {
         id: row

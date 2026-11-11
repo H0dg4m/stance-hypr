@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Widget board (0.5.0 work)
+- The panel is a board of widgets (map, screen, night light, brightness,
+  audio, modes, clipboard, phone), each in size S, M or L; see `docs/widgets.md`
+- `panel.json` schema 2: ordered `board`, `known`, `onboarded`; schema 1
+  `show.*` switches migrate to the board on read
+- Settings -> Layout: presets (Minimal, Standard, Everything), reorder,
+  resize, remove and add widgets, reset layout; General has "Run setup again"
+- The old "Show in panel" switches are gone (Layout replaces them)
+- Settings code split into one `StanceSettings<Name>.qml` per category;
+  chips, switches and segmented controls take keyboard focus (Tab, Space or
+  Enter, arrows)
+
 ### Automatic light/dark (0.4, ADR 0001 step 7)
 - `stance theme system [--json]` prints `dark`, `light` or `unknown` (XDG
   settings portal, then GNOME gsettings)

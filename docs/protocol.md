@@ -297,6 +297,10 @@ is valid as it is (fixtures in `tests/fixtures/config-0.2.0/` and
 | `modes/*.toml`, `rules.toml` | config dir | `mode put`, `rules put` |
 | `index.json` (clipboard), theme files | data / config | already versioned (`schema`, `stance_theme`) |
 
+`panel.json` is schema 2 since 0.5: `show.*` switches became an ordered
+`board` of `{id, size}`, plus `known` and `onboarded` (see `docs/widgets.md`).
+Schema 1 files are read as the standard board minus the parts switched off.
+
 Reading never rewrites a file. A file with a **newer** schema than the running
 stance is read where that is safe (known keys only), but is never written:
 the command fails with error code `newer_schema` and the file stays as it is.

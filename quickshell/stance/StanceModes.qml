@@ -5,6 +5,8 @@ import QtQuick.Layouts
 StanceSection {
     id: modesCard
     required property StanceService service
+    // "L": card with add and edit · "M": just the mode chips
+    property string size: "L"
     signal edit(string name)
 
     property bool adding: false
@@ -19,6 +21,7 @@ StanceSection {
     title: StanceI18n.t("Modes")
     trailing: [
         StanceChip {
+            visible: modesCard.size === "L"
             theme: modesCard.theme
             icon: modesCard.adding ? "close" : "add"
             label: modesCard.adding ? StanceI18n.t("Cancel") : StanceI18n.t("Add")
@@ -139,6 +142,7 @@ StanceSection {
                     onClicked: modesCard.service.applyMode(item.modelData.name)
                 }
                 StanceChip {
+                    visible: modesCard.size === "L"
                     theme: modesCard.theme
                     icon: "edit"
                     tip: StanceI18n.f("Edit %1", item.modelData.name)
