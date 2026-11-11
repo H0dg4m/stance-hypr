@@ -15,6 +15,7 @@ Rectangle {
     activeFocusOnTab: enabled
     Keys.onSpacePressed: if (enabled) toggled(!checked)
     Keys.onReturnPressed: if (enabled) toggled(!checked)
+    Keys.onEnterPressed: if (enabled) toggled(!checked)
     border.width: checked && !activeFocus ? 0 : 2
     border.color: activeFocus ? theme.accent : theme.textDim
     Behavior on color { ColorAnimation { duration: sw.theme.animMs } }

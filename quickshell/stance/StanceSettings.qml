@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 
 // Panel settings: shows the page of the picked category. Each page lives in
-// its own StanceSettings<Name>.qml and loads its own state.
+// its own StanceSettings<Name>.qml and loads its own state; only the shown
+// one is built, so opening Settings does not run every page's checks.
 ColumnLayout {
     id: page
     required property StanceService service
@@ -13,8 +14,18 @@ ColumnLayout {
 
     spacing: 10
 
-    StanceSettingsGeneral { visible: page.cat === "general"; service: page.service; theme: page.theme }
-    StanceSettingsLayout { visible: page.cat === "layout"; service: page.service; theme: page.theme }
+    Loader {
+        active: page.cat === "general"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsGeneral { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "layout"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsLayout { service: page.service; theme: page.theme }
+    }
     ColumnLayout {
         visible: page.cat === "appearance"
         Layout.fillWidth: true
@@ -34,10 +45,40 @@ ColumnLayout {
             theme: page.theme
         }
     }
-    StanceSettingsDisplays { visible: page.cat === "displays"; service: page.service; theme: page.theme }
-    StanceSettingsQuick { visible: page.cat === "quick"; service: page.service; theme: page.theme }
-    StanceSettingsClip { visible: page.cat === "clip"; service: page.service; theme: page.theme }
-    StanceSettingsPhone { visible: page.cat === "phone"; service: page.service; theme: page.theme }
-    StanceSettingsFeatures { visible: page.cat === "features"; service: page.service; theme: page.theme }
-    StanceSettingsHealth { visible: page.cat === "health"; service: page.service; theme: page.theme }
+    Loader {
+        active: page.cat === "displays"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsDisplays { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "quick"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsQuick { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "clip"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsClip { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "phone"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsPhone { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "features"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsFeatures { service: page.service; theme: page.theme }
+    }
+    Loader {
+        active: page.cat === "health"
+        visible: active
+        Layout.fillWidth: true
+        sourceComponent: StanceSettingsHealth { service: page.service; theme: page.theme }
+    }
 }

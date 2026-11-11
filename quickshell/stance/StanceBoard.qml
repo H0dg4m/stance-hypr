@@ -39,6 +39,7 @@ Item {
     function available(id, size) {
         switch (id) {
         case "screen": return host.selected !== null;
+        case "clip": return host.hasClipShelf;
         case "night": return night !== null;
         case "brightness": return displays.length > 0;
         case "audio": return sinks.length > (size === "S" ? 0 : 1);

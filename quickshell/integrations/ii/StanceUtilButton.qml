@@ -66,6 +66,8 @@ Item {
         service: stanceService
         theme: stanceTheme
         anchorItem: button
+        // ii has no stance clipboard shelf.
+        hasClipShelf: false
         bottom: Config.options.bar.bottom
         barHeight: Appearance.sizes.barHeight
     }

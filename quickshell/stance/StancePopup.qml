@@ -23,6 +23,8 @@ Scope {
     // the end4 shelf (`stanceclip`); the standalone shell opens its own.
     signal clipRequested
     property bool clipHandled: false
+    // No shelf in this shell at all (ii): the board hides the clip widget.
+    property bool hasClipShelf: true
     onClipRequested: if (!clipHandled) Quickshell.execDetached(["qs", "-p", Quickshell.shellDir, "ipc", "call", "stanceclip", "open"])
 
     onOpenChanged: if (open) service.refresh()
@@ -117,6 +119,7 @@ Scope {
                         service: root.service
                         theme: root.theme
                         preferredName: win.screen ? win.screen.name : ""
+                        hasClipShelf: root.hasClipShelf
                         onSettingsRequested: {
                             root.settingsOpen = true;
                             root.open = false;

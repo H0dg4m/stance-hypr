@@ -18,6 +18,8 @@ ColumnLayout {
     signal settingsRequested
     // The clipboard widget asks the shell to open the shelf.
     signal clipRequested
+    // false where no clipboard shelf answers (ii): the clip widget hides.
+    property bool hasClipShelf: true
 
     readonly property var selected: {
         const ms = service.monitors;

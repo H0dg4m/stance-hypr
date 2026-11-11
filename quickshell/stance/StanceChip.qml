@@ -26,6 +26,7 @@ Rectangle {
     activeFocusOnTab: enabled
     Keys.onSpacePressed: if (enabled) clicked()
     Keys.onReturnPressed: if (enabled) clicked()
+    Keys.onEnterPressed: if (enabled) clicked()
     border.width: activeFocus ? 2 : 0
     border.color: theme.accent
     scale: mouse.pressed && enabled ? 0.97 : 1
