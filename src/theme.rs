@@ -421,6 +421,66 @@ pub fn export_to(t: &Theme, out: &Path, force: bool) -> Result<()> {
         .map_err(|e| Error::new("io", format!("{}: {e}", out.display())))
 }
 
+/// The desktop's light/dark preference: "dark", "light" or "unknown".
+/// Asks the XDG settings portal first (`org.freedesktop.appearance
+/// color-scheme`: 1 dark, 2 light, 0 no preference), then GNOME's
+/// gsettings. Each call has a short timeout; a missing tool is "unknown".
+#[allow(dead_code)] // TODO(0.4): drop once main.rs calls it (see CHANGELOG/ADR step 6-7)
+pub fn system_scheme() -> &'static str {
+    use std::time::Duration;
+    let t = Duration::from_secs(2);
+    if let Some(busctl) = crate::tool::find("busctl")
+        && let Ok(out) = crate::tool::run_tool(
+            &busctl,
+            &[
+                "--user",
+                "call",
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Settings",
+                "ReadOne",
+                "ss",
+                "org.freedesktop.appearance",
+                "color-scheme",
+            ],
+            t,
+        )
+        && let Some(s) = parse_portal(&out)
+    {
+        return s;
+    }
+    if let Some(gs) = crate::tool::find("gsettings")
+        && let Ok(out) = crate::tool::run_tool(
+            &gs,
+            &["get", "org.gnome.desktop.interface", "color-scheme"],
+            t,
+        )
+        && let Some(s) = parse_gsettings(&out)
+    {
+        return s;
+    }
+    "unknown"
+}
+
+/// `busctl` prints `v u 1` for ReadOne (older portals: `v v u 1`); the last
+/// word is the value. 0 (no preference) and anything odd give None.
+fn parse_portal(out: &str) -> Option<&'static str> {
+    match out.split_whitespace().last()?.parse::<u32>().ok()? {
+        1 => Some("dark"),
+        2 => Some("light"),
+        _ => None,
+    }
+}
+
+/// `gsettings get` prints `'prefer-dark'`, `'prefer-light'` or `'default'`.
+fn parse_gsettings(out: &str) -> Option<&'static str> {
+    match out.trim().trim_matches(['\'', '"']) {
+        "prefer-dark" => Some("dark"),
+        "prefer-light" | "default" => Some("light"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,5 +589,22 @@ mod tests {
         assert!(th.rm("nord").is_err());
         assert!(th.get("mine").is_err());
         fs::remove_dir_all(th.dir.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn system_scheme_parsers() {
+        assert_eq!(parse_portal("v u 1\n"), Some("dark"));
+        assert_eq!(parse_portal("v u 2"), Some("light"));
+        assert_eq!(parse_portal("v v u 1\n"), Some("dark"));
+        assert_eq!(parse_portal("v u 0\n"), None);
+        assert_eq!(parse_portal("v u 7\n"), None);
+        assert_eq!(parse_portal(""), None);
+        assert_eq!(parse_portal("Call failed: no such method"), None);
+        assert_eq!(parse_gsettings("'prefer-dark'\n"), Some("dark"));
+        assert_eq!(parse_gsettings("'prefer-light'\n"), Some("light"));
+        assert_eq!(parse_gsettings("'default'\n"), Some("light"));
+        assert_eq!(parse_gsettings("uint32 1"), None);
+        assert_eq!(parse_gsettings(""), None);
+        assert!(["dark", "light", "unknown"].contains(&system_scheme()));
     }
 }

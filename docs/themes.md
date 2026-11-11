@@ -63,9 +63,27 @@ stance theme rm ID                  # user themes only
 New keys:
 - `"theme": "<id>" | "shell"` — `shell` = keep the colours the embedding shell passes
   (end4 integration default). Standalone default: `stance-dark`.
+  `"auto"` follows the system's light/dark preference (see below).
+- `"themeLight"` / `"themeDark"` — the pair `"auto"` uses; defaults `stance-light` and
+  `stance-dark`. The settings page lists light themes under the first and dark ones
+  under the second.
+- `"schema": 1` — file version; a `panel.json` with a newer schema is read but the
+  panel does not write it.
 - `"themeOverrides": {colour or metric key: value}` — per-key tweaks on top of the
   selected theme (the "detailed customisation"); same validation as the file format.
 - `"lang": "auto" | "en" | "tr"` — `auto` follows `LC_ALL`/`LC_MESSAGES`/`LANG`.
+
+### Automatic light/dark
+```
+stance theme system [--json]    # dark | light | unknown
+```
+Asks the XDG settings portal (`org.freedesktop.appearance color-scheme`: 1 dark,
+2 light, 0 no preference), then GNOME's `gsettings` (`prefer-dark` dark,
+`prefer-light`/`default` light). `--json` → `{"ok":true,"schema":1,"data":{"scheme":"dark"}}`.
+In `"auto"` the panel asks on start, whenever it opens and when Qt's colour scheme
+changes; there is no background watcher. Qt's own value is only the fallback when
+stance cannot answer, because without a Qt platform theme it reports Light on a dark
+desktop. Until the first answer the default theme stays.
 
 ## Features
 ```

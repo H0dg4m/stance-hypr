@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Automatic light/dark (0.4, ADR 0001 step 7)
+- `stance theme system [--json]` prints `dark`, `light` or `unknown` (XDG
+  settings portal, then GNOME gsettings)
+- Panel: Appearance has an "Automatic (follow system)" tile and a light and a
+  dark theme picker; `panel.json` gets `theme: "auto"`, `themeLight`,
+  `themeDark`. The panel re-reads the system setting when it opens
+
 ### Config schema (0.4, ADR 0001 step 6)
 - Every file stance writes carries a version (`"schema": 1` / `schema = 1`):
   `clip.json`, `features.json`, `deck.toml`, `deck-devices.toml`,

@@ -46,6 +46,18 @@ ColumnLayout {
         { key: "spacing", label: "Spacing" }, { key: "animMs", label: "Animation (ms)" }
     ]
 
+    // Colours of a theme by id (for the Automatic tile); the stock pair when
+    // the id is not (or no longer) in the list.
+    function themeColors(id, dark) {
+        const e = service.themes.find(x => x.theme.id === id) || service.themes.find(x => x.theme.id === (dark ? "stance-dark" : "stance-light"));
+        return e ? e.theme.colors : theme.defaultColors;
+    }
+    // Themes offered for one side of the pair: matching light/dark, plus the
+    // current pick if it is something else.
+    function pairChoices(dark) {
+        const cur = dark ? prefs.themeDark : prefs.themeLight;
+        return service.themes.filter(e => e.theme.dark === dark || e.theme.id === cur).map(e => ({ id: e.theme.id, name: e.theme.name }));
+    }
     function slug(s) {
         return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
     }
@@ -71,7 +83,7 @@ ColumnLayout {
     function save(force) {
         const name = saveName.text.trim();
         const id = slug(name);
-        if (name === "" || name.length > 60 || id === "" || id === "shell") {
+        if (name === "" || name.length > 60 || id === "" || id === "shell" || id === "auto") {
             say(StanceI18n.t("Give the theme a name (letters and digits)."), true);
             return;
         }
@@ -190,6 +202,118 @@ ColumnLayout {
             }
         ]
 
+        // Automatic: light theme by day, dark by night, whatever the system says.
+        Rectangle {
+            id: autoTile
+            readonly property var lightCs: ap.themeColors(ap.prefs.themeLight, false)
+            readonly property var darkCs: ap.themeColors(ap.prefs.themeDark, true)
+            readonly property bool on: ap.service.autoTheme
+            Layout.fillWidth: true
+            implicitHeight: 44
+            radius: ap.theme.chipRadius
+            color: darkCs.background
+            border.width: on ? 2 : 1
+            border.color: on ? ap.theme.accent : ap.theme.border
+            clip: true
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: parent.width / 2
+                color: autoTile.lightCs.background
+            }
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: 10
+                spacing: 4
+                Repeater {
+                    model: [autoTile.lightCs.accent, autoTile.lightCs.text, autoTile.darkCs.accent, autoTile.darkCs.text]
+                    delegate: Rectangle {
+                        required property string modelData
+                        width: 14; height: 14; radius: 7
+                        color: modelData
+                        border.width: 1
+                        border.color: Qt.rgba(0.5, 0.5, 0.5, 0.4)
+                    }
+                }
+            }
+            Rectangle {
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                height: 22
+                width: autoText.implicitWidth + 16
+                radius: 11
+                color: ap.theme.surface
+                Text {
+                    id: autoText
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: StanceI18n.t("Automatic (follow system)")
+                    color: ap.theme.text
+                    font.family: ap.theme.fontFamily
+                    font.pixelSize: ap.theme.fontSize - 1
+                    font.weight: autoTile.on ? Font.DemiBold : Font.Normal
+                }
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: ap.service.pickTheme("auto")
+            }
+        }
+        // The pair used by Automatic: light themes for light, dark for dark.
+        ColumnLayout {
+            visible: ap.service.autoTheme
+            Layout.fillWidth: true
+            spacing: 6
+            Dim {
+                Layout.fillWidth: true
+                text: ap.service.systemScheme === "unknown"
+                    ? StanceI18n.t("The system does not say whether it is light or dark; the default theme is used.")
+                    : ap.service.systemScheme === "dark" ? StanceI18n.t("The system is dark now.") : StanceI18n.t("The system is light now.")
+            }
+            Dim { text: StanceI18n.t("Light theme"); Layout.fillWidth: true }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
+                Repeater {
+                    model: ap.pairChoices(false)
+                    delegate: StanceChip {
+                        required property var modelData
+                        theme: ap.theme
+                        label: modelData.name
+                        maxWidth: 200
+                        selected: ap.prefs.themeLight === modelData.id
+                        onClicked: ap.service.setPref("themeLight", modelData.id)
+                    }
+                }
+            }
+            Dim { text: StanceI18n.t("Dark theme"); Layout.fillWidth: true }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
+                Repeater {
+                    model: ap.pairChoices(true)
+                    delegate: StanceChip {
+                        required property var modelData
+                        theme: ap.theme
+                        label: modelData.name
+                        maxWidth: 200
+                        selected: ap.prefs.themeDark === modelData.id
+                        onClicked: ap.service.setPref("themeDark", modelData.id)
+                    }
+                }
+            }
+        }
+        Dim {
+            visible: ap.service.prefsSchema > 1
+            Layout.fillWidth: true
+            text: StanceI18n.t("panel.json comes from a newer stance, so changes here are not saved.")
+            color: ap.theme.danger
+        }
+
         // Theme tiles: a miniature of the theme in its own colours.
         Grid {
             id: tiles
@@ -204,7 +328,7 @@ ColumnLayout {
                     required property var modelData
                     readonly property var th: modelData.theme
                     readonly property var cs: modelData.shell ? (ap.theme.shell || ap.theme.defaultColors) : th.colors
-                    readonly property bool on: ap.service.activeThemeId === th.id
+                    readonly property bool on: !ap.service.autoTheme && ap.service.activeThemeId === th.id
                     width: tiles.tileW
                     height: 66
                     radius: ap.theme.chipRadius

@@ -43,12 +43,16 @@ Item {
         confirmTimeout: 12,
         compact: false,
         theme: "",
+        themeLight: "stance-light",
+        themeDark: "stance-dark",
         themeOverrides: {},
         lang: "auto",
         settingsPage: "general"
     })
     readonly property var settingsPages: ["general", "appearance", "displays", "quick", "clip", "phone", "features", "health"]
     property var prefs: prefDefaults
+    // `schema` of panel.json as read; a newer one is never overwritten.
+    property int prefsSchema: 1
     readonly property int confirmTimeout: prefs.confirmTimeout
 
     // ---- theme (docs/themes.md) ------------------------------------------------
@@ -60,7 +64,32 @@ Item {
     // `stance theme list --json` entries: { builtin, theme: { id, name, dark, colors, metrics } }
     property var themes: []
     property string themeError: ""
-    readonly property string activeThemeId: prefs.theme !== "" ? prefs.theme : defaultTheme
+    // theme "auto": follow the system's light/dark preference with the pair
+    // themeLight / themeDark. `stance theme system` (the XDG settings portal)
+    // is asked on start, each time the panel opens and when Qt's own
+    // colorScheme changes. Qt's value alone is not trusted: without a
+    // platform theme it reports Light on a dark desktop. It is the fallback
+    // when stance cannot answer (old build, no portal). Until the first
+    // answer the default theme stays, so there is no flash of the wrong one.
+    readonly property int qtScheme: Qt.styleHints ? Qt.styleHints.colorScheme : 0
+    // "pending" (not asked yet) | "dark" | "light" | "none" (asked, no answer)
+    property string cliScheme: "pending"
+    readonly property string systemScheme: cliScheme === "dark" || cliScheme === "light" ? cliScheme
+        : cliScheme === "none" ? (qtScheme === 2 ? "dark" : qtScheme === 1 ? "light" : "unknown") : "unknown"
+    readonly property bool autoTheme: prefs.theme === "auto"
+    onQtSchemeChanged: if (autoTheme) refreshScheme()
+    function themeIdFor(p, scheme) {
+        if (p.theme === "auto")
+            return scheme === "light" ? p.themeLight : scheme === "dark" ? p.themeDark : defaultTheme;
+        return p.theme !== "" ? p.theme : defaultTheme;
+    }
+    function refreshScheme() {
+        call(["theme", "system"], r => {
+            const s = r && r.ok && r.data ? r.data.scheme : "";
+            cliScheme = s === "dark" || s === "light" ? s : "none";
+        });
+    }
+    readonly property string activeThemeId: themeIdFor(prefs, systemScheme)
     readonly property var activeThemeEntry: themes.find(e => e.theme.id === activeThemeId) || null
     readonly property var colorKeys: ["background", "card", "surface", "surfaceHover", "border", "text", "textDim", "accent", "accentText", "danger", "dangerText", "scrim"]
     readonly property var metricSpec: ({
@@ -86,7 +115,7 @@ Item {
     // Unknown keys, wrong types and out-of-range values fall back to defaults.
     function normPrefs(o) {
         const d = prefDefaults;
-        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeOverrides: {}, lang: "auto", settingsPage: "general" };
+        const out = { show: {}, confirmTimeout: d.confirmTimeout, compact: d.compact, theme: "", themeLight: d.themeLight, themeDark: d.themeDark, themeOverrides: {}, lang: "auto", settingsPage: "general" };
         const show = o && typeof o.show === "object" && o.show ? o.show : {};
         for (const k of Object.keys(d.show))
             out.show[k] = typeof show[k] === "boolean" ? show[k] : d.show[k];
@@ -96,6 +125,10 @@ Item {
             out.compact = o.compact;
         if (o && typeof o.theme === "string" && /^[a-z0-9-]{1,40}$/.test(o.theme))
             out.theme = o.theme;
+        if (o && typeof o.themeLight === "string" && /^[a-z0-9-]{1,40}$/.test(o.themeLight))
+            out.themeLight = o.themeLight;
+        if (o && typeof o.themeDark === "string" && /^[a-z0-9-]{1,40}$/.test(o.themeDark))
+            out.themeDark = o.themeDark;
         if (o && typeof o.themeOverrides === "object" && o.themeOverrides) {
             for (const k of Object.keys(o.themeOverrides)) {
                 const v = normOverride(k, o.themeOverrides[k]);
@@ -110,7 +143,7 @@ Item {
         return out;
     }
 
-    // key: "show.<name>" | "confirmTimeout" | "compact" | "theme" | "lang" | "settingsPage"
+    // key: "show.<name>" | "confirmTimeout" | "compact" | "theme" | "themeLight" | "themeDark" | "lang" | "settingsPage"
     function setPref(key, value) {
         const p = JSON.parse(JSON.stringify(prefs));
         if (key.startsWith("show."))
@@ -160,6 +193,7 @@ Item {
     onThemesChanged: applyTheme()
     onThemeTargetChanged: applyTheme()
     onDefaultThemeChanged: applyTheme()
+    onSystemSchemeChanged: applyTheme()
 
     function applyTheme() {
         StanceI18n.lang = prefs.lang;
@@ -167,7 +201,7 @@ Item {
             return;
         // Not through activeThemeId / activeThemeEntry: those bindings may not
         // have been re-evaluated yet when a change handler calls this.
-        const id = prefs.theme !== "" ? prefs.theme : defaultTheme;
+        const id = themeIdFor(prefs, systemScheme);
         let obj = null;
         if (id !== "shell") {
             const e = themes.find(x => x.theme.id === id) || themes.find(x => x.theme.id === "stance-dark");
@@ -265,8 +299,14 @@ Item {
         interval: 500
         onTriggered: {
             // Defaults stay out of the file.
+            // A panel.json from a newer stance is read but never rewritten.
+            if (svc.prefsSchema > 1)
+                return;
             const p = JSON.parse(JSON.stringify(svc.prefs));
+            p.schema = 1;
             if (p.theme === "") delete p.theme;
+            if (p.themeLight === "stance-light") delete p.themeLight;
+            if (p.themeDark === "stance-dark") delete p.themeDark;
             if (Object.keys(p.themeOverrides).length === 0) delete p.themeOverrides;
             if (p.lang === "auto") delete p.lang;
             if (p.settingsPage === "general") delete p.settingsPage;
@@ -278,7 +318,13 @@ Item {
         id: prefsFile
         path: svc.configDir + "/panel.json"
         printErrors: false
-        onLoaded: svc.prefs = svc.normPrefs(svc.parse(text()))
+        onLoaded: {
+            const o = svc.parse(text());
+            svc.prefsSchema = o && typeof o.schema === "number" ? o.schema : 1;
+            svc.prefs = svc.normPrefs(o);
+            if (svc.autoTheme)
+                svc.refreshScheme();
+        }
     }
 
     // ---- generic CLI calls with a callback (mode editor, rules, doctor) ------
@@ -352,6 +398,8 @@ Item {
         listProc.running = true;
         modesProc.running = true;
         quickProc.running = true;
+        if (autoTheme)
+            refreshScheme();
     }
 
     // Night light / brightness / audio: no confirm timer, so they run on
