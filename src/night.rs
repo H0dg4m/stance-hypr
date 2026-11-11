@@ -6,12 +6,13 @@
 //! only started when none answers (two would fight over the colour matrix).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::backend::Backend;
 use crate::error::{Error, Result};
-use crate::hypr::Instance;
 use crate::model::sanitize;
 use crate::store;
 
@@ -71,33 +72,47 @@ fn expect_ok(reply: &str) -> Result<()> {
     }
 }
 
-pub struct Night<'a> {
-    inst: &'a Instance,
+/// How to reach the night-light daemon of one desktop session. `Send` so
+/// the compositor daemon can use it from a worker thread.
+pub trait Link: Send + Sync {
+    /// One request/reply exchange (hyprsunset's framing).
+    fn ask(&self, req: &str) -> Result<String>;
+    /// Environment a freshly started hyprsunset needs to find the session.
+    fn env(&self) -> Vec<(&'static str, String)>;
+}
+
+#[derive(Clone)]
+pub struct Night {
+    link: Arc<dyn Link>,
     state_dir: PathBuf,
 }
 
-impl<'a> Night<'a> {
-    pub fn new(inst: &'a Instance, state_dir: &Path) -> Self {
+impl Night {
+    pub fn new(link: Arc<dyn Link>, state_dir: &Path) -> Self {
         Self {
-            inst,
+            link,
             state_dir: state_dir.to_path_buf(),
         }
     }
 
-    pub fn instance(&self) -> &Instance {
-        self.inst
-    }
-
-    pub fn state_dir(&self) -> &Path {
-        &self.state_dir
-    }
-
-    fn socket(&self) -> PathBuf {
-        self.inst.dir.join(".hyprsunset.sock")
+    /// Night light of `backend`'s session, or `unsupported`.
+    pub fn open(backend: &dyn Backend, state_dir: &Path) -> Result<Self> {
+        backend
+            .night_link()
+            .map(|l| Self::new(l, state_dir))
+            .ok_or_else(|| {
+                Error::new(
+                    "unsupported",
+                    format!(
+                        "night light is not available on the {} backend",
+                        backend.name()
+                    ),
+                )
+            })
     }
 
     fn ask(&self, req: &str) -> Result<String> {
-        self.inst.request_on(&self.socket(), req)
+        self.link.ask(req)
     }
 
     fn saved_path(&self) -> PathBuf {
@@ -213,10 +228,12 @@ impl<'a> Night<'a> {
                 "WAYLAND_DISPLAY is not set; cannot start hyprsunset",
             ));
         }
-        let mut child = Command::new(tool)
-            .arg("-t")
-            .arg(k.to_string())
-            .env("HYPRLAND_INSTANCE_SIGNATURE", &self.inst.signature)
+        let mut cmd = Command::new(tool);
+        cmd.arg("-t").arg(k.to_string());
+        for (key, val) in self.link.env() {
+            cmd.env(key, val);
+        }
+        let mut child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

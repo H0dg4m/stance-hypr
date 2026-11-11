@@ -304,20 +304,8 @@ fn run(a: &Args) -> Result<ExitCode> {
     // Reading, confirming and reverting always work.
     let mutating = matches!(cmd, "set" | "layout" | "arrange" | "lid" | "daemon")
         || (cmd == "mode" && a.pos.get(1).map(String::as_str) == Some("apply"));
-    if mutating
-        && !a.has("--force-version")
-        && std::env::var_os("STANCE_FORCE_VERSION").is_none()
-        && let Ok(v) = hypr.version()
-        && doctor::newer_than_tested(&v)
-    {
-        return Err(Error::new(
-            "untested_version",
-            format!(
-                "Hyprland {v} is newer than the versions stance was tested with ({}); \
-                 check for a stance update, or pass --force-version (STANCE_FORCE_VERSION=1 for the daemon) to try anyway",
-                doctor::TESTED.join(", ")
-            ),
-        ));
+    if mutating && !a.has("--force-version") && std::env::var_os("STANCE_FORCE_VERSION").is_none() {
+        hypr.compat_check()?;
     }
 
     match cmd {
@@ -512,7 +500,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
             out.warnings.extend(warnings);
             out.warnings.extend(qwarn);
             if !quick.is_empty() {
-                let n = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir);
+                let n = night::Night::open(hypr, &ctx.state_dir)?;
                 let (changed, w) = modes::apply_quick(&quick, Some(&n));
                 out.changed.extend(changed);
                 out.warnings.extend(w);
@@ -527,7 +515,7 @@ fn mode_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
             // Opt-in: a display mode that silently switches the audio
             // output on the next hotplug would be a surprise.
             if a.has("--with-quick") {
-                let ns = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir).status();
+                let ns = night::Night::open(hypr, &ctx.state_dir)?.status();
                 if ns.running {
                     m.night_light = Some(match ns.temperature {
                         Some(k) if ns.on => night::NightSetting::Kelvin(k),
@@ -1159,7 +1147,7 @@ fn rules_cmd(a: &Args, json: bool) -> Result<()> {
 }
 
 fn night_cmd(a: &Args, ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
-    let n = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir);
+    let n = night::Night::open(hypr, &ctx.state_dir)?;
     let kelvin = |i: usize| -> Result<u32> {
         let v = a.arg(i, "temperature in K")?;
         v.parse()
@@ -1309,7 +1297,13 @@ fn audio_cmd(a: &Args, json: bool) -> Result<()> {
 /// fails on its own: a missing ddcutil does not hide the night light.
 fn quick_cmd(ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
     let mut errors = serde_json::Map::new();
-    let night = night::Night::new(backend::need_instance(hypr)?, &ctx.state_dir).status();
+    let night = match night::Night::open(hypr, &ctx.state_dir) {
+        Ok(n) => Some(n.status()),
+        Err(e) => {
+            errors.insert("night".into(), e.message.into());
+            None
+        }
+    };
     let bright = match connectors(hypr).and_then(|c| brightness::list(&c)) {
         Ok(l) => l,
         Err(e) => {
@@ -1327,9 +1321,10 @@ fn quick_cmd(ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
     if json {
         ok_json(&json!({ "night": night, "brightness": bright, "sinks": sinks, "errors": errors }));
     } else {
-        match night.temperature {
-            Some(k) if night.on => println!("night light: on, {k} K"),
-            _ => println!("night light: off"),
+        match night {
+            Some(n) if n.on => println!("night light: on, {} K", n.temperature.unwrap_or(0)),
+            Some(_) => println!("night light: off"),
+            None => {}
         }
         bright.iter().for_each(print_brightness);
         if let Some(s) = sinks.iter().find(|s| s.default) {

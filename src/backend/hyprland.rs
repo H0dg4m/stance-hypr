@@ -4,6 +4,7 @@
 
 use std::cell::OnceCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -12,6 +13,19 @@ use crate::error::{Error, Result};
 use crate::hypr::Instance;
 use crate::model::{Mode, Monitor, Parser, sanitize};
 use crate::spec::{MonitorSpec, check_connector};
+
+/// hyprsunset answers on a socket in the Hyprland instance dir.
+struct HyprsunsetLink(Instance);
+
+impl crate::night::Link for HyprsunsetLink {
+    fn ask(&self, req: &str) -> Result<String> {
+        self.0.request_on(&self.0.dir.join(".hyprsunset.sock"), req)
+    }
+
+    fn env(&self) -> Vec<(&'static str, String)> {
+        vec![("HYPRLAND_INSTANCE_SIGNATURE", self.0.signature.clone())]
+    }
+}
 
 /// hyprlang / getoption path of a neutral option.
 fn path(key: OptKey) -> &'static str {
@@ -144,8 +158,30 @@ impl Backend for Hyprland {
         &self.instance.signature
     }
 
-    fn hypr_instance(&self) -> Option<&Instance> {
-        Some(&self.instance)
+    fn night_link(&self) -> Option<Arc<dyn crate::night::Link>> {
+        Some(Arc::new(HyprsunsetLink(self.instance.clone())))
+    }
+
+    fn raw_events(&self) -> Result<std::io::BufReader<std::os::unix::net::UnixStream>> {
+        self.instance.events()
+    }
+
+    fn compat_check(&self) -> Result<()> {
+        // A Hyprland newer than any tested one may have changed the IPC or
+        // the config API under us.
+        if let Ok(v) = self.version()
+            && crate::doctor::newer_than_tested(&v)
+        {
+            return Err(Error::new(
+                "untested_version",
+                format!(
+                    "Hyprland {v} is newer than the versions stance was tested with ({}); \
+                     check for a stance update, or pass --force-version (STANCE_FORCE_VERSION=1 for the daemon) to try anyway",
+                    crate::doctor::TESTED.join(", ")
+                ),
+            ));
+        }
+        Ok(())
     }
 
     fn version(&self) -> Result<String> {

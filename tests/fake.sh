@@ -60,6 +60,8 @@ check "night unsupported code" unsupported "$(echo "$out" | j "d['error']['code'
 check "caps json" fake "$(s caps --json | j "d['data']['backend']")"
 check "persist unsupported on fake" unsupported "$(s persist --json 2>&1 | j "d['error']['code']")"
 
+check "quick keeps going without night light" True "$(s quick --json | j "d['data']['night'] is None and 'night' in d['data']['errors']")"
+
 # a mode with compositor options on a backend without them
 printf '[[monitor]]\nmatch = "A-1"\nscale = 1.0\n\n[hyprland]\nblur = false\n' > "$XDG_CONFIG_HOME/stance/modes/opts.toml"
 chmod 600 "$XDG_CONFIG_HOME/stance/modes/opts.toml"

@@ -5,12 +5,12 @@ pub mod fake;
 pub mod hyprland;
 
 use std::path::Path;
+use std::sync::Arc;
 
 pub use hyprland::Hyprland;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::hypr::Instance;
 use crate::model::{Monitor, Parser};
 use crate::spec::MonitorSpec;
 
@@ -139,10 +139,22 @@ pub trait Backend {
     }
     /// Identifies this compositor session; pending state is bound to it.
     fn session_id(&self) -> &str;
-    /// The Hyprland instance behind this backend, for helpers that talk to
-    /// sibling sockets (hyprsunset). `None` elsewhere.
-    fn hypr_instance(&self) -> Option<&Instance> {
+    /// Night light of this session (hyprsunset on Hyprland); `None` where
+    /// there is none.
+    fn night_link(&self) -> Option<Arc<dyn crate::night::Link>> {
         None
+    }
+    /// Hyprland's raw event socket (until neutral events land).
+    fn raw_events(&self) -> Result<std::io::BufReader<std::os::unix::net::UnixStream>> {
+        Err(Error::new(
+            "unsupported",
+            format!("events are not available on the {} backend", self.name()),
+        ))
+    }
+    /// Refuses (code `untested_version`) when this compositor is newer than
+    /// any version stance was tested with. Called before display changes.
+    fn compat_check(&self) -> Result<()> {
+        Ok(())
     }
     fn version(&self) -> Result<String>;
     fn parser(&self) -> Result<Parser>;
@@ -184,16 +196,6 @@ pub fn connect(name: Option<&str>, state_dir: &Path) -> Result<Box<dyn Backend>>
             format!("unknown backend `{other}` (hyprland, fake)"),
         )),
     }
-}
-
-/// Hyprland-only helpers (hyprsunset) until they move behind the backend.
-pub fn need_instance(b: &dyn Backend) -> Result<&Instance> {
-    b.hypr_instance().ok_or_else(|| {
-        Error::new(
-            "unsupported",
-            format!("not available on the {} backend", b.name()),
-        )
-    })
 }
 
 #[cfg(test)]

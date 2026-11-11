@@ -479,7 +479,7 @@ pub fn apply_quick(q: &Quick, night: Option<&crate::night::Night>) -> (Vec<Strin
                 _ => "night light off".to_string(),
             }),
             Some(Err(e)) => warnings.push(format!("night light: {}", e.message)),
-            None => warnings.push("night light: no Hyprland instance".to_string()),
+            None => warnings.push("night light: not available on this backend".to_string()),
         }
     }
     if let Some(a) = &q.audio {

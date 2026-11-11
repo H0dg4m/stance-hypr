@@ -9,7 +9,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::time::{Duration, Instant};
 
 use crate::apply::Ctx;
-use crate::backend::{Backend, Notice, need_instance};
+use crate::backend::{Backend, Notice};
 use crate::error::{Error, Result};
 use crate::modes;
 
@@ -85,9 +85,8 @@ pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
         ));
     }
 
-    let inst = need_instance(hypr)?;
-    let night = crate::night::Night::new(inst, &state_dir);
-    let mut events = inst.events()?;
+    let night = crate::night::Night::open(hypr, &state_dir).ok();
+    let mut events = hypr.raw_events()?;
     log(&format!("watching Hyprland {}", hypr.session_id()));
 
     let mut hotplug_at: Option<Instant> = None;
@@ -161,7 +160,7 @@ pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
             let added = std::mem::take(&mut added);
             if paused_until.is_some_and(|p| p > now) {
                 log("hotplug ignored (paused after a burst of changes)");
-            } else if let Some(changed) = on_hotplug(&ctx, &night, &added)
+            } else if let Some(changed) = on_hotplug(&ctx, night.as_ref(), &added)
                 && changed
             {
                 history.push_back(now);
@@ -187,7 +186,7 @@ pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
 }
 
 /// Returns Some(changed?) if a rule was applied.
-fn on_hotplug(ctx: &Ctx, night: &crate::night::Night, added: &[String]) -> Option<bool> {
+fn on_hotplug(ctx: &Ctx, night: Option<&crate::night::Night>, added: &[String]) -> Option<bool> {
     if ctx.pending_info().is_some() {
         log("hotplug: a user change is awaiting confirmation, rules skipped");
         return None;
@@ -204,7 +203,7 @@ fn on_hotplug(ctx: &Ctx, night: &crate::night::Night, added: &[String]) -> Optio
     let Some(rule) = modes::matching_rule(&rules, &mons, power) else {
         return restore_remembered(ctx, &mons, added);
     };
-    apply_mode(ctx, &rule.mode, rule.allow_extras, "rule", Some(night))
+    apply_mode(ctx, &rule.mode, rule.allow_extras, "rule", night)
 }
 
 /// No rule matched: put re-plugged monitors back where they last were.
@@ -292,9 +291,8 @@ fn apply_mode(
             let (q, w) = modes::resolve_quick(&m, &ctx.backend.monitors()?, extras);
             w.iter().for_each(|w| log(w));
             if !q.is_empty() {
-                let (inst, dir) = (n.instance().clone(), n.state_dir().to_path_buf());
+                let n = n.clone();
                 std::thread::spawn(move || {
-                    let n = crate::night::Night::new(&inst, &dir);
                     let (changed, w) = modes::apply_quick(&q, Some(&n));
                     w.iter().for_each(|w| log(w));
                     if !changed.is_empty() {

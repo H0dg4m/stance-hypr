@@ -31,6 +31,10 @@
 - Internal: `src/commands.rs` returns serializable results (monitors, status,
   caps, set, layout, arrange, lid, confirm, revert); one renderer prints them
   (CLI text and JSON byte-identical to 0.3)
+- Internal: night light talks through `night::Link` (hyprsunset socket
+  behind the Hyprland backend), `Backend::compat_check()` replaces the
+  version gate in `main`; no module outside `backend/hyprland.rs` and
+  `doctor.rs` uses `hypr::Instance`
 - `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
   compositor (runs in CI)
 
