@@ -57,5 +57,20 @@ out=$(s night status --json 2>&1); rc=$?
 check "night unsupported exit code" 2 "$rc"
 check "night unsupported code" unsupported "$(echo "$out" | j "d['error']['code']")"
 
+check "caps json" fake "$(s caps --json | j "d['data']['backend']")"
+check "persist unsupported on fake" unsupported "$(s persist --json 2>&1 | j "d['error']['code']")"
+
+# a mode with compositor options on a backend without them
+printf '[[monitor]]\nmatch = "A-1"\nscale = 1.0\n\n[hyprland]\nblur = false\n' > "$XDG_CONFIG_HOME/stance/modes/opts.toml"
+chmod 600 "$XDG_CONFIG_HOME/stance/modes/opts.toml"
+s mode apply opts --no-confirm >/dev/null 2>&1; check "options apply by default" 0 $?
+python3 - "$STANCE_STATE_DIR/fake.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d["caps"]={"compositor_options":False}; json.dump(d,open(p,"w"))
+PY
+check "caps seeded" False "$(s caps --json | j "d['data']['caps']['compositor_options']")"
+s mode apply opts --no-confirm --json >/dev/null 2>&1; check "mode with options unsupported (exit)" 2 $?
+check "mode with options unsupported (code)" unsupported "$(s mode apply opts --no-confirm --json 2>&1 | j "d['error']['code']")"
+
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]

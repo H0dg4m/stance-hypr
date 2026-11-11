@@ -16,6 +16,11 @@
 - `--backend NAME` / `STANCE_BACKEND` choose the compositor backend
   (`hyprland`, default; `fake`, an in-memory one for tests: state in
   `<state dir>/fake.json` or `STANCE_FAKE_STATE`)
+- Backend capabilities: `stance caps [--json]`, error code `unsupported`
+  (mode options on a backend without them, `persist`, mirroring, ...);
+  `OptKey` is neutral (hyprlang paths, Lua/legacy rendering and `getoption`
+  parsing now live in `src/backend/hyprland.rs`); `allow_tearing` stays the
+  mode-file key
 - `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
   compositor (runs in CI)
 

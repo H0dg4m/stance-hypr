@@ -24,6 +24,14 @@ with; commands that change screens (`set`, `layout`, `arrange`, `lid`,
 `mode apply`, `daemon`) refuse unless `--force-version` is passed or
 `STANCE_FORCE_VERSION` is set. Reading, `confirm` and `revert` always work.
 
+`unsupported`: the backend lacks the capability the command needs (see
+`stance caps`); nothing was changed. `--backend NAME` (or `STANCE_BACKEND`)
+picks the backend: `hyprland` (default) or `fake` (tests, no compositor).
+
+`stance caps --json` data: `{backend, caps:{displays, mirror, vrr, transform,
+workspaces, compositor_options, persist, events}}`, all booleans. A UI hides
+what is `false`.
+
 `stance status --json` data:
 
 | field | type | meaning |

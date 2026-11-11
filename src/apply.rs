@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::backend::{Backend, Notice, OptKey, OptValue};
+use crate::backend::{Backend, Caps, Notice, OptKey, OptValue};
 use crate::error::{Error, Result};
 use crate::model::Monitor;
 use crate::power::PowerProfile;
@@ -176,6 +176,28 @@ impl Ctx<'_> {
         vec![]
     }
 
+    /// Refuses changes the backend cannot make (code `unsupported`).
+    fn check_caps(&self, t: &State) -> Result<()> {
+        let c = self.backend.capabilities();
+        let b = self.backend.name();
+        Caps::require(c.displays || t.monitors.is_empty(), b, "changing displays")?;
+        for m in &t.monitors {
+            Caps::require(c.mirror || m.mirror.is_none(), b, "mirroring")?;
+            Caps::require(c.vrr || m.vrr == 0, b, "variable refresh rate")?;
+            Caps::require(c.transform || m.transform == 0, b, "rotation")?;
+        }
+        Caps::require(
+            c.compositor_options || t.options.is_empty(),
+            b,
+            "compositor options",
+        )?;
+        Caps::require(
+            c.workspaces || t.workspaces.is_empty(),
+            b,
+            "workspace binding",
+        )
+    }
+
     /// Captures the current value of everything `target` touches.
     fn capture(&self, target: &State, mons: &[Monitor]) -> Result<State> {
         let mut s = State::default();
@@ -246,10 +268,10 @@ impl Ctx<'_> {
                 if self.backend.get_option(*k)? != *v {
                     return Err(Error::new(
                         "not_applied",
-                        format!("{} did not take effect", k.path()),
+                        format!("{} did not take effect", self.backend.option_name(*k)),
                     ));
                 }
-                changed.push(k.path().to_string());
+                changed.push(self.backend.option_name(*k).to_string());
             }
         }
         // 4. Power profile.
@@ -297,6 +319,7 @@ impl Ctx<'_> {
         timeout_s: u64,
         mode_after: Option<ActiveMode>,
     ) -> Result<Outcome> {
+        self.check_caps(target)?;
         let _lock = self.lock()?;
         let mut warnings = self.sweep();
         let mons = self.backend.monitors()?;

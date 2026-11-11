@@ -396,7 +396,7 @@ pub fn resolve_mode(m: &ModeFile, mons: &[Monitor], extras: bool) -> Result<(Sta
             let pairs = [
                 (OptKey::Animations, h.animations.map(OptValue::Bool)),
                 (OptKey::Blur, h.blur.map(OptValue::Bool)),
-                (OptKey::AllowTearing, h.allow_tearing.map(OptValue::Bool)),
+                (OptKey::Tearing, h.allow_tearing.map(OptValue::Bool)),
                 (OptKey::GapsIn, h.gaps_in.as_ref().map(Gaps::value)),
                 (OptKey::GapsOut, h.gaps_out.as_ref().map(Gaps::value)),
             ];
@@ -514,7 +514,7 @@ pub fn from_current(backend: &dyn Backend, description: Option<String>) -> Resul
     out.hyprland = Some(HyprSection {
         animations: as_bool(get(OptKey::Animations)),
         blur: as_bool(get(OptKey::Blur)),
-        allow_tearing: as_bool(get(OptKey::AllowTearing)),
+        allow_tearing: as_bool(get(OptKey::Tearing)),
         gaps_in: get(OptKey::GapsIn).and_then(Gaps::from_value),
         gaps_out: get(OptKey::GapsOut).and_then(Gaps::from_value),
     });

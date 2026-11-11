@@ -43,6 +43,7 @@ stance — bar-first display settings and modes for Hyprland
 Usage:
   stance monitors                      List monitors
   stance status                        Pending change and active mode
+  stance caps                          What the backend supports (global: --backend NAME)
   stance set <monitor> [options]       Change one monitor
       --res WxH  --hz N  --scale S  --pos XxY  --vrr 0|1|2
       --transform 0-7  --on | --off  --custom (allow unadvertised modes)
@@ -318,6 +319,19 @@ fn run(a: &Args) -> Result<ExitCode> {
     }
 
     match cmd {
+        "caps" => {
+            a.max_pos(1)?;
+            let c = hypr.capabilities();
+            if json {
+                ok_json(&json!({ "backend": hypr.name(), "caps": c }));
+            } else {
+                println!("backend {}", hypr.name());
+                let v = serde_json::to_value(c).unwrap_or_default();
+                for (k, on) in v.as_object().into_iter().flatten() {
+                    println!("  {k:<19} {}", if on == true { "yes" } else { "no" });
+                }
+            }
+        }
         "monitors" => {
             a.max_pos(1)?;
             let mons = hypr.monitors()?;
@@ -1425,6 +1439,11 @@ fn quick_cmd(ctx: &Ctx, hypr: &dyn Backend, json: bool) -> Result<()> {
 }
 
 fn persist_cmd(ctx: &Ctx, hypr: &dyn Backend, print: bool, json: bool) -> Result<()> {
+    backend::Caps::require(
+        hypr.capabilities().persist,
+        hypr.name(),
+        "saving the display setup",
+    )?;
     let parser = hypr.parser()?;
     let _lock = ctx.lock()?;
     ctx.sweep();

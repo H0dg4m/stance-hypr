@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Backend, Notice, OptKey, OptValue};
+use super::{Backend, Caps, Notice, OptKey, OptValue};
 use crate::error::{Error, Result};
 use crate::model::{Mode, Monitor, Parser};
 use crate::power::PowerProfile;
@@ -32,6 +32,9 @@ struct Saved {
     /// (like Hyprland's `eval`).
     #[serde(default)]
     ignore: Vec<String>,
+    /// Capability overrides (to exercise `unsupported`).
+    #[serde(default)]
+    caps: Caps,
 }
 
 fn balanced() -> PowerProfile {
@@ -44,6 +47,7 @@ pub struct Fake {
     pub power: RefCell<PowerProfile>,
     pub ignore: Vec<String>,
     pub ws: RefCell<Vec<(u32, String)>>,
+    pub caps: Caps,
     path: Option<PathBuf>,
 }
 
@@ -84,6 +88,7 @@ impl Fake {
             power: RefCell::new(PowerProfile::Balanced),
             ignore: vec![],
             ws: RefCell::new(vec![(1, "A-1".into())]),
+            caps: Caps::default(),
             path: None,
         }
     }
@@ -101,6 +106,7 @@ impl Fake {
             f.power = RefCell::new(s.power);
             f.ws = RefCell::new(s.workspaces);
             f.ignore = s.ignore;
+            f.caps = s.caps;
         }
         f.path = Some(path);
         Ok(f)
@@ -116,6 +122,7 @@ impl Fake {
             power: *self.power.borrow(),
             workspaces: self.ws.borrow().clone(),
             ignore: self.ignore.clone(),
+            caps: self.caps,
         };
         if let Some(dir) = path.parent() {
             store::ensure_private_dir(dir)?;
@@ -128,6 +135,9 @@ impl Fake {
 impl Backend for Fake {
     fn name(&self) -> &'static str {
         "fake"
+    }
+    fn capabilities(&self) -> Caps {
+        self.caps
     }
     fn session_id(&self) -> &str {
         "fake"
