@@ -75,6 +75,13 @@ pub struct Settings {
     pub download_dir: String,
     #[serde(default = "max_mb_default")]
     pub max_file_mb: u64,
+    /// Clipboard images too (PNG, JPEG, WebP, GIF; up to 32 MiB), both ways
+    /// as the two clip switches allow.
+    #[serde(default)]
+    pub clip_images: bool,
+    /// Phones whose files are saved without asking (still announced).
+    #[serde(default)]
+    pub trusted_devices: Vec<String>,
 }
 
 fn schema_one() -> u32 {
@@ -93,6 +100,8 @@ impl Default for Settings {
             files_from_phone: FilesFrom::Off,
             download_dir: String::new(),
             max_file_mb: max_mb_default(),
+            clip_images: false,
+            trusted_devices: Vec::new(),
         }
     }
 }
@@ -101,6 +110,17 @@ impl Settings {
     pub fn validate(&self) -> Result<()> {
         if !(1..=512).contains(&self.max_file_mb) {
             return Err(Error::new("usage", "max_file_mb must be 1..512"));
+        }
+        if self.trusted_devices.len() > 16
+            || self
+                .trusted_devices
+                .iter()
+                .any(|d| super::proto::clean_name(d).as_deref() != Some(d.as_str()))
+        {
+            return Err(Error::new(
+                "usage",
+                "trusted_devices: at most 16 device names as paired",
+            ));
         }
         let d = &self.download_dir;
         if !d.is_empty() && !(d.starts_with('/') || d.starts_with("~/")) {
@@ -135,6 +155,9 @@ impl Settings {
         let mut c = Vec::new();
         if self.clip_to_phone || self.clip_from_phone != ClipFrom::Off {
             c.push("clip.text".to_string());
+            if self.clip_images {
+                c.push("clip.image".into());
+            }
         }
         if self.files_from_phone != FilesFrom::Off {
             c.push("file.push".into());
@@ -511,6 +534,12 @@ fn tool(name: &str) -> Option<PathBuf> {
 /// Sets the PC clipboard to `text` (wl-copy; it forks and the parent exits
 /// once it has the data).
 pub fn apply_text(text: &[u8]) -> Result<()> {
+    apply_clip(text, "text/plain;charset=utf-8")
+}
+
+/// Sets the PC clipboard to `data` of type `mime`.
+pub fn apply_clip(data: &[u8], mime: &str) -> Result<()> {
+    let text = data;
     if std::env::var_os("WAYLAND_DISPLAY").is_none()
         && std::env::var_os("STANCE_TEST_TOOLS").is_none()
     {
@@ -518,7 +547,7 @@ pub fn apply_text(text: &[u8]) -> Result<()> {
     }
     let wl = tool("wl-copy").ok_or_else(|| Error::new("missing_tool", "wl-copy not found"))?;
     let mut child = Command::new(wl)
-        .args(["--type", "text/plain;charset=utf-8"])
+        .args(["--type", mime])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -932,6 +961,16 @@ mod tests {
         assert!(parse_settings("files_from_phone = \"always\"").is_err());
         assert!(parse_settings("surprise = 1").is_err());
         assert!(parse_settings("schema = 9").is_err());
+        let s = parse_settings(
+            "clip_to_phone = true\nclip_images = true\ntrusted_devices = [\"Pixel 7\"]",
+        )
+        .unwrap();
+        assert_eq!(
+            s.offered_caps(),
+            vec!["clip.text", "clip.image", "file.pull"]
+        );
+        assert!(parse_settings("trusted_devices = [\"bad\\nname\"]").is_err());
+        assert!(parse_settings("clip_images = true").unwrap().offered_caps() == vec!["file.pull"]);
     }
 
     #[test]

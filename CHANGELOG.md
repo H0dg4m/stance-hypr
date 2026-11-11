@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### 0.7.1 work
+- Clipboard images both ways (`clip_images` in transfer.toml; PNG, JPEG, WebP, GIF up to 32 MiB; the type is sniffed from the bytes).
+- `trusted_devices`: files from those phones are saved without a prompt (still announced).
+- Panel: Settings → Phone → Clipboard and files gets "Images too" and a per-phone "Save files without asking".
+- `deck test send-image FILE`; tests for both image directions, non-image bytes, trusted phones.
+
 ### Phone transfers (0.7.0 work, docs/adr/0004-phone-transfers.md)
 - Clipboard text both ways and files both ways with paired phones, all off by default: `stance deck transfer [show | put --data JSON]` (`transfer.toml`), `stance deck send FILE [--to PHONE]`, `stance deck transfers`, `stance deck transfer pending | accept ID | decline ID`.
 - Files from a phone always ask (notification with Accept / Decline, one prompt at a time server-wide, 60 s), land in `~/Downloads/stance` through a temp file in the same folder, are checked (size, SHA-256) before they get their cleaned name, never overwrite, and are never opened. Cooldown after 3 refusals, free-space and 1 GiB in-flight limits.

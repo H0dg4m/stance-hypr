@@ -115,6 +115,8 @@ Design: [ADR 0004](adr/0004-phone-transfers.md); wire format: protocol.md
 | `files_from_phone` | `"off"` | `"ask"`: each file asks (notification with Accept / Decline, or `stance deck transfer accept ID`), 60 s, then declined |
 | `download_dir` | `~/Downloads/stance` | received files land only here |
 | `max_file_mb` | 512 | 1..512 |
+| `clip_images` | false | clipboard images too (PNG, JPEG, WebP, GIF, up to 32 MiB), both ways as the two clip switches allow; the type comes from the content, not from the phone |
+| `trusted_devices` | `[]` | phones (as paired, at most 16) whose files are saved without asking; saving is still announced |
 
 `stance deck send FILE [--to PHONE]` offers a file (up to `max_file_mb`) to
 that phone, or to the first connected one; the phone asks its user.
@@ -124,7 +126,7 @@ can reach another phone, like any copy on the PC). The panel has the same
 switches under Settings → Phone → Clipboard and files.
 Clipboard text from the phone is the one exception to "every transfer
 asks": the person pressed send on the phone, and the PC shows what it
-received. Images over the clipboard come later (0.7.1).
+received.
 
 | Threat | Handling |
 | --- | --- |

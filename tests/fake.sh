@@ -146,7 +146,7 @@ mkdir -p -m 700 "$STANCE_DECK_DIR" "$XDG_RUNTIME_DIR"
 # fake wl-copy / notify-send for the transfer tests (the server needs them)
 export STANCE_TEST_TOOLS=$WORK/tools
 mkdir -p "$STANCE_TEST_TOOLS" "$WORK/dl" "$WORK/got"
-printf '#!/bin/sh\ncat > "%s/clipboard"\n' "$WORK" > "$STANCE_TEST_TOOLS/wl-copy"
+printf '#!/bin/sh\necho "$*" > "%s/cliptype"\ncat > "%s/clipboard"\n' "$WORK" "$WORK" > "$STANCE_TEST_TOOLS/wl-copy"
 printf '#!/bin/sh\necho "$@" >> "%s/notes"\ncase "$*" in *--wait*) cat "%s/answer" 2>/dev/null;; esac\n' "$WORK" "$WORK" > "$STANCE_TEST_TOOLS/notify-send"
 chmod +x "$STANCE_TEST_TOOLS"/*
 "$BIN" deck serve --loopback --port 0 2>"$WORK/deck.log" & DECK=$!
@@ -207,6 +207,30 @@ wait $R
 case "$(cat "$WORK/recv.out")" in *"nothing received"*) ok "phone's own text is not echoed back";; *) bad "phone's own text is not echoed back" "$(cat "$WORK/recv.out")";; esac
 s deck transfers --json | grep -q '"state":"done"' && ok "transfers are listed" || bad "transfers are listed"
 check "send refuses a directory" 2 "$(s deck send "$WORK" >/dev/null 2>&1; echo $?)"
+
+# 0.7.1: clipboard images both ways, trusted devices
+python3 -c "import sys,struct,zlib; raw=b'\\x00\\xff\\x00\\x00'; c=lambda t,d: struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)); sys.stdout.buffer.write(b'\\x89PNG\\r\\n\\x1a\\n'+c(b'IHDR',struct.pack('>IIBBBBB',1,1,8,2,0,0,0))+c(b'IDAT',zlib.compress(raw))+c(b'IEND',b''))" > "$WORK/dot.png"
+check "images off by default" "stance: cannot offer clip.image: not negotiated" "$(s deck test send-image "$WORK/dot.png" 2>&1)"
+s deck transfer put --data "{\"clip_to_phone\":true,\"clip_from_phone\":\"notify\",\"clip_images\":true,\"files_from_phone\":\"ask\",\"download_dir\":\"$WORK/dl\",\"trusted_devices\":[\"ci\"]}" >/dev/null
+check "image from phone" done "$(s deck test send-image "$WORK/dot.png" 2>&1)"
+sleep 0.3
+cmp -s "$WORK/dot.png" "$WORK/clipboard" && ok "image on the clipboard" || bad "image on the clipboard"
+check "image type from its content" "--type image/png" "$(cat "$WORK/cliptype")"
+printf 'not an image' > "$WORK/fake.png"
+s deck test send-image "$WORK/fake.png" >/dev/null 2>&1
+sleep 0.3
+cmp -s "$WORK/dot.png" "$WORK/clipboard" && ok "non-image bytes are not applied" || bad "non-image bytes are not applied"
+s deck test receive "$WORK/got" 10 > "$WORK/recv.out" 2>&1 & R=$!
+sleep 1.2
+# A different image: the phone's own one is not echoed back to it.
+python3 -c "import sys; d=open('$WORK/dot.png','rb').read(); sys.stdout.buffer.write(d+b'extra')" > "$WORK/dot2.png"
+CLIPBOARD_STATE=data s clip ingest --image < "$WORK/dot2.png"
+wait $R
+check "image to phone" "image: $(stat -c %s "$WORK/dot2.png") bytes" "$(cat "$WORK/recv.out")"
+rm -f "$WORK/answer"
+head -c 1000 /dev/urandom > "$WORK/t.bin"
+check "trusted phone: file saved without a prompt" done "$(s deck test push "$WORK/t.bin" 2>&1)"
+cmp -s "$WORK/t.bin" "$WORK/dl/t.bin" && ok "trusted file intact" || bad "trusted file intact"
 kill $DECK; wait $DECK 2>/dev/null
 
 echo "passed $PASS, failed $FAIL"

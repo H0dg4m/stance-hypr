@@ -223,7 +223,7 @@ fn offer_bytes(kind: &str, data: &[u8], name: Option<String>) -> Result<String> 
 /// Accepts the PC's offers for `secs` seconds; writes files into `dir` and
 /// prints clipboard text. Returns after the first finished item.
 fn receive(dir: &str, secs: u64) -> Result<String> {
-    let (mut s, mut st) = v2(&["clip.text", "file.pull"])?;
+    let (mut s, mut st) = v2(&["clip.text", "clip.image", "file.pull"])?;
     let end = Instant::now() + Duration::from_secs(secs);
     let mut bufs: std::collections::HashMap<u32, (String, Vec<u8>)> = Default::default();
     let mut names: std::collections::HashMap<u32, (String, String)> = Default::default();
@@ -265,6 +265,9 @@ fn receive(dir: &str, secs: u64) -> Result<String> {
                     }
                     if kind == "clip.text" {
                         return Ok(format!("clip: {}", String::from_utf8_lossy(&data)));
+                    }
+                    if kind == "clip.image" {
+                        return Ok(format!("image: {} bytes", data.len()));
                     }
                     let path = std::path::Path::new(dir).join(super::transfer::clean_name(&name));
                     std::fs::write(&path, &data).map_err(|e| Error::new("io", e.to_string()))?;
@@ -389,7 +392,7 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
     let usage = || {
         Error::new(
             "usage",
-            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds] | offer [kind] | stray-data | send-clip TEXT | push FILE | receive DIR [seconds]",
+            "stance deck test pair <payload> | buttons | press <id> | confirm | revert | ping | watch [seconds] | offer [kind] | stray-data | send-clip TEXT | send-image FILE | push FILE | receive DIR [seconds]",
         )
     };
     let msg = |m: String| {
@@ -425,6 +428,10 @@ pub fn run(args: &[String], name: Option<&str>, json: bool) -> Result<()> {
                 None => text.as_bytes().to_vec(),
             };
             msg(offer_bytes("clip.text", &data, None)?)
+        }
+        ["send-image", file] => {
+            let data = std::fs::read(file).map_err(|e| Error::new("io", format!("{file}: {e}")))?;
+            msg(offer_bytes("clip.image", &data, None)?)
         }
         ["push", file] => {
             let data = std::fs::read(file).map_err(|e| Error::new("io", format!("{file}: {e}")))?;

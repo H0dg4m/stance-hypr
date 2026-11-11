@@ -21,9 +21,12 @@ use crate::error::Result;
 const BURST: usize = 64;
 /// Largest clipboard text either way.
 const CLIP_MAX: u64 = 1 << 20;
+/// Largest clipboard image either way (the shelf's own limit).
+const IMAGE_MAX: u64 = crate::clip::MAX_IMAGE;
 
 enum In {
-    Clip(Vec<u8>),
+    /// Clipboard data; `true` = an image.
+    Clip(Vec<u8>, bool),
     File {
         tid: u64,
         name: String,
@@ -122,7 +125,14 @@ impl Link {
                 if set.clip_from_phone == ClipFrom::Off || size > CLIP_MAX {
                     return Decision::Decline("off".into());
                 }
-                self.incoming.insert(sid, In::Clip(Vec::new()));
+                self.incoming.insert(sid, In::Clip(Vec::new(), false));
+                Decision::Accept
+            }
+            "clip.image" => {
+                if set.clip_from_phone == ClipFrom::Off || !set.clip_images || size > IMAGE_MAX {
+                    return Decision::Decline("off".into());
+                }
+                self.incoming.insert(sid, In::Clip(Vec::new(), true));
                 Decision::Accept
             }
             "file.push" => {
@@ -145,6 +155,26 @@ impl Link {
                     return Decision::Decline("no space".into());
                 }
                 let name = transfer::clean_name(name.unwrap_or("file"));
+                if set.trusted_devices.contains(&self.device) {
+                    // Trusted in transfer.toml: no prompt; saving is still announced.
+                    let tid =
+                        hub.new_transfer("from_phone", &self.device, &name, size, State::Waiting);
+                    self.incoming.insert(
+                        sid,
+                        In::File {
+                            tid,
+                            name,
+                            size,
+                            part: None,
+                            reserved: 0,
+                        },
+                    );
+                    if self.open_part(hub, sid, &set) {
+                        return Decision::Accept;
+                    }
+                    self.incoming.remove(&sid);
+                    return Decision::Decline("no space".into());
+                }
                 let Some(cid) = hub.consent_open(&self.device, &name, size) else {
                     return Decision::Decline("busy".into());
                 };
@@ -219,7 +249,7 @@ impl Link {
                     }
                 }
                 Out::Data { sid, payload } => match self.incoming.get_mut(&sid) {
-                    Some(In::Clip(buf)) => buf.extend_from_slice(&payload),
+                    Some(In::Clip(buf, _)) => buf.extend_from_slice(&payload),
                     Some(In::File { part: Some(p), .. }) => {
                         if p.write(&payload).is_err() {
                             cancel.push(sid);
@@ -258,7 +288,31 @@ impl Link {
 
     fn finished(&mut self, hub: &Hub, sid: u32, ok: bool) {
         match self.incoming.remove(&sid) {
-            Some(In::Clip(buf)) => {
+            Some(In::Clip(buf, true)) => {
+                if !ok {
+                    return;
+                }
+                // The content decides the type, not what the phone said.
+                let Some((mime, _)) =
+                    crate::clip::sniff_image(&buf).filter(|(m, _)| *m != "image/bmp")
+                else {
+                    eprintln!(
+                        "stance deck: {}: clipboard image of an unknown type",
+                        self.device
+                    );
+                    return;
+                };
+                hub.echo_add(&transfer::sha256_hex(&buf), &self.device);
+                let device = self.device.clone();
+                std::thread::spawn(move || match transfer::apply_clip(&buf, mime) {
+                    Ok(()) => transfer::notify(
+                        &format!("Image from {device}"),
+                        &format!("{mime}, {} on the clipboard", human_size(buf.len() as u64)),
+                    ),
+                    Err(e) => eprintln!("stance deck: clipboard from {device}: {}", e.message),
+                });
+            }
+            Some(In::Clip(buf, false)) => {
                 if !ok {
                     return;
                 }
@@ -365,9 +419,9 @@ impl Link {
         if has(&self.agreed, "file.pull") {
             self.next_file(hub, st, s, now)?;
         }
-        // New PC clipboard text.
+        // New PC clipboard copies (text, and images if switched on).
         if set.clip_to_phone && has(&self.agreed, "clip.text") {
-            self.watch_clip(hub, st, s, now)?;
+            self.watch_clip(hub, st, s, now, set.clip_images)?;
         }
         self.push(hub, st, s, now)?;
         Ok(true)
@@ -469,6 +523,7 @@ impl Link {
         st: &mut Streams,
         s: &mut Session,
         now: Instant,
+        set_images: bool,
     ) -> Result<()> {
         let Some(clip) = &self.clip else {
             return Ok(());
@@ -495,14 +550,24 @@ impl Link {
             self.clip_floor = (e.updated, e.id);
         }
         let Some(e) = newest else { return Ok(()) };
-        if !matches!(e.kind, crate::clip::Kind::Text | crate::clip::Kind::Link) || e.size > CLIP_MAX
+        let image = e.kind == crate::clip::Kind::Image;
+        let (cap, max) = if image {
+            ("clip.image", IMAGE_MAX)
+        } else {
+            ("clip.text", CLIP_MAX)
+        };
+        if e.size > max
+            || (image && (!set_images || !has(&self.agreed, "clip.image") || e.mime == "image/bmp"))
         {
             return Ok(());
         }
         let Ok(cfg) = clip.config() else {
             return Ok(());
         };
-        if !cfg.enabled || !cfg.text || cfg.paused(crate::clip::now()).is_some() {
+        if !cfg.enabled
+            || !(if image { cfg.image } else { cfg.text })
+            || cfg.paused(crate::clip::now()).is_some()
+        {
             return Ok(());
         }
         let mut data = Vec::new();
@@ -510,7 +575,7 @@ impl Link {
         if clip
             .open_blob(&e)
             .and_then(|f| {
-                f.take(CLIP_MAX)
+                f.take(max)
                     .read_to_end(&mut data)
                     .map_err(|err| crate::error::Error::new("io", err.to_string()))
             })
@@ -536,11 +601,15 @@ impl Link {
             self.apply(hub, st, s, outs)?;
         }
         match st.offer(
-            "clip.text",
+            cap,
             data.len() as u64,
             &hash,
             None,
-            Some("text/plain".into()),
+            Some(if image {
+                e.mime.clone()
+            } else {
+                "text/plain".into()
+            }),
             now,
         ) {
             Ok(m) => {

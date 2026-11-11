@@ -11,6 +11,7 @@ StanceSection {
     property var settings: null
     property var pending: null
     property var recent: []
+    property var devices: []
     property string error: ""
 
     icon: "swap_horiz"
@@ -20,6 +21,9 @@ StanceSection {
         service.call(["deck", "transfer", "show"], r => {
             card.settings = r && r.ok ? r.data.settings : null;
             card.error = r && r.ok ? (r.data.warning || "") : (r && r.error ? r.error.message : "");
+        });
+        service.deckDevices(r => {
+            card.devices = r && r.ok && r.data.devices ? r.data.devices.map(d => d.name) : [];
         });
         service.call(["deck", "transfers"], r => {
             card.pending = r && r.ok ? r.data.pending : null;
@@ -39,6 +43,15 @@ StanceSection {
             else
                 card.error = r && r.error ? r.error.message : StanceI18n.t("stance returned no output");
         });
+    }
+
+    function trust(name, on) {
+        if (!settings)
+            return;
+        const list = (settings.trusted_devices || []).filter(n => n !== name);
+        if (on)
+            list.push(name);
+        put("trusted_devices", list);
     }
 
     function answer(yes) {
@@ -139,6 +152,16 @@ StanceSection {
         }
     }
     Row_ {
+        text: StanceI18n.t("Images too")
+        hint: StanceI18n.t("Clipboard images (PNG, JPEG, WebP, GIF) both ways, as the switches above allow.")
+        StanceSwitch {
+            theme: card.theme
+            enabled: card.settings !== null && (card.settings.clip_to_phone || card.settings.clip_from_phone === "notify")
+            checked: card.settings !== null && card.settings.clip_images
+            onToggled: v => card.put("clip_images", v)
+        }
+    }
+    Row_ {
         text: StanceI18n.t("Take files from the phone")
         hint: card.settings ? StanceI18n.f("Each file asks first. Saved in %1.", card.settings.download_dir || "~/Downloads/stance") : ""
         StanceSwitch {
@@ -146,6 +169,19 @@ StanceSection {
             enabled: card.settings !== null
             checked: card.settings !== null && card.settings.files_from_phone === "ask"
             onToggled: v => card.put("files_from_phone", v ? "ask" : "off")
+        }
+    }
+    Repeater {
+        model: card.settings && card.settings.files_from_phone === "ask" ? card.devices : []
+        delegate: Row_ {
+            required property var modelData
+            text: StanceI18n.f("Save files from %1 without asking", modelData)
+            hint: StanceI18n.t("Still announced when saved. Only for your own phones.")
+            StanceSwitch {
+                theme: card.theme
+                checked: card.settings !== null && (card.settings.trusted_devices || []).indexOf(modelData) >= 0
+                onToggled: v => card.trust(modelData, v)
+            }
         }
     }
     Text {

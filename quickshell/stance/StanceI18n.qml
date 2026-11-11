@@ -28,6 +28,10 @@ Singleton {
     }
 
     readonly property var tr: ({
+        "Images too": "Görseller de",
+        "Clipboard images (PNG, JPEG, WebP, GIF) both ways, as the switches above allow.": "Pano görselleri (PNG, JPEG, WebP, GIF) iki yönde, yukarıdaki anahtarların izin verdiği kadar.",
+        "Save files from %1 without asking": "%1 dosyalarını sormadan kaydet",
+        "Still announced when saved. Only for your own phones.": "Kaydedilince yine bildirilir. Yalnız kendi telefonların için.",
         "Clipboard and files": "Pano ve dosyalar",
         "%1 wants to send %2": "%1, %2 göndermek istiyor",
         "Decline": "Reddet",
