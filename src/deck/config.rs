@@ -20,8 +20,15 @@ pub const EXAMPLE: &str = include_str!("../../examples/deck.toml");
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeckFile {
+    /// File format version (src/migrate.rs); missing = 1.
+    #[serde(default = "schema_one")]
+    pub schema: u32,
     #[serde(default, rename = "button")]
     pub buttons: Vec<ButtonCfg>,
+}
+
+fn schema_one() -> u32 {
+    1
 }
 
 /// One button. The fields that apply depend on `action`; the others must
@@ -324,8 +331,12 @@ pub fn from_json(data: &str) -> Result<String> {
     if data.len() > 64 * 1024 {
         return Err(Error::new("deck_config", "deck data is too large"));
     }
-    let f: DeckFile = serde_json::from_str(data)
+    let mut f: DeckFile = serde_json::from_str(data)
         .map_err(|e| Error::new("deck_config", format!("invalid deck data: {e}")))?;
+    if f.schema > crate::migrate::CURRENT {
+        return Err(crate::migrate::newer("deck.toml", f.schema));
+    }
+    f.schema = crate::migrate::CURRENT;
     let text = toml::to_string(&f).map_err(|e| Error::new("deck_config", e.to_string()))?;
     parse(&text)?;
     Ok(format!(
@@ -333,10 +344,25 @@ pub fn from_json(data: &str) -> Result<String> {
     ))
 }
 
-/// Parses and validates a whole file.
+/// Writes `deck.toml` (text from [`from_json`]) unless the file on disk was
+/// written by a newer stance (`newer_schema`). Keeps the old one as `.bak`.
+#[allow(dead_code)] // TODO(0.4): drop once main.rs calls it (see CHANGELOG/ADR step 6-7)
+pub fn write_file(path: &std::path::Path, text: &str) -> Result<()> {
+    crate::migrate::guard_toml(path, "deck.toml")?;
+    crate::store::atomic_write(path, text.as_bytes(), true)
+}
+
+/// Parses and validates a whole file. A newer file is read when it still
+/// parses, else the error is `newer_schema`.
 pub fn parse(text: &str) -> Result<Vec<Button>> {
-    let f: DeckFile = toml::from_str(text)
-        .map_err(|e| Error::new("deck_config", format!("deck.toml: {}", e.message())))?;
+    let newer = crate::migrate::toml_schema(text);
+    let f: DeckFile = toml::from_str(text).map_err(|e| {
+        if newer > crate::migrate::CURRENT {
+            crate::migrate::newer("deck.toml", newer)
+        } else {
+            Error::new("deck_config", format!("deck.toml: {}", e.message()))
+        }
+    })?;
     if f.buttons.is_empty() {
         return Err(Error::new("deck_config", "deck.toml has no [[button]]"));
     }
@@ -450,6 +476,7 @@ mod tests {
     fn json_round_trip() {
         let buttons = parse(EXAMPLE).unwrap();
         let f = DeckFile {
+            schema: 1,
             buttons: buttons.iter().map(Button::to_cfg).collect(),
         };
         let text = from_json(&serde_json::to_string(&f).unwrap()).unwrap();
@@ -465,5 +492,38 @@ mod tests {
             .is_err()
         );
         assert!(from_json(r#"{"button":[]}"#).is_err());
+    }
+
+    #[test]
+    fn schema_rules() {
+        let b = "[[button]]\nid=\"a\"\nlabel=\"A\"\naction=\"confirm\"\n";
+        // Missing and 1 are the same; written files say 1.
+        assert!(parse(b).is_ok());
+        assert!(parse(&format!("schema = 1\n{b}")).is_ok());
+        let json = r#"{"button":[{"id":"a","label":"A","action":"confirm"}]}"#;
+        assert!(from_json(json).unwrap().contains("schema = 1"));
+        // Newer: read when it still parses, `newer_schema` when it does not.
+        assert!(parse(&format!("schema = 2\n{b}")).is_ok());
+        let e = parse(&format!("schema = 2\nfuture = 1\n{b}")).unwrap_err();
+        assert_eq!(e.code, "newer_schema");
+        let e = from_json(r#"{"schema":2,"button":[]}"#).unwrap_err();
+        assert_eq!(e.code, "newer_schema");
+    }
+
+    #[test]
+    fn write_refuses_newer_file() {
+        let d = std::env::temp_dir().join(format!("stance-deckcfg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        crate::store::ensure_private_dir(&d).unwrap();
+        let p = d.join("deck.toml");
+        std::fs::write(&p, "schema = 2\n").unwrap();
+        assert_eq!(
+            write_file(&p, "schema = 1\n").unwrap_err().code,
+            "newer_schema"
+        );
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "schema = 2\n");
+        std::fs::write(&p, "schema = 1\n").unwrap();
+        write_file(&p, "schema = 1\n# new\n").unwrap();
+        std::fs::remove_dir_all(&d).ok();
     }
 }

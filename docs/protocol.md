@@ -239,3 +239,23 @@ vectors`).
 3. Render buttons, react to `state`, show Keep / Revert while `pending` is set.
 4. On any error reconnect with back-off; "refused" means the PC unpaired this
    phone: drop the stored PC.
+
+## 4. Config file versions (schema 1)
+Every file stance writes carries its own version: JSON top-level `"schema": 1`,
+TOML `schema = 1`. A missing key means 1, so everything 0.2.0 and 0.3.0 wrote
+is valid as it is (fixtures in `tests/fixtures/config-0.2.0/` and
+`config-0.3.0/`; `src/migrate.rs` holds the upgrade steps, none yet).
+
+| File | Where | Written by |
+| --- | --- | --- |
+| `panel.json` | config dir | the panel |
+| `clip.json`, `features.json` | config dir | `clip config`, `feature` |
+| `deck.toml`, `deck-devices.toml` | config dir | `deck put`, `deck pair` |
+| `memory.json` | state dir | the daemon / `apply` |
+| `modes/*.toml`, `rules.toml` | config dir | `mode put`, `rules put` |
+| `index.json` (clipboard), theme files | data / config | already versioned (`schema`, `stance_theme`) |
+
+Reading never rewrites a file. A file with a **newer** schema than the running
+stance is read where that is safe (known keys only), but is never written:
+the command fails with error code `newer_schema` and the file stays as it is.
+Update stance, or move the file aside.

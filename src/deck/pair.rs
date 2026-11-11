@@ -175,8 +175,15 @@ pub struct Device {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Devices {
+    /// File format version (src/migrate.rs); missing = 1.
+    #[serde(default = "schema_one")]
+    pub schema: u32,
     #[serde(default, rename = "device")]
     pub devices: Vec<Device>,
+}
+
+fn schema_one() -> u32 {
+    1
 }
 
 pub fn load_devices() -> Result<Devices> {
@@ -184,8 +191,15 @@ pub fn load_devices() -> Result<Devices> {
     if !path.exists() {
         return Ok(Devices::default());
     }
-    let d: Devices = toml::from_str(&store::read_checked(&path)?)
-        .map_err(|e| Error::new("deck", format!("deck-devices.toml: {}", e.message())))?;
+    let text = store::read_checked(&path)?;
+    let newer = crate::migrate::toml_schema(&text);
+    let d: Devices = toml::from_str(&text).map_err(|e| {
+        if newer > crate::migrate::CURRENT {
+            crate::migrate::newer("deck-devices.toml", newer)
+        } else {
+            Error::new("deck", format!("deck-devices.toml: {}", e.message()))
+        }
+    })?;
     if d.devices.len() > MAX_DEVICES {
         return Err(Error::new("deck", "too many paired devices"));
     }
@@ -197,7 +211,10 @@ pub fn load_devices() -> Result<Devices> {
 
 pub fn save_devices(d: &Devices) -> Result<()> {
     store::ensure_private_dir(&store::config_dir()?)?;
-    let body = toml::to_string(d).map_err(|e| Error::new("io", e.to_string()))?;
+    crate::migrate::guard_toml(&devices_path()?, "deck-devices.toml")?;
+    let mut d = d.clone();
+    d.schema = crate::migrate::CURRENT;
+    let body = toml::to_string(&d).map_err(|e| Error::new("io", e.to_string()))?;
     let text =
         format!("# paired deck devices (`stance deck devices`, `stance deck unpair NAME`)\n{body}");
     store::atomic_write(&devices_path()?, text.as_bytes(), false)

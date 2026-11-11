@@ -1,0 +1,12 @@
+# Phone deck buttons
+[[button]]
+id = "night"
+label = "Night light"
+icon = "bedtime"
+action = "night"
+
+[[button]]
+id = "mode-desk"
+label = "Desk"
+action = "mode"
+name = "desk"

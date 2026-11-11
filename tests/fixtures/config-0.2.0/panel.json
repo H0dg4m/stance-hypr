@@ -1,0 +1,5 @@
+{
+ "show": {"map": true, "screen": true, "night": true, "brightness": true, "audio": true, "modes": true},
+ "confirmTimeout": 5,
+ "compact": false
+}

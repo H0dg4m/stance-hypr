@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Config schema (0.4, ADR 0001 step 6)
+- Every file stance writes carries a version (`"schema": 1` / `schema = 1`):
+  `clip.json`, `features.json`, `deck.toml`, `deck-devices.toml`,
+  `memory.json`, `panel.json`. Missing = 1, so 0.2.0 and 0.3.0 files are read
+  unchanged and reads never write
+- A file from a newer stance is read where safe and never overwritten: the
+  write fails with error code `newer_schema`
+- `src/migrate.rs` (upgrade-step registry) and 0.2.0 / 0.3.0 fixtures with
+  load tests
+
+### Core split (0.4.0 work, docs/adr/0001-core-split.md)
+- `--backend NAME` / `STANCE_BACKEND` choose the compositor backend
+  (`hyprland`, default; `fake`, an in-memory one for tests: state in
+  `<state dir>/fake.json` or `STANCE_FAKE_STATE`)
+- `tests/fake.sh`: set / confirm / revert / timeout / mode apply without a
+  compositor (runs in CI)
+
 ### Assurance (0.3.1 work)
 - Tests: password-manager (`wl-copy --sensitive`) copies, 30 MB image kept and
   34 MB dropped, capture watcher exits with the compositor, 0.2.0 → 0.3.0

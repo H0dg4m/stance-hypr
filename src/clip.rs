@@ -79,6 +79,8 @@ impl Kind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// File format version (src/migrate.rs); missing = 1.
+    pub schema: u32,
     /// Nothing is stored unless this is on.
     pub enabled: bool,
     pub text: bool,
@@ -100,6 +102,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            schema: crate::migrate::CURRENT,
             enabled: false,
             text: true,
             image: true,
@@ -422,8 +425,22 @@ impl Clip {
             return Ok(Config::default());
         }
         let s = store::read_checked(&self.config_path)?;
-        let c: Config = serde_json::from_str(&s)
-            .map_err(|e| Error::new("invalid", format!("clip.json: {e}")))?;
+        let bad = |e: serde_json::Error| Error::new("invalid", format!("clip.json: {e}"));
+        let mut v: serde_json::Value = serde_json::from_str(&s).map_err(bad)?;
+        let found = crate::migrate::upgrade_json("clip.json", &mut v)?;
+        if found > crate::migrate::CURRENT
+            && let Some(o) = v.as_object_mut()
+        {
+            // A newer file: read the settings we know, ignore the rest.
+            // Writing is refused by `save_config`.
+            o.retain(|k, _| {
+                matches!(
+                    k.as_str(),
+                    "schema" | "enabled" | "text" | "image" | "retention_days" | "paused_until"
+                )
+            });
+        }
+        let c: Config = serde_json::from_value(v).map_err(bad)?;
         c.validate()?;
         Ok(c)
     }
@@ -482,8 +499,11 @@ impl Clip {
             .config_path
             .parent()
             .ok_or_else(|| Error::new("io", "config path has no parent"))?;
+        crate::migrate::guard_json(&self.config_path, "clip.json")?;
         store::ensure_private_dir(parent)?;
-        let body = serde_json::to_string_pretty(c).unwrap_or_default();
+        let mut c = c.clone();
+        c.schema = crate::migrate::CURRENT;
+        let body = serde_json::to_string_pretty(&c).unwrap_or_default();
         store::atomic_write(&self.config_path, body.as_bytes(), false)
     }
 
@@ -954,6 +974,47 @@ mod tests {
             config_path: d.join("cfg/clip.json"),
             rev_path: d.join("state/clip.rev"),
         }
+    }
+
+    #[test]
+    fn newer_config_reads_but_is_never_written() {
+        let c = tmp("newer-cfg");
+        let p = c.config_path.clone();
+        store::ensure_private_dir(p.parent().unwrap()).unwrap();
+        fs::write(
+            &p,
+            r#"{"schema":2,"enabled":true,"retention_days":7,"future_knob":1}"#,
+        )
+        .unwrap();
+        let cfg = c.config().unwrap();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.retention_days, 7);
+        let before = fs::read(&p).unwrap();
+        assert_eq!(
+            c.put_config(r#"{"enabled":false}"#).unwrap_err().code,
+            "newer_schema"
+        );
+        assert_eq!(c.pause(60).unwrap_err().code, "newer_schema");
+        assert_eq!(fs::read(&p).unwrap(), before);
+    }
+
+    #[test]
+    fn written_config_carries_schema() {
+        let c = tmp("schema-cfg");
+        c.put_config(r#"{"enabled":true}"#).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&c.config_path).unwrap()).unwrap();
+        assert_eq!(v["schema"], 1);
+    }
+
+    #[test]
+    fn fixture_configs_load() {
+        let c = tmp("fx-0.3.0");
+        let src =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config-0.3.0/clip.json");
+        store::ensure_private_dir(c.config_path.parent().unwrap()).unwrap();
+        fs::copy(src, &c.config_path).unwrap();
+        assert_eq!(c.config().unwrap().retention_days, 15);
     }
 
     fn text(s: &str) -> Parsed {

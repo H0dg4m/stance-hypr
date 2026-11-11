@@ -10,6 +10,7 @@ mod error;
 mod feature;
 mod hypr;
 mod memory;
+mod migrate;
 mod model;
 mod modes;
 mod night;

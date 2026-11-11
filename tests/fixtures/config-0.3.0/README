@@ -1,0 +1,2 @@
+Config files as stance 0.3.0 wrote them (no "schema" key = schema 1).
+Read by src/migrate.rs tests; keep them as they are.

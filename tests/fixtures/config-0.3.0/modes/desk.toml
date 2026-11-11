@@ -1,0 +1,5 @@
+description = "desk"
+
+[[monitor]]
+match = "DP-1"
+scale = 1.0

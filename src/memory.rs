@@ -42,10 +42,21 @@ fn ambiguous(m: &Monitor, mons: &[Monitor]) -> bool {
 }
 
 fn load(dir: &Path) -> BTreeMap<String, Entry> {
-    store::read_checked(&dir.join(FILE))
+    let Some(mut v) = store::read_checked(&dir.join(FILE))
         .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+    else {
+        return BTreeMap::new();
+    };
+    if crate::migrate::upgrade_json(FILE, &mut v).is_err() {
+        return BTreeMap::new();
+    }
+    if let Some(o) = v.as_object_mut() {
+        o.remove("schema");
+    }
+    // A newer file whose entries we cannot read gives an empty map; it is
+    // not rewritten (see `record_with`).
+    serde_json::from_value(v).unwrap_or_default()
 }
 
 /// Remembers every active, non-mirrored monitor in `mons`. Best effort:
@@ -91,11 +102,19 @@ fn record_with(dir: &Path, mons: &[Monitor], overwrite: bool) {
         map.remove(&oldest);
         changed = true;
     }
-    if !changed || store::ensure_private_dir(dir).is_err() {
+    if !changed
+        || store::ensure_private_dir(dir).is_err()
+        || crate::migrate::guard_json(&dir.join(FILE), FILE).is_err()
+    {
         return;
     }
-    if let Ok(data) = serde_json::to_vec(&map) {
-        let _ = store::atomic_write(&dir.join(FILE), &data, false);
+    if let Ok(mut v) = serde_json::to_value(&map) {
+        if let Some(o) = v.as_object_mut() {
+            o.insert("schema".into(), crate::migrate::CURRENT.into());
+        }
+        if let Ok(data) = serde_json::to_vec(&v) {
+            let _ = store::atomic_write(&dir.join(FILE), &data, false);
+        }
     }
 }
 
@@ -182,6 +201,30 @@ mod tests {
         b.description = a.description.clone();
         record(&dir, &[a.clone(), b.clone()]);
         assert!(load(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn schema_is_written_and_newer_files_are_kept() {
+        let dir = tmp();
+        let a = mon("A-1", 0);
+        record(&dir, std::slice::from_ref(&a));
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(FILE)).unwrap()).unwrap();
+        assert_eq!(v["schema"], 1);
+        assert_eq!(load(&dir).len(), 1);
+        // 0.2.0 files (no schema) still load.
+        let old = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config-0.2.0/memory.json"),
+        )
+        .unwrap();
+        std::fs::write(dir.join(FILE), &old).unwrap();
+        assert_eq!(load(&dir).len(), 1);
+        // A newer file is left untouched.
+        let newer = r#"{"schema":2,"x":{"spec":null}}"#;
+        std::fs::write(dir.join(FILE), newer).unwrap();
+        record(&dir, &[a]);
+        assert_eq!(std::fs::read_to_string(dir.join(FILE)).unwrap(), newer);
         let _ = std::fs::remove_dir_all(dir);
     }
 

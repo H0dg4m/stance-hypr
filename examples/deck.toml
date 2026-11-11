@@ -1,3 +1,5 @@
+schema = 1
+
 # ~/.config/stance/deck.toml: the buttons your phone shows.
 # Each [[button]] runs one stance action on this PC. There is no way to run
 # arbitrary commands here. At most 64 buttons; ids are unique.

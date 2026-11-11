@@ -62,9 +62,24 @@ pub fn load_at(p: &Path) -> Result<BTreeMap<String, bool>> {
     if !p.exists() {
         return Ok(BTreeMap::new());
     }
-    let mut m: BTreeMap<String, bool> = serde_json::from_str(&store::read_checked(p)?)
-        .map_err(|e| Error::new("invalid", format!("features.json: {e}")))?;
-    m.retain(|k, _| FEATURES.iter().any(|f| f.name == k));
+    let bad = |e: String| Error::new("invalid", format!("features.json: {e}"));
+    let mut v: serde_json::Value =
+        serde_json::from_str(&store::read_checked(p)?).map_err(|e| bad(e.to_string()))?;
+    crate::migrate::upgrade_json("features.json", &mut v)?;
+    let o = v
+        .as_object()
+        .ok_or_else(|| bad("expected a JSON object".into()))?;
+    // Names we know must be booleans; anything else (a newer stance's
+    // features, the `schema` key) is ignored.
+    let mut m = BTreeMap::new();
+    for f in FEATURES {
+        if let Some(x) = o.get(f.name) {
+            let b = x
+                .as_bool()
+                .ok_or_else(|| bad(format!("`{}` must be true or false", f.name)))?;
+            m.insert(f.name.to_string(), b);
+        }
+    }
     Ok(m)
 }
 
@@ -130,9 +145,15 @@ pub fn set(name: &str, on: bool, clip_state_dir: &Path) -> Result<Vec<String>> {
         .ok_or_else(|| Error::new("io", "config path has no parent"))?;
     {
         let _l = store::lock_named(parent, "features.lock")?;
+        crate::migrate::guard_json(&p, "features.json")?;
         let mut m = load_at(&p)?;
         m.insert(name.to_string(), on);
-        let body = serde_json::to_string_pretty(&m).unwrap_or_default() + "\n";
+        let mut o = serde_json::Map::new();
+        o.insert("schema".into(), crate::migrate::CURRENT.into());
+        for (k, b) in &m {
+            o.insert(k.clone(), (*b).into());
+        }
+        let body = serde_json::to_string_pretty(&o).unwrap_or_default() + "\n";
         store::atomic_write(&p, body.as_bytes(), false)?;
     }
     // Not atomic with the units below: if a unit change fails, the choice is
@@ -180,6 +201,19 @@ mod tests {
         let m = load_at(&p).unwrap();
         assert_eq!(m.get("clip"), Some(&false));
         assert!(!m.contains_key("bogus"));
+        std::fs::write(&p, r#"{"schema":1,"clip":false}"#).unwrap();
+        assert_eq!(load_at(&p).unwrap().get("clip"), Some(&false));
+        std::fs::write(&p, r#"{"clip":"no"}"#).unwrap();
+        assert!(load_at(&p).is_err());
+        // A newer file is read (known names only) but never rewritten.
+        std::fs::write(&p, r#"{"schema":2,"clip":false,"future":{"a":1}}"#).unwrap();
+        assert_eq!(load_at(&p).unwrap().get("clip"), Some(&false));
+        assert_eq!(
+            crate::migrate::guard_json(&p, "features.json")
+                .unwrap_err()
+                .code,
+            "newer_schema"
+        );
         std::fs::remove_dir_all(&d).ok();
     }
 }

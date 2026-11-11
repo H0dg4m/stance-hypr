@@ -1,0 +1,9 @@
+{
+ "show": {"map": true, "screen": true, "night": true, "brightness": true, "audio": true, "modes": true},
+ "confirmTimeout": 12,
+ "compact": false,
+ "theme": "catppuccin-mocha",
+ "themeOverrides": {"accent": "#89b4fa"},
+ "lang": "tr",
+ "settingsPage": "appearance"
+}

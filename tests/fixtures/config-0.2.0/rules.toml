@@ -1,0 +1,3 @@
+[[rule]]
+monitors = ["DP-1", "eDP-1"]
+mode = "desk"

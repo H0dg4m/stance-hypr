@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "text": true,
+  "image": false,
+  "retention_days": 15,
+  "paused_until": 4102444800
+}
