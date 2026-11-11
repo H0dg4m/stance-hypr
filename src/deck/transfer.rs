@@ -1017,6 +1017,20 @@ mod tests {
     }
 
     #[test]
+    fn rename_fallback_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("stance-rn-test-{}", random_hex()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a"), b"a").unwrap();
+        fs::write(dir.join("b"), b"b").unwrap();
+        let e = rename_noreplace(&dir.join("a"), &dir.join("b")).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(dir.join("b")).unwrap(), b"b");
+        rename_noreplace(&dir.join("a"), &dir.join("c")).unwrap();
+        assert_eq!(fs::read(dir.join("c")).unwrap(), b"a");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn sources_check_the_open_file() {
         let dir = std::env::temp_dir().join(format!("stance-src-test-{}", random_hex()));
         fs::create_dir_all(&dir).unwrap();
