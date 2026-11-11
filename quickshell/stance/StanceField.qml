@@ -14,6 +14,11 @@ Rectangle {
     signal cancelled
     signal edited(string value)
 
+    property string label: ""
+    Accessible.role: Accessible.EditableText
+    Accessible.name: label !== "" ? label : placeholder
+    Accessible.focusable: true
+
     function focusInput() { input.forceActiveFocus(); }
 
     implicitHeight: 34

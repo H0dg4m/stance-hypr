@@ -23,6 +23,10 @@ Rectangle {
     opacity: enabled ? (busy ? 0.6 : 1) : 0.45
     scale: mouse.pressed && enabled ? 0.98 : 1
     activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: title !== "" ? title : tip
+    Accessible.description: value
+    Accessible.onPressAction: clicked()
     border.width: activeFocus ? 2 : 0
     border.color: theme.accent
 

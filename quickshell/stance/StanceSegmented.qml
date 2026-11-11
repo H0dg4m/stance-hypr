@@ -19,6 +19,8 @@ Rectangle {
     color: theme.background
     opacity: enabled ? 1 : 0.45
     activeFocusOnTab: enabled
+    Accessible.role: Accessible.Grouping
+    Accessible.name: model.map(m => m.label).join(", ")
     border.width: activeFocus ? 2 : 0
     border.color: theme.accent
     // Arrow keys step through the segments.

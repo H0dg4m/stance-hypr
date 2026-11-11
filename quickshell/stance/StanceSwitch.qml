@@ -5,6 +5,8 @@ Rectangle {
     id: sw
     required property StanceTheme theme
     property bool checked: false
+    // Spoken name for screen readers (the label next to the switch).
+    property string tip: ""
     signal toggled(bool value)
 
     implicitWidth: 40
@@ -13,6 +15,10 @@ Rectangle {
     opacity: enabled ? 1 : 0.45
     color: checked ? theme.accent : theme.surface
     activeFocusOnTab: enabled
+    Accessible.role: Accessible.CheckBox
+    Accessible.name: tip
+    Accessible.checked: checked
+    Accessible.onToggleAction: if (enabled) toggled(!checked)
     Keys.onSpacePressed: if (enabled) toggled(!checked)
     Keys.onReturnPressed: if (enabled) toggled(!checked)
     Keys.onEnterPressed: if (enabled) toggled(!checked)

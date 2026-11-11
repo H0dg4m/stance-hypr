@@ -89,6 +89,7 @@ Usage:
   stance clip pause [15m|1h|30s] | resume   Stop capturing for a while (at most 24h)
   stance clip ingest [--image]         Store one copy (run by `wl-paste --watch`)
   stance theme list | show ID          Panel themes (built-in and yours)
+  stance theme check [ID|FILE]         Contrast check (exit 1 if a pair is too low)
   stance theme system                  System light/dark preference: dark | light | unknown
   stance theme put --data JSON | import FILE | export ID [--out FILE] | rm ID   [--force]
   stance feature list | on NAME | off NAME   Optional parts: clip, deck, rules, quick
@@ -989,8 +990,40 @@ fn theme_cmd(a: &Args, json: bool) -> Result<()> {
                         println!("exported {} to {out}", t.id);
                     }
                 }
+                None if json && a.pos.get(1).map(String::as_str) == Some("show") => {
+                    let mut v = serde_json::to_value(&t).unwrap_or_default();
+                    v["contrast"] = json!(t.contrast());
+                    ok_json(&v);
+                }
                 None if json => ok_json(&t),
                 None => println!("{}", serde_json::to_string_pretty(&t).unwrap_or_default()),
+            }
+        }
+        "check" => {
+            a.max_pos(3)?;
+            let t = match a.arg(2, "theme id or file")? {
+                x if x.contains('/') || x.ends_with(".json") => theme::Theme::parse(
+                    &std::fs::read_to_string(x)
+                        .map_err(|e| Error::new("io", format!("{x}: {e}")))?,
+                )?,
+                id => th.get(id)?,
+            };
+            let rows = t.contrast();
+            let bad = rows.iter().filter(|r| !r.ok).count();
+            if json {
+                ok_json(&json!({ "id": t.id, "contrast": rows, "failing": bad }));
+            } else if bad == 0 {
+                println!("{}: contrast ok", t.id);
+            } else {
+                for r in rows.iter().filter(|r| !r.ok) {
+                    println!(
+                        "{}: {} is {:.2}:1 (needs {:.1}:1)",
+                        t.id, r.pair, r.ratio, r.min
+                    );
+                }
+            }
+            if bad > 0 {
+                std::process::exit(1);
             }
         }
         "put" => {
@@ -1028,7 +1061,9 @@ fn theme_cmd(a: &Args, json: bool) -> Result<()> {
         other => {
             return Err(Error::new(
                 "usage",
-                format!("unknown theme command `{other}` (list, show, put, import, export, rm)"),
+                format!(
+                    "unknown theme command `{other}` (list, show, check, put, import, export, rm)"
+                ),
             ));
         }
     }

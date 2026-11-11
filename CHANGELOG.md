@@ -9,6 +9,9 @@
 - docs/install.md: Arch, Nix, tarball, source, optional tools, uninstall.
 
 ### 0.8.0 work
+- Theme contrast: the colour editor shows a live warning for pairs under 4.5:1 (textDim 3:1); `stance theme show ID --json` has a `contrast` array and `stance theme check [ID|FILE]` exits 1 on problems. 6 of 17 bundled themes have a pair between 3:1 and 4.5:1 (palettes unchanged).
+- Accessibility: chips, switches, segmented controls, tiles, sliders and fields carry accessible roles/names; sliders are keyboard-operable with a visible focus ring.
+- `contrib/stance-theme-from-pywal`: pywal / matugen palette to a stance theme, refuses low contrast unless `--force` (`tests/theme-convert.sh`).
 - Panel translations moved out of QML into `quickshell/stance/i18n/<code>.json`; any language with a file can be picked in Settings (or follows `LANG`). Guide: docs/translating.md.
 
 ### 0.7.1 work
