@@ -44,7 +44,7 @@ Messages (both directions; the sender of `offer` is the "sender"):
   PC, never reused in a session.
 - Data travels in **binary frames**: the Noise plaintext starts with byte
   `0x00` (JSON always starts with `{`), then `sid` as u32 big-endian, then
-  1–16000 bytes of payload. Payload is in order (TCP), no offsets.
+  the payload (1..=16363 bytes; senders use 16000, see Revision). Payload is in order (TCP), no offsets.
 - Protocol errors end the session (as in schema 1): data for an unknown or
   not-accepted sid, beyond the window, beyond `size`, an empty payload, a
   binary frame before negotiation, a reused sid, wrong parity.
@@ -101,12 +101,15 @@ Existing values do not change.
   dropped silently (a `cancel` may cross data in flight); any other unknown
   sid ends the session. Running out of sids ends the session.
 - **DoS.** At most 4 offers per 10 s per session (more: `decline` "too
-  fast"), at most 1 offer awaiting consent, 2 open streams per direction;
+  fast"), 2 open streams per direction;
   `size` checked against the per-kind cap before anything else.
 - **Known limits in 0.6.** Actions still run inline in the session loop, so
   a slow action pauses reading (and stream credit); a peer stalled in the
   middle of a frame can hold the loop for up to 5 s. 0.7.0 moves actions to
   a worker thread before any real transfer is enabled.
+- **Left for 0.7** (scan 0.6.0): at most 1 offer awaiting consent once
+  consent is asynchronous; ending the session when the offered caps change
+  (they are a constant in 0.6).
 - **0.6.0 implements:** `proto`/`caps` in `hello`, the `caps` exchange,
   `Unknown` server messages in the Rust client (`#[serde(other)]`), the
   binary frame codec in `Session`, the stream state machine with credit

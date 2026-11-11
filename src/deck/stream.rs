@@ -165,12 +165,6 @@ impl Streams {
                     return err("bad stream id");
                 }
                 self.peer_last = sid;
-                let decline = |r: &str| {
-                    Ok(vec![Out::Send(StreamMsg::Decline {
-                        sid,
-                        reason: r.into(),
-                    })])
-                };
                 while self
                     .offers
                     .front()
@@ -178,45 +172,48 @@ impl Streams {
                 {
                     self.offers.pop_front();
                 }
-                if !self.agreed.contains(&kind) {
-                    return decline("unsupported");
-                }
-                if self.offers.len() >= OFFERS_MAX {
-                    return decline("too fast");
-                }
-                self.offers.push_back(now);
-                let cap = size_cap(&kind).unwrap_or(0);
-                if size == 0 || size > cap {
-                    return decline("too large");
-                }
-                if !is_hex64(&sha256)
-                    || name.as_ref().is_some_and(|n| n.len() > NAME_MAX)
-                    || mime.as_ref().is_some_and(|m| m.len() > MIME_MAX)
-                {
-                    return decline("bad offer");
-                }
-                if self.inbound.len() >= OPEN_MAX {
-                    return decline("busy");
-                }
-                match decide(&kind, size, name.as_deref()) {
-                    Decision::Decline(r) => decline(&r),
-                    Decision::Accept => {
-                        let window = size.min(WINDOW_MAX);
-                        self.inbound.insert(
-                            sid,
-                            Inbound {
-                                kind,
-                                size,
-                                sha256,
-                                received: 0,
-                                granted: window,
-                                hasher: Sha256::new(),
-                                last: now,
-                            },
-                        );
-                        Ok(vec![Out::Send(StreamMsg::Accept { sid, window })])
+                // Every offer counts toward the rate limit, even unsupported ones.
+                let refused = if self.offers.len() >= OFFERS_MAX {
+                    Some("too fast".to_string())
+                } else {
+                    self.offers.push_back(now);
+                    if !self.agreed.contains(&kind) {
+                        Some("unsupported".into())
+                    } else if size == 0 || size > size_cap(&kind).unwrap_or(0) {
+                        Some("too large".into())
+                    } else if !is_hex64(&sha256)
+                        || name.as_ref().is_some_and(|n| n.len() > NAME_MAX)
+                        || mime.as_ref().is_some_and(|m| m.len() > MIME_MAX)
+                    {
+                        Some("bad offer".into())
+                    } else if self.inbound.len() >= OPEN_MAX {
+                        Some("busy".into())
+                    } else {
+                        match decide(&kind, size, name.as_deref()) {
+                            Decision::Decline(r) => Some(r),
+                            Decision::Accept => None,
+                        }
                     }
+                };
+                if let Some(reason) = refused {
+                    // Remembered: the peer may cancel before the decline arrives.
+                    self.close(sid);
+                    return Ok(vec![Out::Send(StreamMsg::Decline { sid, reason })]);
                 }
+                let window = size.min(WINDOW_MAX);
+                self.inbound.insert(
+                    sid,
+                    Inbound {
+                        kind,
+                        size,
+                        sha256,
+                        received: 0,
+                        granted: window,
+                        hasher: Sha256::new(),
+                        last: now,
+                    },
+                );
+                Ok(vec![Out::Send(StreamMsg::Accept { sid, window })])
             }
             StreamMsg::End { sid } => {
                 let Some(s) = self.inbound.get(&sid) else {
@@ -654,6 +651,37 @@ mod tests {
         assert!(pc.on_msg(offer(10, "clip.text", 3), t, accept).is_err());
         assert!(pc.on_msg(offer(9, "clip.text", 3), t, accept).is_err());
         assert!(pc.on_msg(offer(0, "clip.text", 3), t, accept).is_err());
+    }
+
+    #[test]
+    fn a_cancel_crossing_a_decline_is_tolerated() {
+        let t = Instant::now();
+        let mut pc = Streams::new(caps(), true);
+        assert_eq!(
+            declined(pc.on_msg(offer(1, "clip.image", 10), t, accept).unwrap()),
+            "unsupported"
+        );
+        let cancel = StreamMsg::Cancel {
+            sid: 1,
+            reason: "user".into(),
+        };
+        assert_eq!(pc.on_msg(cancel, t, accept).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn unsupported_offers_count_toward_the_rate_limit() {
+        let t = Instant::now();
+        let mut pc = Streams::new(vec![], true);
+        for sid in [1, 3, 5, 7] {
+            assert_eq!(
+                declined(pc.on_msg(offer(sid, "clip.text", 3), t, accept).unwrap()),
+                "unsupported"
+            );
+        }
+        assert_eq!(
+            declined(pc.on_msg(offer(9, "clip.text", 3), t, accept).unwrap()),
+            "too fast"
+        );
     }
 
     #[test]
