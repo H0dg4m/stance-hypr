@@ -103,9 +103,39 @@ pub struct ModeMonitor {
     pub mirror: Option<String>,
 }
 
+/// `schema = N` of a mode or rules file. Missing reads as 1; always written.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Schema(pub u32);
+
+impl Default for Schema {
+    fn default() -> Self {
+        Schema(crate::migrate::CURRENT)
+    }
+}
+
+/// Parse errors of a file from a newer stance are `newer_schema`, not a
+/// complaint about keys this build does not know.
+fn parse_error(
+    text: &str,
+    file: &str,
+    code: &'static str,
+    what: &str,
+    e: &toml::de::Error,
+) -> Error {
+    let found = crate::migrate::toml_schema(text);
+    if found > crate::migrate::CURRENT {
+        crate::migrate::newer(file, found)
+    } else {
+        Error::new(code, format!("{what}: {}", e.message()))
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModeFile {
+    #[serde(default)]
+    pub schema: Schema,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,7 +186,7 @@ fn mode_path(name: &str) -> Result<PathBuf> {
 
 pub fn parse_mode(text: &str) -> Result<ModeFile> {
     let m: ModeFile = toml::from_str(text)
-        .map_err(|e| Error::new("bad_mode", format!("invalid mode file: {}", e.message())))?;
+        .map_err(|e| parse_error(text, "mode file", "bad_mode", "invalid mode file", &e))?;
     if m.monitors.len() > MAX_MONITORS {
         return Err(Error::new("bad_mode", "too many [[monitor]] entries"));
     }
@@ -244,7 +274,10 @@ pub fn save(name: &str, mode: &ModeFile, overwrite: bool) -> Result<PathBuf> {
     }
     store::ensure_private_dir(&store::config_dir()?)?;
     store::ensure_private_dir(&modes_dir()?)?;
-    let body = toml::to_string(mode).map_err(|e| Error::new("io", e.to_string()))?;
+    crate::migrate::guard_toml(&path, &format!("modes/{name}.toml"))?;
+    let mut mode = mode.clone();
+    mode.schema = Schema::default();
+    let body = toml::to_string(&mode).map_err(|e| Error::new("io", e.to_string()))?;
     let text = format!("# stance mode `{name}` (see `stance mode show {name}`)\n{body}");
     store::atomic_write(&path, text.as_bytes(), true)?;
     Ok(path)
@@ -285,7 +318,10 @@ pub fn rules_from_json(data: &str) -> Result<Rules> {
 pub fn save_rules(r: &Rules) -> Result<PathBuf> {
     let path = rules_path()?;
     store::ensure_private_dir(&store::config_dir()?)?;
-    let body = toml::to_string(r).map_err(|e| Error::new("io", e.to_string()))?;
+    crate::migrate::guard_toml(&path, "rules.toml")?;
+    let mut r = r.clone();
+    r.schema = Schema::default();
+    let body = toml::to_string(&r).map_err(|e| Error::new("io", e.to_string()))?;
     let text = format!("# stance hotplug rules (see `stance rules`)\n{body}");
     store::atomic_write(&path, text.as_bytes(), true)?;
     Ok(path)
@@ -561,6 +597,8 @@ impl PowerSource {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rules {
+    #[serde(default)]
+    pub schema: Schema,
     #[serde(default, rename = "rule")]
     pub rules: Vec<Rule>,
 }
@@ -571,7 +609,7 @@ pub fn rules_path() -> Result<PathBuf> {
 
 pub fn parse_rules(text: &str) -> Result<Rules> {
     let r: Rules = toml::from_str(text)
-        .map_err(|e| Error::new("bad_rules", format!("invalid rules.toml: {}", e.message())))?;
+        .map_err(|e| parse_error(text, "rules.toml", "bad_rules", "invalid rules.toml", &e))?;
     if r.rules.len() > MAX_RULES {
         return Err(Error::new("bad_rules", "too many rules"));
     }
@@ -787,5 +825,37 @@ enabled = false
         );
         assert!(parse_rules("[[rule]]\nmonitors = []\nmode = \"x\"").is_err());
         assert!(parse_rules("[[rule]]\nmonitors = [\"a\"]\nmode = \"../x\"").is_err());
+    }
+
+    #[test]
+    fn old_fixtures_load_and_are_stamped() {
+        for dir in ["config-0.2.0", "config-0.3.0"] {
+            let base = format!("{}/tests/fixtures/{dir}", env!("CARGO_MANIFEST_DIR"));
+            let m =
+                parse_mode(&std::fs::read_to_string(format!("{base}/modes/desk.toml")).unwrap())
+                    .unwrap();
+            assert_eq!(m.schema, Schema(1), "{dir}");
+            let r = parse_rules(&std::fs::read_to_string(format!("{base}/rules.toml")).unwrap())
+                .unwrap();
+            assert_eq!(r.schema, Schema(1), "{dir}");
+            assert!(!r.rules.is_empty());
+        }
+    }
+
+    #[test]
+    fn schema_is_written_first_and_newer_is_refused() {
+        let body = toml::to_string(&ModeFile::default()).unwrap();
+        assert!(body.starts_with("schema = 1"), "{body}");
+        let r = toml::to_string(&Rules::default()).unwrap();
+        assert!(r.starts_with("schema = 1"), "{r}");
+        // A newer file that still parses is read; one with unknown keys is
+        // refused as newer, not as a typo.
+        assert!(parse_mode("schema = 2\n").is_ok());
+        let e = parse_mode("schema = 2\nfuture_key = 1\n").unwrap_err();
+        assert_eq!(e.code, "newer_schema");
+        let e = parse_rules("schema = 3\nfuture_key = 1\n").unwrap_err();
+        assert_eq!(e.code, "newer_schema");
+        let e = parse_mode("future_key = 1\n").unwrap_err();
+        assert_eq!(e.code, "bad_mode");
     }
 }

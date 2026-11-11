@@ -425,7 +425,6 @@ pub fn export_to(t: &Theme, out: &Path, force: bool) -> Result<()> {
 /// Asks the XDG settings portal first (`org.freedesktop.appearance
 /// color-scheme`: 1 dark, 2 light, 0 no preference), then GNOME's
 /// gsettings. Each call has a short timeout; a missing tool is "unknown".
-#[allow(dead_code)] // TODO(0.4): drop once main.rs calls it (see CHANGELOG/ADR step 6-7)
 pub fn system_scheme() -> &'static str {
     use std::time::Duration;
     let t = Duration::from_secs(2);

@@ -84,6 +84,7 @@ Usage:
   stance clip pause [15m|1h|30s] | resume   Stop capturing for a while (at most 24h)
   stance clip ingest [--image]         Store one copy (run by `wl-paste --watch`)
   stance theme list | show ID          Panel themes (built-in and yours)
+  stance theme system                  System light/dark preference: dark | light | unknown
   stance theme put --data JSON | import FILE | export ID [--out FILE] | rm ID   [--force]
   stance feature list | on NAME | off NAME   Optional parts: clip, deck, rules, quick
   stance daemon                        Hotplug rules (optional, long-running)
@@ -750,7 +751,7 @@ fn deck_cmd(a: &Args, json: bool) -> Result<()> {
             )?;
             store::ensure_private_dir(&store::config_dir()?)?;
             let path = store::config_dir()?.join("deck.toml");
-            store::atomic_write(&path, text.as_bytes(), true)?;
+            deck::config::write_file(&path, &text)?;
             simple(json, "saved", true);
             Ok(())
         }
@@ -800,6 +801,15 @@ fn theme_cmd(a: &Args, json: bool) -> Result<()> {
     let th = theme::Themes::open()?;
     let force = a.has("--force");
     match a.pos.get(1).map(String::as_str).unwrap_or("list") {
+        "system" => {
+            a.max_pos(2)?;
+            let scheme = theme::system_scheme();
+            if json {
+                ok_json(&json!({ "scheme": scheme }));
+            } else {
+                println!("{scheme}");
+            }
+        }
         "list" => {
             a.max_pos(2)?;
             let l = th.list();

@@ -72,5 +72,12 @@ check "caps seeded" False "$(s caps --json | j "d['data']['caps']['compositor_op
 s mode apply opts --no-confirm --json >/dev/null 2>&1; check "mode with options unsupported (exit)" 2 $?
 check "mode with options unsupported (code)" unsupported "$(s mode apply opts --no-confirm --json 2>&1 | j "d['error']['code']")"
 
+# files from a newer stance are never overwritten
+printf 'schema = 2\n' > "$XDG_CONFIG_HOME/stance/rules.toml"
+chmod 600 "$XDG_CONFIG_HOME/stance/rules.toml"
+check "rules put refuses newer file" newer_schema "$(s rules put --data '{"rule":[]}' --json 2>&1 | j "d['error']['code']")"
+check "newer rules file untouched" "schema = 2" "$(cat "$XDG_CONFIG_HOME/stance/rules.toml")"
+case "$(s theme system)" in dark|light|unknown) ok "theme system answers";; *) bad "theme system answers";; esac
+
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]

@@ -346,7 +346,6 @@ pub fn from_json(data: &str) -> Result<String> {
 
 /// Writes `deck.toml` (text from [`from_json`]) unless the file on disk was
 /// written by a newer stance (`newer_schema`). Keeps the old one as `.bak`.
-#[allow(dead_code)] // TODO(0.4): drop once main.rs calls it (see CHANGELOG/ADR step 6-7)
 pub fn write_file(path: &std::path::Path, text: &str) -> Result<()> {
     crate::migrate::guard_toml(path, "deck.toml")?;
     crate::store::atomic_write(path, text.as_bytes(), true)
