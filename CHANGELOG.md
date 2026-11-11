@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### 0.8.0 work
+- Panel translations moved out of QML into `quickshell/stance/i18n/<code>.json`; any language with a file can be picked in Settings (or follows `LANG`). Guide: docs/translating.md.
+
 ### 0.7.1 work
 - Clipboard images both ways (`clip_images` in transfer.toml; PNG, JPEG, WebP, GIF up to 32 MiB; the type is sniffed from the bytes).
 - `trusted_devices`: files from those phones are saved without a prompt (still announced).

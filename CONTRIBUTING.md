@@ -13,7 +13,8 @@ Thanks for helping. A few rules keep stance safe and small:
 - Every `--json` reply keeps the envelope in docs/protocol.md; breaking changes
   bump `schema`.
 - New user-visible panel text goes through `StanceI18n` with a Turkish
-  translation (or leave the English and say so in the PR).
+  translation in `quickshell/stance/i18n/tr.json` (or leave the English and
+  say so in the PR). New languages: see [docs/translating.md](docs/translating.md).
 - Security problems: report privately (GitHub security advisory), not in an issue.
 
 The phone app lives in [stance-deck-android](https://github.com/H0dg4m/stance-deck-android);

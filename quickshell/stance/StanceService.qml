@@ -155,7 +155,7 @@ Item {
                     out.themeOverrides[k] = v;
             }
         }
-        if (o && (o.lang === "en" || o.lang === "tr" || o.lang === "auto"))
+        if (o && typeof o.lang === "string" && (o.lang === "auto" || /^[a-z]{2,3}(_[A-Z]{2})?$/.test(o.lang)))
             out.lang = o.lang;
         if (o && settingsPages.indexOf(o.settingsPage) >= 0)
             out.settingsPage = o.settingsPage;

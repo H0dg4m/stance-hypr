@@ -44,7 +44,7 @@ ColumnLayout {
         StanceSegmented {
             Layout.fillWidth: true
             theme: page.theme
-            model: [{ label: StanceI18n.t("Auto"), value: "auto" }, { label: "English", value: "en" }, { label: "Türkçe", value: "tr" }]
+            model: [{ label: StanceI18n.t("Auto"), value: "auto" }, { label: "English", value: "en" }].concat(StanceI18n.languages.map(l => ({ label: l.name, value: l.code })))
             current: page.prefs.lang
             onPicked: v => page.service.setPref("lang", v)
         }
