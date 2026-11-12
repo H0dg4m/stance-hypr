@@ -175,12 +175,9 @@ fn offer_bytes(kind: &str, data: &[u8], name: Option<String>) -> Result<String> 
     let (mut s, mut st) = v2(&[kind])?;
     let now = Instant::now();
     let hash = super::transfer::sha256_hex(data);
-    let offer = st
+    let (sid, offer) = st
         .offer(kind, data.len() as u64, &hash, name, None, now)
         .map_err(|e| Error::new("deck_client", format!("cannot offer {kind}: {e}")))?;
-    let StreamMsg::Offer { sid, .. } = offer else {
-        unreachable!()
-    };
     s.send(&offer)?;
     let end = Instant::now() + Duration::from_secs(70);
     let mut pos = 0usize;

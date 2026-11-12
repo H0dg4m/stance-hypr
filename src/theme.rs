@@ -104,7 +104,17 @@ fn d_opacity() -> f64 {
 
 impl Default for Metrics {
     fn default() -> Self {
-        serde_json::from_str("{}").expect("metric defaults")
+        Metrics {
+            radius: d_radius(),
+            chip_radius: d_chip(),
+            font_family: String::new(),
+            font_size: d_font(),
+            icon_font: String::new(),
+            anim_ms: d_anim(),
+            padding: d_pad(),
+            spacing: d_spacing(),
+            opacity: d_opacity(),
+        }
     }
 }
 
@@ -287,7 +297,8 @@ impl Theme {
 pub fn builtins() -> Vec<Theme> {
     BUILTIN
         .iter()
-        .map(|(_, s)| Theme::parse(s).expect("built-in theme is valid"))
+        // All parse: `builtins_are_valid_and_complete` checks it.
+        .filter_map(|(_, s)| Theme::parse(s).ok())
         .collect()
 }
 
@@ -583,8 +594,18 @@ mod tests {
     }
 
     #[test]
+    fn metrics_default_matches_serde() {
+        let m: Metrics = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            serde_json::to_value(&m).unwrap(),
+            serde_json::to_value(Metrics::default()).unwrap()
+        );
+    }
+
+    #[test]
     fn builtins_are_valid_and_complete() {
         let b = builtins();
+        assert_eq!(b.len(), BUILTIN.len());
         assert_eq!(b.len(), 17);
         assert_eq!(b[0].id, "stance-dark");
         for t in &b {

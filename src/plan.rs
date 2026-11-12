@@ -155,7 +155,7 @@ pub fn pick_mode(m: &Monitor, res: (u32, u32), hz: Option<f64>, custom: bool) ->
         None => at_res
             .iter()
             .max_by(|a, b| a.refresh.total_cmp(&b.refresh))
-            .unwrap(),
+            .ok_or_else(|| Error::new("unsupported_mode", format!("{} has no modes", m.name)))?,
     };
     Ok((*chosen).clone())
 }
@@ -391,7 +391,10 @@ pub fn plan_layout(
 ) -> Result<Vec<MonitorSpec>> {
     let t = resolve(mons, target)?;
     let mut specs: Vec<MonitorSpec> = mons.iter().map(MonitorSpec::from_monitor).collect();
-    let ti = specs.iter().position(|s| s.name == t.name).unwrap();
+    let ti = specs
+        .iter()
+        .position(|s| s.name == t.name)
+        .ok_or_else(|| Error::new("internal", format!("{} vanished", t.name)))?;
 
     if kind == Layout::Single {
         for s in specs.iter_mut() {
@@ -436,7 +439,9 @@ pub fn plan_layout(
         Layout::RightOf => (rs.x + rw, rs.y),
         Layout::Above => (rs.x, rs.y - th),
         Layout::Below => (rs.x, rs.y + rh),
-        _ => unreachable!(),
+        Layout::Single | Layout::Mirror => {
+            return Err(Error::new("internal", "layout handled above"));
+        }
     };
     specs[ti] = ts;
 
@@ -462,8 +467,9 @@ pub fn plan_layout(
     Ok(specs
         .into_iter()
         .filter(|s| {
-            let cur = mons.iter().find(|m| m.name == s.name).unwrap();
-            !crate::apply::satisfies(cur, s)
+            mons.iter()
+                .find(|m| m.name == s.name)
+                .is_none_or(|cur| !crate::apply::satisfies(cur, s))
         })
         .collect())
 }

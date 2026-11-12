@@ -246,7 +246,9 @@ impl Streams {
                 if s.received != s.size {
                     return err("end before all data");
                 }
-                let s = self.inbound.remove(&sid).expect("checked");
+                let Some(s) = self.inbound.remove(&sid) else {
+                    return err("unknown stream");
+                };
                 self.close(sid);
                 let ok = hex(&s.hasher.finalize()) == s.sha256;
                 // Finished first: the file is saved before the phone hears "done".
@@ -309,15 +311,14 @@ impl Streams {
                         err("unknown stream")
                     };
                 };
-                let total = o.granted.checked_add(bytes);
-                if !o.accepted
-                    || bytes == 0
-                    || bytes > WINDOW_MAX
-                    || total.is_none_or(|t| t > o.size)
-                {
-                    return err("bad window");
+                match o.granted.checked_add(bytes) {
+                    Some(total)
+                        if o.accepted && bytes > 0 && bytes <= WINDOW_MAX && total <= o.size =>
+                    {
+                        o.granted = total;
+                    }
+                    _ => return err("bad window"),
                 }
-                o.granted = total.expect("checked");
                 o.last = now;
                 Ok(vec![])
             }
@@ -402,7 +403,7 @@ impl Streams {
         name: Option<String>,
         mime: Option<String>,
         now: Instant,
-    ) -> Result<StreamMsg, String> {
+    ) -> Result<(u32, StreamMsg), String> {
         if !self.agreed.iter().any(|c| c == kind) {
             return err("not negotiated");
         }
@@ -425,14 +426,17 @@ impl Streams {
                 last: now,
             },
         );
-        Ok(StreamMsg::Offer {
+        Ok((
             sid,
-            kind: kind.into(),
-            size,
-            sha256: sha256.into(),
-            name,
-            mime,
-        })
+            StreamMsg::Offer {
+                sid,
+                kind: kind.into(),
+                size,
+                sha256: sha256.into(),
+                name,
+                mime,
+            },
+        ))
     }
 
     /// Bytes we may send on our stream now.
@@ -531,7 +535,9 @@ impl Streams {
             .map(|(k, _)| *k)
             .collect();
         for sid in idle_in {
-            let s = self.inbound.remove(&sid).expect("listed");
+            let Some(s) = self.inbound.remove(&sid) else {
+                continue;
+            };
             self.close(sid);
             out.push(Out::Send(StreamMsg::Cancel {
                 sid,
@@ -614,7 +620,8 @@ mod tests {
                 None,
                 t,
             )
-            .unwrap();
+            .unwrap()
+            .1;
         let mut to_phone: VecDeque<StreamMsg> = VecDeque::new();
         let mut got = Vec::new();
         let mut finished = Vec::new();
@@ -1016,12 +1023,9 @@ mod tests {
                 .offer("clip.image", 5, &sha(b"x"), None, None, t)
                 .is_err()
         );
-        let StreamMsg::Offer { sid, .. } = phone
+        let (sid, _) = phone
             .offer("clip.text", 5, &sha(b"x"), None, None, t)
-            .unwrap()
-        else {
-            panic!()
-        };
+            .unwrap();
         assert_eq!(sid, 1);
         assert_eq!(phone.quota(sid), 0);
         assert!(phone.sent(sid, 1, t).is_err());
@@ -1092,12 +1096,9 @@ mod tests {
             .unwrap();
         assert_eq!(phone.open(), 0);
         // Next own sid is the next odd one.
-        let StreamMsg::Offer { sid, .. } = phone
+        let (sid, _) = phone
             .offer("clip.text", 5, &sha(b"x"), None, None, t)
-            .unwrap()
-        else {
-            panic!()
-        };
+            .unwrap();
         assert_eq!(sid, 3);
     }
 

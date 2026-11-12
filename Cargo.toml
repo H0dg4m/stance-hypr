@@ -25,3 +25,13 @@ codegen-units = 1
 strip = true
 panic = "abort"
 opt-level = "s"
+
+# Daemon, guardian and deck server must not panic on input (1.0 criterion).
+# Tests may (clippy.toml).
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"

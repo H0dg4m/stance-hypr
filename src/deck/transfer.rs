@@ -599,7 +599,11 @@ pub fn apply_clip(data: &[u8], mime: &str) -> Result<()> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| Error::new("tool", e.to_string()))?;
-    let mut stdin = child.stdin.take().expect("piped");
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(Error::new("tool", "wl-copy: no stdin"));
+    };
     let data = text.to_vec();
     let writer = std::thread::spawn(move || {
         let _ = stdin.write_all(&data);

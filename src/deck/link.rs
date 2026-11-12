@@ -479,11 +479,8 @@ impl Link {
                     None,
                     now,
                 ) {
-                    Ok(m) => {
-                        let StreamMsg::Offer { sid, .. } = &m else {
-                            unreachable!()
-                        };
-                        self.outgoing.insert(*sid, Src::File(tid, src));
+                    Ok((sid, m)) => {
+                        self.outgoing.insert(sid, Src::File(tid, src));
                         s.send(&m)?;
                         hub.update(
                             tid,
@@ -612,11 +609,8 @@ impl Link {
             }),
             now,
         ) {
-            Ok(m) => {
-                let StreamMsg::Offer { sid, .. } = &m else {
-                    unreachable!()
-                };
-                self.outgoing.insert(*sid, Src::Clip(data, 0));
+            Ok((sid, m)) => {
+                self.outgoing.insert(sid, Src::Clip(data, 0));
                 s.send(&m)?;
             }
             Err(e) => eprintln!("stance deck: clipboard to {}: {e}", self.device),
