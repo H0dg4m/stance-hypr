@@ -21,6 +21,8 @@ const PAUSE: Duration = Duration::from_secs(60);
 /// How often the daemon looks for an expired, unconfirmed change (in case
 /// its guardian was killed, e.g. with the panel's service).
 const SWEEP_POLL: Duration = Duration::from_secs(5);
+const SWEEP_RETRY: Duration = Duration::from_secs(60);
+const SWEEP_RETRY_MAX: Duration = Duration::from_secs(3600);
 
 fn log(msg: &str) {
     eprintln!("stance daemon: {msg}");
@@ -133,6 +135,10 @@ struct Live<'a> {
     night: Option<crate::night::Night>,
     power_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     last_ac: Option<bool>,
+    /// After a failed expiry revert: when to try again, and the next wait
+    /// (doubling, up to an hour) so a revert that cannot work is not retried
+    /// (and announced) every few seconds.
+    sweep_retry: Option<(Instant, Duration)>,
 }
 
 impl Host for Live<'_> {
@@ -168,16 +174,38 @@ impl Host for Live<'_> {
     }
 
     fn sweep(&mut self) {
-        if self.ctx.read_pending().is_none() {
+        // Only this session's changes, only once expired (the guardian
+        // normally reverts at the deadline; this covers a killed guardian).
+        let Some(p) = self.ctx.read_pending() else {
+            self.sweep_retry = None;
+            return;
+        };
+        if p.session != self.ctx.backend.session_id() || !crate::apply::expired(&p) {
             return;
         }
-        match self.ctx.lock() {
-            Ok(_lock) => {
-                for w in self.ctx.sweep() {
-                    log(&w);
-                }
-            }
-            Err(e) => log(&e.message),
+        let now = Instant::now();
+        if self.sweep_retry.is_some_and(|(at, _)| now < at) {
+            return;
+        }
+        let _lock = match self.ctx.lock() {
+            Ok(l) => l,
+            Err(e) => return log(&e.message),
+        };
+        for w in self.ctx.sweep() {
+            log(&w);
+        }
+        if self
+            .ctx
+            .read_pending()
+            .is_some_and(|q| q.generation == p.generation)
+        {
+            let wait = self
+                .sweep_retry
+                .map_or(SWEEP_RETRY, |(_, w)| (w * 2).min(SWEEP_RETRY_MAX));
+            self.sweep_retry = Some((now + wait, wait));
+        } else {
+            self.sweep_retry = None;
+            self.ctx.backend.notify(Notice::Reverted);
         }
     }
 
@@ -221,6 +249,7 @@ pub fn run(hypr: &dyn Backend, state_dir: std::path::PathBuf) -> Result<()> {
         ctx,
         power_flag,
         last_ac: crate::power::on_ac(),
+        sweep_retry: None,
     };
     event_loop(events.as_mut(), &mut host, power_watch)
 }

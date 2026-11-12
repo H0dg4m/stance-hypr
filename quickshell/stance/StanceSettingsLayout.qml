@@ -16,6 +16,7 @@ ColumnLayout {
     readonly property var sizeNames: ({ "S": StanceI18n.t("Small"), "M": StanceI18n.t("Medium"), "L": StanceI18n.t("Large") })
 
     component Note: Text {
+        textFormat: Text.PlainText
         color: page.theme.textDim
         font.family: page.theme.fontFamily
         font.pixelSize: page.theme.fontSize - 2
@@ -24,6 +25,7 @@ ColumnLayout {
     }
 
     component PageTitle: Text {
+        textFormat: Text.PlainText
         color: page.theme.text
         font.family: page.theme.fontFamily
         font.pixelSize: page.theme.fontSize + 2

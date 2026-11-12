@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.9.0 work (candidate: bugs and security only; full scan docs/scans/0.9.0-*.md)
+- No `unwrap`/`expect`/`panic!`/`unreachable!` outside tests, enforced by `[lints.clippy]` in Cargo.toml.
+- Deck: the whole handshake must finish in 10 s (a trickle of bytes no longer holds a slot), at most 2 handshakes per IP; a session with no authenticated frame in 20 s or silent for 60 s is closed; the pairing code allows 3 attempts and ends with the first successful pairing (one bad connection no longer burns it); at most 4 queued actions per session, none run after the session ends or the phone is unpaired; the "phone paired" notice works with names starting with `-`; a received file is saved before the phone hears "done"; FAT/FUSE folders without hard links or RENAME_NOREPLACE get a no-overwrite copy.
+- Display changes: if the confirmation timer cannot be set up the change is undone at once; the guardian tolerates short compositor stalls; a failed revert keeps its snapshot (retry with `stance revert`); the daemon reverts an expired change itself if the guardian was killed.
+- Robustness: non-UTF-8 Hyprland event lines and arguments, netlink buffer overruns, a replaced binary after a package upgrade, theme export without `--force` never truncates, broken user themes can be removed, permission errors say how to fix them.
+- Panel: every text item renders plain text (device names such as Bluetooth sinks or EDID strings can no longer inject markup), checked in CI.
+- CI: actions pinned by commit (Dependabot keeps them current), workflow tokens read-only except the release step.
+
 ### Packaging (0.8.0 work)
 - Tag → CI release: static musl binary, tarball, SHA256SUMS, GitHub release from the CHANGELOG section (`.github/workflows/release.yml`).
 - `flake.nix` (package with units and panel, dev shell); CI builds it.

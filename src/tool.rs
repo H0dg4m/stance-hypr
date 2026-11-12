@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
 
-/// Finds `name` at `/usr/bin/<name>`, then in absolute PATH entries.
 /// This binary, for spawning itself. After a package upgrade replaced it,
 /// Linux reports `… (deleted)`: use the new file at the same path, or the
 /// old one still reachable through /proc.
@@ -26,6 +25,7 @@ fn own_exe_from(exe: PathBuf) -> PathBuf {
     }
 }
 
+/// Finds `name` at `/usr/bin/<name>`, then in absolute PATH entries.
 pub fn find(name: &str) -> Option<PathBuf> {
     if name.is_empty()
         || !name

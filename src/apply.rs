@@ -25,7 +25,7 @@ const POLL: Duration = Duration::from_millis(100);
 /// A guardian should act on time; after this grace any stance call does it.
 const SWEEP_GRACE_MS: u64 = 2000;
 /// Failed compositor queries in a row before the guardian gives up.
-const GONE_AFTER: u32 = 5;
+const GONE_AFTER: u32 = 20;
 
 /// Everything one change may touch. Monitors not listed stay as they are.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -88,6 +88,11 @@ pub struct PendingInfo {
     pub generation: u64,
     pub deadline_ms: u64,
     pub remaining_ms: u64,
+}
+
+/// Past its deadline plus the guardian's grace: any sweep may revert it.
+pub fn expired(p: &Pending) -> bool {
+    now_ms() > p.deadline_ms.saturating_add(SWEEP_GRACE_MS)
 }
 
 pub fn now_ms() -> u64 {
@@ -168,7 +173,7 @@ impl Ctx<'_> {
             self.clear_pending();
             return vec!["dropped pending change from a previous Hyprland session".into()];
         }
-        if now_ms() > p.deadline_ms.saturating_add(SWEEP_GRACE_MS) {
+        if expired(&p) {
             let r = self.restore(&p);
             return vec![match r {
                 Ok(()) => "an unconfirmed change had expired and was reverted".into(),

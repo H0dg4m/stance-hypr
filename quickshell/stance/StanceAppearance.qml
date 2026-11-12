@@ -128,6 +128,7 @@ ColumnLayout {
     }
 
     component Dim: Text {
+        textFormat: Text.PlainText
         color: ap.theme.textDim
         font.family: ap.theme.fontFamily
         font.pixelSize: ap.theme.fontSize - 1
@@ -205,6 +206,7 @@ ColumnLayout {
         }
     }
     component Body: Text {
+        textFormat: Text.PlainText
         color: ap.theme.text
         font.family: ap.theme.fontFamily
         font.pixelSize: ap.theme.fontSize

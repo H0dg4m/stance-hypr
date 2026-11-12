@@ -145,16 +145,19 @@ ColumnLayout {
     Component.onCompleted: load()
 
     component Dim: Text {
+        textFormat: Text.PlainText
         color: ed.theme.textDim
         font.family: ed.theme.fontFamily
         font.pixelSize: ed.theme.fontSize - 1
     }
     component Body: Text {
+        textFormat: Text.PlainText
         color: ed.theme.text
         font.family: ed.theme.fontFamily
         font.pixelSize: ed.theme.fontSize
     }
     component Err: Text {
+        textFormat: Text.PlainText
         color: ed.theme.danger
         font.family: ed.theme.fontFamily
         font.pixelSize: ed.theme.fontSize - 1

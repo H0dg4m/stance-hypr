@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Every Text/TextEdit sets textFormat: the default (AutoText) renders a
+# Every Text/TextEdit (and inline `component X: Text`) sets textFormat: the default (AutoText) renders a
 # device-chosen name like `<img src=…>` as HTML. Fails listing offenders.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -9,7 +9,7 @@ bad = []
 for f in sorted(pathlib.Path("quickshell").rglob("*.qml")):
     lines = f.read_text().split("\n")
     for i, l in enumerate(lines):
-        if not re.match(r"^\s*(Text|TextEdit)\s*\{\s*$", l):
+        if not re.match(r"^\s*(?:component\s+\w+\s*:\s*)?(Text|TextEdit)\s*\{\s*$", l):
             continue
         depth, ok = 0, False
         for l2 in lines[i:]:

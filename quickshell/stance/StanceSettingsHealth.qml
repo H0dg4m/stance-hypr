@@ -49,6 +49,7 @@ ColumnLayout {
     }
 
     component Note: Text {
+        textFormat: Text.PlainText
         color: page.theme.textDim
         font.family: page.theme.fontFamily
         font.pixelSize: page.theme.fontSize - 2
@@ -57,6 +58,7 @@ ColumnLayout {
     }
 
     component PageTitle: Text {
+        textFormat: Text.PlainText
         color: page.theme.text
         font.family: page.theme.fontFamily
         font.pixelSize: page.theme.fontSize + 2

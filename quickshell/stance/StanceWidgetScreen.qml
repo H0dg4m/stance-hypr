@@ -10,6 +10,7 @@ ColumnLayout {
     spacing: 0
 
     component RowLabel: Text {
+        textFormat: Text.PlainText
         required property StanceTheme theme
         color: theme.textDim
         font.family: theme.fontFamily

@@ -135,11 +135,10 @@ impl Shared {
     fn handshake_enter(&self, ip: IpAddr) -> bool {
         let mut h = self.handshakes.lock().unwrap_or_else(|e| e.into_inner());
         let total: usize = h.values().sum();
-        let mine = h.entry(ip).or_insert(0);
-        if total >= MAX_HANDSHAKES || *mine >= HANDSHAKES_PER_IP {
+        if total >= MAX_HANDSHAKES || h.get(&ip).copied().unwrap_or(0) >= HANDSHAKES_PER_IP {
             return false;
         }
-        *mine += 1;
+        *h.entry(ip).or_insert(0) += 1;
         true
     }
 
@@ -921,7 +920,9 @@ fn session_loop(
                     | ClientMsg::Revert { req } => *req,
                     _ => 0,
                 };
-                if presses.len() >= PRESSES_PER_S || jobs.open >= JOBS_MAX {
+                // Confirm / revert always get through: they end a countdown.
+                let press = matches!(m, ClientMsg::Press { .. });
+                if presses.len() >= PRESSES_PER_S || (press && jobs.open >= JOBS_MAX) {
                     s.send(&ServerMsg::Ack {
                         req,
                         ok: false,

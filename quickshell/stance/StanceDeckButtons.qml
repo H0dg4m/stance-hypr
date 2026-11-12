@@ -207,6 +207,7 @@ StanceSection {
     ]
 
     component Dim: Text {
+        textFormat: Text.PlainText
         color: sec.theme.textDim
         font.family: sec.theme.fontFamily
         font.pixelSize: sec.theme.fontSize - 1
@@ -214,6 +215,7 @@ StanceSection {
         Layout.fillWidth: true
     }
     component Body: Text {
+        textFormat: Text.PlainText
         color: sec.theme.text
         font.family: sec.theme.fontFamily
         font.pixelSize: sec.theme.fontSize
