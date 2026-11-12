@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -33,6 +35,7 @@ jobs:
             pyside6-qmlformat "$f" > /dev/null || { echo "QML parse error: $f"; exit 1; }
           done
       - run: python3 scripts/i18n-check.py
+      - run: scripts/qml-plaintext-check.sh
       - name: Shell scripts parse
         run: for f in tests/*.sh contrib/*.sh; do bash -n "$f"; done
   qml-smoke:
@@ -77,6 +80,9 @@ jobs:
       - run: ./result/bin/stance --version && ls result/lib/systemd/user result/share/stance
   audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2

@@ -91,6 +91,7 @@ ColumnLayout {
         }
         StanceIcon { visible: panel.page === "main" && theme.iconFont !== ""; theme: panel.theme; name: "desktop_windows"; color: panel.theme.accent; fill: true }
         Text {
+            textFormat: Text.PlainText
             text: panel.page.startsWith("mode:") ? StanceI18n.f("Mode · %1", panel.page.slice(5)) : StanceI18n.t("Displays")
             color: panel.theme.text
             font.family: panel.theme.fontFamily
@@ -110,6 +111,7 @@ ColumnLayout {
                 spacing: 4
                 StanceIcon { theme: panel.theme; name: "bookmark"; size: panel.theme.fontSize + 1; color: panel.theme.accent; fill: true; anchors.verticalCenter: parent.verticalCenter }
                 Text {
+                    textFormat: Text.PlainText
                     text: panel.service.activeMode
                     color: panel.theme.accent
                     font.family: panel.theme.fontFamily
@@ -203,6 +205,7 @@ ColumnLayout {
                 Layout.alignment: Qt.AlignTop
             }
             Text {
+                textFormat: Text.PlainText
                 text: panel.service.lastError || panel.service.lastNote
                 color: parent.parent.isError ? panel.theme.danger : panel.theme.textDim
                 font.family: panel.theme.fontFamily

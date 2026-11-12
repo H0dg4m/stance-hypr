@@ -12,7 +12,7 @@ BIN=$(realpath "${2:-target/debug/stance}")
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/stance-nested.XXXXXX")
 chmod 700 "$WORK"
 mkdir -m 700 -p "$WORK/cfg/hypr" "$WORK/state"
-export XDG_CONFIG_HOME=$WORK/cfg XDG_STATE_HOME=$WORK/state
+export XDG_CONFIG_HOME=$WORK/cfg XDG_STATE_HOME=$WORK/state XDG_DATA_HOME=$WORK/data
 unset STANCE_STATE_DIR
 
 if [ "$PARSER" = legacy ]; then

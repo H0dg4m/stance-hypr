@@ -6,6 +6,7 @@ BIN=$(realpath "${1:-target/debug/stance}")
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/stance-fake.XXXXXX")
 chmod 700 "$WORK"
 trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$WORK/home"; export HOME=$WORK/home
 export XDG_CONFIG_HOME=$WORK/cfg XDG_STATE_HOME=$WORK/state XDG_DATA_HOME=$WORK/data
 export STANCE_STATE_DIR=$WORK/state/stance STANCE_BACKEND=fake
 unset STANCE_FAKE_STATE

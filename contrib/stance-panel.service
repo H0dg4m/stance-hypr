@@ -3,7 +3,6 @@ Description=stance panel (standalone Quickshell shell for Waybar and other bars)
 Documentation=https://github.com/H0dg4m/stance-hypr/blob/main/docs/quickshell.md
 PartOf=graphical-session.target
 After=graphical-session.target
-Wants=graphical-session.target
 
 [Service]
 Type=simple

@@ -39,6 +39,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
         Text {
+            textFormat: Text.PlainText
             // The card title says it when the card is only night light.
             visible: quick.part === ""
             text: StanceI18n.t("Night")
@@ -75,6 +76,7 @@ StanceSection {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
+                    textFormat: Text.PlainText
                     text: modelData.monitor
                     color: quick.theme.textDim
                     font.family: quick.theme.fontFamily
@@ -93,6 +95,7 @@ StanceSection {
                 onCommitted: v => quick.service.runQuick(["brightness", modelData.monitor, String(v)])
             }
             Text {
+                textFormat: Text.PlainText
                 text: Math.round(sl.shown) + "%"
                 color: quick.theme.text
                 font.family: quick.theme.fontFamily
@@ -109,6 +112,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 4
         Text {
+            textFormat: Text.PlainText
             visible: quick.part === ""
             text: StanceI18n.t("Output")
             color: quick.theme.textDim
@@ -142,6 +146,7 @@ StanceSection {
                         color: row.on ? quick.theme.accent : quick.theme.textDim
                     }
                     Text {
+                        textFormat: Text.PlainText
                         text: row.modelData.short
                         color: quick.theme.text
                         font.family: quick.theme.fontFamily
@@ -151,6 +156,7 @@ StanceSection {
                         Layout.maximumWidth: parent.width * 0.62
                     }
                     Text {
+                        textFormat: Text.PlainText
                         text: row.modelData.profile
                         visible: text !== "" && !quick.compact
                         color: quick.theme.textDim
@@ -190,6 +196,7 @@ StanceSection {
     }
 
     Text {
+        textFormat: Text.PlainText
         visible: text !== ""
         text: quick.service.quickError
         color: quick.theme.danger

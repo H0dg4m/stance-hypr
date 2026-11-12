@@ -49,6 +49,7 @@ Scope {
                     anchors.centerIn: parent
                     spacing: 4
                     Text {
+                        textFormat: Text.PlainText
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: win.modelData.name
                         color: root.theme.accent
@@ -57,6 +58,7 @@ Scope {
                         font.weight: Font.Bold
                     }
                     Text {
+                        textFormat: Text.PlainText
                         anchors.horizontalCenter: parent.horizontalCenter
                         visible: !!win.mon
                         text: win.mon ? (win.mon.description ? win.mon.description + "\n" : "") + win.mon.width + "×" + win.mon.height + " @ " + Math.round(win.mon.refresh) + " Hz" : ""

@@ -2,6 +2,7 @@ import QtQuick
 
 // Material Symbols glyph by name; renders nothing without theme.iconFont.
 Text {
+    textFormat: Text.PlainText
     id: icon
     required property StanceTheme theme
     property string name: ""

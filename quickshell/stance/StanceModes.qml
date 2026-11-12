@@ -59,6 +59,7 @@ StanceSection {
         Layout.fillWidth: true
         spacing: 8
         Text {
+            textFormat: Text.PlainText
             text: StanceI18n.t("Saves the current screens, power profile and workspaces as a new mode.")
             color: modesCard.theme.textDim
             font.family: modesCard.theme.fontFamily
@@ -78,6 +79,7 @@ StanceSection {
             onCancelled: modesCard.toggleAdd()
         }
         Text {
+            textFormat: Text.PlainText
             visible: modesCard.nameProblem !== ""
             text: modesCard.nameProblem
             color: modesCard.theme.danger
@@ -93,6 +95,7 @@ StanceSection {
                 onToggled: v => modesCard.withQuick = v
             }
             Text {
+                textFormat: Text.PlainText
                 text: StanceI18n.t("Include night light and audio output")
                 color: modesCard.theme.text
                 font.family: modesCard.theme.fontFamily
@@ -102,6 +105,7 @@ StanceSection {
             }
         }
         Text {
+            textFormat: Text.PlainText
             visible: modesCard.error !== ""
             text: modesCard.error
             color: modesCard.theme.danger
@@ -154,6 +158,7 @@ StanceSection {
         }
     }
     Text {
+        textFormat: Text.PlainText
         visible: modesCard.service.modes.length === 0 && !modesCard.adding
         text: StanceI18n.t("No modes yet. Add one to save the current screens.")
         color: modesCard.theme.textDim

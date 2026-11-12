@@ -98,6 +98,7 @@ LazyLoader {
                         Layout.fillWidth: true
                         spacing: 2
                         Text {
+                            textFormat: Text.PlainText
                             text: StanceI18n.t("Keep these display settings?")
                             color: root.theme.text
                             font.family: root.theme.fontFamily
@@ -107,6 +108,7 @@ LazyLoader {
                             elide: Text.ElideRight
                         }
                         Text {
+                            textFormat: Text.PlainText
                             text: root.service.pending ? root.service.pending.label : ""
                             color: root.theme.textDim
                             font.family: root.theme.fontFamily
@@ -116,6 +118,7 @@ LazyLoader {
                         }
                     }
                     Text {
+                        textFormat: Text.PlainText
                         text: card.secs + " s"
                         color: card.urgent ? root.theme.danger : root.theme.accent
                         font.family: root.theme.fontFamily
@@ -137,6 +140,7 @@ LazyLoader {
                     }
                 }
                 Text {
+                    textFormat: Text.PlainText
                     text: StanceI18n.f("Reverting automatically in %1 s if you do nothing.", card.secs)
                     color: root.theme.textDim
                     font.family: root.theme.fontFamily

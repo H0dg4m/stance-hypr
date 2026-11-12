@@ -50,6 +50,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
+                        textFormat: Text.PlainText
                         anchors.verticalCenter: parent.verticalCenter
                         width: item.width - 20 - (nav.icons ? nav.theme.fontSize + 13 : 0)
                         elide: Text.ElideRight
@@ -122,6 +123,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                             Text {
+                                textFormat: Text.PlainText
                                 visible: cell.showText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: cell.modelData.label
@@ -177,6 +179,7 @@ Item {
         border.width: 1
         border.color: nav.theme.border
         Text {
+            textFormat: Text.PlainText
             id: tipText
             anchors.centerIn: parent
             text: nav.hoverCell ? nav.hoverCell.modelData.label : ""

@@ -140,6 +140,7 @@ ColumnLayout {
             font.pixelSize: page.theme.fontSize - 2
         }
         TextEdit {
+            textFormat: TextEdit.PlainText
             visible: page.deckInfo !== null && page.deckServer === null
             readOnly: true
             selectByMouse: true
@@ -158,6 +159,7 @@ ColumnLayout {
             spacing: 8
             StanceIcon { theme: page.theme; name: "warning"; size: page.theme.fontSize + 3; color: page.theme.textDim; Layout.alignment: Qt.AlignTop }
             TextEdit {
+                textFormat: TextEdit.PlainText
                 readOnly: true
                 selectByMouse: true
                 text: page.deckCheck ? page.deckCheck.message : ""
@@ -202,6 +204,7 @@ ColumnLayout {
                 font.pixelSize: page.theme.fontSize - 2
             }
             TextEdit {
+                textFormat: TextEdit.PlainText
                 readOnly: true
                 selectByMouse: true
                 text: page.pair ? page.pair.payload : ""
@@ -286,6 +289,7 @@ ColumnLayout {
             font.pixelSize: page.theme.fontSize - 2
         }
         Text {
+            textFormat: Text.PlainText
             visible: page.pairError !== ""
             text: page.pairError
             color: page.theme.danger

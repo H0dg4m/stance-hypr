@@ -364,6 +364,7 @@ Scope {
                                     radius: root.theme.chipRadius
                                     color: pma.containsMouse ? root.theme.surfaceHover : "transparent"
                                     Text {
+                                        textFormat: Text.PlainText
                                         anchors.verticalCenter: parent.verticalCenter
                                         x: 10
                                         text: modelData.label
@@ -462,6 +463,7 @@ Scope {
                                 spacing: 8
                                 height: 22
                                 Text {
+                                    textFormat: Text.PlainText
                                     text: shelfRoot.title
                                     color: shelfRoot.active ? root.theme.accent : root.theme.textDim
                                     font.family: root.theme.fontFamily
@@ -470,6 +472,7 @@ Scope {
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Text {
+                                    textFormat: Text.PlainText
                                     text: shelfRoot.list.length
                                     color: root.theme.textDim
                                     font.family: root.theme.fontFamily
@@ -478,6 +481,7 @@ Scope {
                                 }
                             }
                             Text {
+                                textFormat: Text.PlainText
                                 visible: shelfRoot.list.length === 0
                                 y: 22
                                 text: StanceI18n.t("empty")
@@ -535,6 +539,7 @@ Scope {
                                             width: pinLabel.implicitWidth + 10
                                             height: 16
                                             Text {
+                                                textFormat: Text.PlainText
                                                 id: pinLabel
                                                 anchors.centerIn: parent
                                                 text: StanceI18n.t("pinned")
@@ -569,6 +574,7 @@ Scope {
                         anchors.margins: 16
                         height: 20
                         Text {
+                            textFormat: Text.PlainText
                             visible: root.featureOn
                             anchors.verticalCenter: parent.verticalCenter
                             text: StanceI18n.t("←→ move   ↑↓ shelf   Space preview   Enter copy   P pin   S remove   ⌫ undo   / search   Esc close")
@@ -651,6 +657,7 @@ Scope {
                 id: imageFace
                 Item {
                     Text {
+                        textFormat: Text.PlainText
                         anchors.centerIn: parent
                         visible: item.path === ""
                         text: StanceI18n.t("no preview")
@@ -673,6 +680,7 @@ Scope {
                         height: 20
                         color: "#99000000"
                         Text {
+                            textFormat: Text.PlainText
                             anchors.verticalCenter: parent.verticalCenter
                             x: 8
                             text: (item.w > 0 ? item.w + "×" + item.h + " · " : "") + win.bytes(item.size) + " · " + win.ago(item.updated)
@@ -701,6 +709,7 @@ Scope {
                         font.pixelSize: root.theme.fontSize - 1
                     }
                     Text {
+                        textFormat: Text.PlainText
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
                         anchors.margins: 8
@@ -739,6 +748,7 @@ Scope {
                             font.pixelSize: root.theme.fontSize - 2
                         }
                         Text {
+                            textFormat: Text.PlainText
                             text: win.ago(item.updated)
                             color: root.theme.textDim
                             font.family: root.theme.fontFamily

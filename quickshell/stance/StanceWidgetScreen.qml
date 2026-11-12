@@ -36,6 +36,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1000
                 Text {
+                    textFormat: Text.PlainText
                     text: detail.m ? detail.m.name : ""
                     color: panel.theme.text
                     font.family: panel.theme.fontFamily
@@ -43,6 +44,7 @@ ColumnLayout {
                     font.weight: Font.DemiBold
                 }
                 Text {
+                    textFormat: Text.PlainText
                     text: detail.m ? detail.m.description : ""
                     visible: text !== ""
                     elide: Text.ElideRight
@@ -85,6 +87,7 @@ ColumnLayout {
                 onPicked: v => panel.service.run(["set", detail.m.name, "--hz", String(v)])
             }
             Text {
+                textFormat: Text.PlainText
                 text: "Hz"
                 color: panel.theme.textDim
                 font.family: panel.theme.fontFamily
@@ -162,6 +165,7 @@ ColumnLayout {
             }
         }
         Text {
+            textFormat: Text.PlainText
             visible: detail.active && !!detail.ref
             text: StanceI18n.f("relative to %1", detail.ref ? detail.ref.name : "")
             color: panel.theme.textDim

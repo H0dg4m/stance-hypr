@@ -160,6 +160,7 @@ ColumnLayout {
         }
 
         TextEdit {
+            textFormat: TextEdit.PlainText
             visible: !page.service.daemon
             readOnly: true
             selectByMouse: true
@@ -293,6 +294,7 @@ ColumnLayout {
             }
         }
         Text {
+            textFormat: Text.PlainText
             visible: page.rulesError !== ""
             text: page.rulesError
             color: page.theme.danger

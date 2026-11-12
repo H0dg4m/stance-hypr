@@ -21,6 +21,7 @@ StanceSection {
     }
 
     Text {
+        textFormat: Text.PlainText
         text: StanceI18n.t("This is your panel. Pick what it shows; sizes and order can be changed any time in Settings → Layout.")
         color: setup.theme.text
         font.family: setup.theme.fontFamily

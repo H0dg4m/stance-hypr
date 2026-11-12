@@ -235,6 +235,7 @@ StanceSection {
             radius: 11
             color: sec.custom ? sec.theme.accentSoft : sec.theme.surface
             Text {
+                textFormat: Text.PlainText
                 id: badge
                 anchors.centerIn: parent
                 text: sec.custom ? StanceI18n.t("custom set") : StanceI18n.t("default set")
@@ -479,6 +480,7 @@ StanceSection {
             onAccepted: sec.addButton()
         }
         Text {
+            textFormat: Text.PlainText
             visible: sec.problem !== ""
             text: sec.problem
             color: sec.theme.textDim
@@ -514,6 +516,7 @@ StanceSection {
         }
     }
     Text {
+        textFormat: Text.PlainText
         visible: sec.error !== ""
         text: sec.error
         color: sec.theme.danger

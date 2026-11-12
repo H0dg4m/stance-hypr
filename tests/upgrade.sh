@@ -7,6 +7,7 @@ BIN=$(realpath "${1:-target/debug/stance}")
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/stance-upgrade.XXXXXX")
 chmod 700 "$WORK"
 trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$WORK/home"; export HOME=$WORK/home
 export XDG_CONFIG_HOME=$WORK/cfg XDG_STATE_HOME=$WORK/state XDG_DATA_HOME=$WORK/data
 unset STANCE_STATE_DIR STANCE_CLIP_DIR STANCE_CLIP_CONFIG
 C=$XDG_CONFIG_HOME/stance

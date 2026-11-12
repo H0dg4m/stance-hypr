@@ -54,6 +54,7 @@ Rectangle {
         Keys.onEscapePressed: field.cancelled()
     }
     Text {
+        textFormat: Text.PlainText
         anchors.fill: input
         verticalAlignment: Text.AlignVCenter
         visible: input.text === "" && !input.preeditText

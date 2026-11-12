@@ -171,6 +171,7 @@ ColumnLayout {
             anchors.rightMargin: 10
             spacing: 8
             Text {
+                textFormat: Text.PlainText
                 text: gh.title
                 color: ap.theme.text
                 font.family: ap.theme.fontFamily
@@ -179,6 +180,7 @@ ColumnLayout {
                 Layout.fillWidth: true
             }
             Text {
+                textFormat: Text.PlainText
                 visible: gh.count > 0
                 text: StanceI18n.f("%1 changed", gh.count)
                 color: ap.theme.accent
@@ -187,6 +189,7 @@ ColumnLayout {
             }
             StanceIcon { theme: ap.theme; name: gh.on ? "expand_less" : "expand_more"; color: ap.theme.textDim }
             Text {
+                textFormat: Text.PlainText
                 visible: ap.theme.iconFont === ""
                 text: gh.on ? "▴" : "▾"
                 color: ap.theme.textDim

@@ -115,6 +115,7 @@ Item {
         width: board.width
         spacing: 8
         Text {
+            textFormat: Text.PlainText
             text: StanceI18n.t("Nothing on the panel yet.")
             color: board.theme.textDim
             font.family: board.theme.fontFamily

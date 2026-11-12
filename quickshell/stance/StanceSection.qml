@@ -32,6 +32,7 @@ Rectangle {
             spacing: 8
             StanceIcon { theme: section.theme; name: section.icon; size: section.theme.fontSize + 3; color: section.theme.textDim }
             Text {
+                textFormat: Text.PlainText
                 text: section.title
                 color: section.theme.textDim
                 font.family: section.theme.fontFamily

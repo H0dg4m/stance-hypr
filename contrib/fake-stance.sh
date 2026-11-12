@@ -9,7 +9,9 @@ real=${STANCE_REAL:-$here/target/release/stance}
 if [ "${1:-}" = feature ] && { [ "${2:-}" = on ] || [ "${2:-}" = off ]; }; then
   name=${3:-}
   case "$name" in clip|deck|rules|quick) ;; *) echo '{"ok":false,"schema":1,"error":{"code":"usage","message":"unknown feature"}}'; exit 2;; esac
-  cfg=${XDG_CONFIG_HOME:-$HOME/.config}/stance
+  # Never the real config: refuse without an explicit XDG_CONFIG_HOME.
+  [ -n "${XDG_CONFIG_HOME:-}" ] || { echo '{"ok":false,"schema":1,"error":{"code":"usage","message":"fake-stance: set XDG_CONFIG_HOME"}}'; exit 2; }
+  cfg=$XDG_CONFIG_HOME/stance
   mkdir -p "$cfg"
   f=$cfg/features.json
   [ -s "$f" ] || echo '{}' > "$f"

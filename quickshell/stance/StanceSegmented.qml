@@ -51,6 +51,7 @@ Rectangle {
                 color: on ? seg.theme.accent : (ma.containsMouse && seg.enabled ? seg.theme.surface : "transparent")
                 Behavior on color { ColorAnimation { duration: seg.theme.animMs } }
                 Text {
+                    textFormat: Text.PlainText
                     id: lbl
                     anchors.centerIn: parent
                     text: cell.modelData.label

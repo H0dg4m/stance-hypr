@@ -31,6 +31,7 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 10
         Text {
+            textFormat: Text.PlainText
             text: StanceI18n.t("Appearance")
             color: page.theme.text
             font.family: page.theme.fontFamily

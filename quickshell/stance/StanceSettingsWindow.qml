@@ -72,6 +72,7 @@ LazyLoader {
                 spacing: 8
                 StanceIcon { visible: root.theme.iconFont !== ""; theme: root.theme; name: "settings"; color: root.theme.accent; fill: true }
                 Text {
+                    textFormat: Text.PlainText
                     text: StanceI18n.t("Panel settings")
                     color: root.theme.text
                     font.family: root.theme.fontFamily

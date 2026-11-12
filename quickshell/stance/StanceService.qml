@@ -361,7 +361,8 @@ Item {
 
     Process {
         id: mkdirProc
-        command: ["/usr/bin/mkdir", "-p", svc.configDir]
+        // Through env (PATH): NixOS has no /usr/bin/mkdir.
+        command: ["env", "mkdir", "-p", "--", svc.configDir]
         running: true
         onExited: prefsFile.reload()
     }

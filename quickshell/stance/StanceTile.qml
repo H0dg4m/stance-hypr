@@ -62,6 +62,7 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 1
             Text {
+                textFormat: Text.PlainText
                 text: tile.title
                 color: tile.theme.text
                 font.family: tile.theme.fontFamily
@@ -71,6 +72,7 @@ Rectangle {
                 Layout.fillWidth: true
             }
             Text {
+                textFormat: Text.PlainText
                 visible: text !== ""
                 text: tile.value
                 color: tile.on ? tile.theme.accent : tile.theme.textDim

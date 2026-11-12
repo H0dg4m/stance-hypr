@@ -111,6 +111,7 @@ ColumnLayout {
         }
 
         Text {
+            textFormat: Text.PlainText
             visible: map.hint !== ""
             text: map.hint
             anchors.bottom: parent.bottom
@@ -152,6 +153,7 @@ ColumnLayout {
                     width: parent.width - 8
                     spacing: 1
                     Text {
+                        textFormat: Text.PlainText
                         width: parent.width
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
@@ -162,6 +164,7 @@ ColumnLayout {
                         font.weight: Font.DemiBold
                     }
                     Text {
+                        textFormat: Text.PlainText
                         width: parent.width
                         visible: scr.height > 40
                         horizontalAlignment: Text.AlignHCenter
