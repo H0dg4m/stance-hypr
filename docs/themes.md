@@ -67,7 +67,9 @@ stance theme rm ID                  # user themes only
 `colors.json` (default `~/.cache/wal/colors.json`) or a matugen JSON
 (`--matugen FILE [--scheme dark|light]`) into a theme and prints it; `--import` saves
 it through `stance theme import`. `--id`/`--name` set the identity. Palettes failing
-the contrast check are refused unless `--force`.
+the contrast check are refused unless `--force` (which, with `--import`, also
+replaces an existing theme of the same id). Colours without `#` are accepted;
+non-colour values are an error (exit 2).
 ```
 contrib/stance-theme-from-pywal --id wal --import
 contrib/stance-theme-from-pywal --matugen ~/.cache/matugen/colors.json --scheme light

@@ -7,7 +7,8 @@
 
 Prints the theme JSON. Output whose contrast check fails (text/background,
 text/card, accentText/accent, dangerText/danger at 4.5:1, textDim/card at 3:1)
-is refused unless --force. --import saves it with `stance theme import`.
+is refused unless --force. --import saves it with `stance theme import`; there
+--force also replaces an existing theme with the same id.
 """
 import argparse
 import json
@@ -33,6 +34,17 @@ def hexc(c):
     return "#%02x%02x%02x" % tuple(max(0, min(255, round(v))) for v in c)
 
 
+def norm(v):
+    """'#rrggbb' from a palette value; pywal sometimes drops the '#'."""
+    if not isinstance(v, str):
+        raise ValueError("bad colour %r" % (v,))
+    v = "#" + v.strip().lstrip("#").lower()
+    rgb(v)
+    if any(c not in "#0123456789abcdef" for c in v):
+        raise ValueError("bad colour %r" % v)
+    return v
+
+
 def mix(a, b, t):
     """t of b over a; a, b are #rrggbb."""
     x, y = rgb(a), rgb(b)
@@ -42,7 +54,7 @@ def mix(a, b, t):
 def lum(h):
     def f(v):
         v /= 255
-        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
     r, g, b = rgb(h)
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
 
@@ -58,6 +70,8 @@ def on(bg):
 
 
 def build(ident, name, bg, fg, accent, danger, card=None, surface=None):
+    bg, fg, accent, danger = map(norm, (bg, fg, accent, danger))
+    card, surface = (norm(x) if x is not None else None for x in (card, surface))
     dark = lum(bg) < 0.4
     towards = "#ffffff" if dark else "#000000"
     c = {

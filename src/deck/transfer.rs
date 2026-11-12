@@ -404,6 +404,19 @@ impl Part {
                     Err(_) => match rename_noreplace(&self.tmp, &target) {
                         Ok(()) => return Ok(target),
                         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                        // No RENAME_NOREPLACE either (old kernel, some FUSE): copy into
+                        // a newly created file, still never overwriting.
+                        Err(e) if matches!(
+                            e.raw_os_error(),
+                            Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
+                        ) =>
+                        {
+                            match copy_noreplace(&self.tmp, &target) {
+                                Ok(()) => return Ok(target),
+                                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                                Err(e) => return Err(Error::new("io", e.to_string())),
+                            }
+                        }
                         Err(e) => return Err(Error::new("io", e.to_string())),
                     },
                 }
@@ -416,6 +429,20 @@ impl Part {
 
     /// Drop removes the temp file.
     pub fn discard(self) {}
+}
+
+fn copy_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut src = File::open(from)?;
+    let mut out = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(to)?;
+    let r = std::io::copy(&mut src, &mut out).and_then(|_| out.sync_all());
+    if r.is_err() {
+        let _ = fs::remove_file(to);
+    }
+    r
 }
 
 fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -1027,6 +1054,12 @@ mod tests {
         assert_eq!(fs::read(dir.join("b")).unwrap(), b"b");
         rename_noreplace(&dir.join("a"), &dir.join("c")).unwrap();
         assert_eq!(fs::read(dir.join("c")).unwrap(), b"a");
+        // Last resort (no RENAME_NOREPLACE): copy, also never overwriting.
+        let e = copy_noreplace(&dir.join("c"), &dir.join("b")).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(dir.join("b")).unwrap(), b"b");
+        copy_noreplace(&dir.join("c"), &dir.join("d")).unwrap();
+        assert_eq!(fs::read(dir.join("d")).unwrap(), b"a");
         fs::remove_dir_all(&dir).unwrap();
     }
 

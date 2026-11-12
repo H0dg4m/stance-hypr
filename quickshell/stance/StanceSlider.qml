@@ -37,7 +37,8 @@ Item {
             return;
         dragValue = v;
         moved(v);
-        committed(v);
+        // Held arrow keys auto-repeat: commit once they rest (one hardware write).
+        wheelTimer.restart();
     }
 
     implicitHeight: 24
@@ -87,7 +88,7 @@ Item {
             if (slider.dragValue !== slider.value)
                 slider.committed(slider.dragValue);
         }
-        // Wheel ticks accumulate and commit once the wheel rests.
+        // Wheel ticks (and arrow keys) accumulate and commit once they rest.
         onWheel: w => {
             if (w.angleDelta.y === 0)
                 return;

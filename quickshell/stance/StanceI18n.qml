@@ -53,7 +53,7 @@ Singleton {
         model: i18n.codes
         delegate: FileView {
             required property string modelData
-            path: Qt.resolvedUrl("i18n/" + modelData + ".json").toString().replace(/^file:\/\//, "")
+            path: Qt.resolvedUrl("i18n/" + modelData + ".json").toString().replace(/^file:\/\//, "").split("/").map(decodeURIComponent).join("/")
             onLoaded: {
                 try {
                     const o = JSON.parse(text());

@@ -228,7 +228,7 @@ fn luminance(c: &str) -> Option<f64> {
     };
     let ch = |i: usize| -> Option<f64> {
         let v = f64::from(u8::from_str_radix(h.get(i..i + 2)?, 16).ok()?) / 255.0;
-        Some(if v <= 0.03928 {
+        Some(if v <= 0.04045 {
             v / 12.92
         } else {
             ((v + 0.055) / 1.055).powf(2.4)
@@ -265,15 +265,20 @@ impl Theme {
     pub fn contrast(&self) -> Vec<ContrastRow> {
         CONTRAST_PAIRS
             .iter()
-            .filter_map(|(f, b, min)| {
-                let r = contrast_ratio(self.colors.get(*f)?, self.colors.get(*b)?)?;
-                let ratio = (r * 100.0).round() / 100.0;
-                Some(ContrastRow {
+            .map(|(f, b, min)| {
+                // A missing or unreadable colour fails the pair (ratio 0).
+                let r = self
+                    .colors
+                    .get(*f)
+                    .zip(self.colors.get(*b))
+                    .and_then(|(x, y)| contrast_ratio(x, y))
+                    .unwrap_or(0.0);
+                ContrastRow {
                     pair: format!("{f}/{b}"),
-                    ratio,
+                    ratio: (r * 100.0).round() / 100.0,
                     min: *min,
                     ok: r >= *min,
-                })
+                }
             })
             .collect()
     }
