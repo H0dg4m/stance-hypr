@@ -10,7 +10,7 @@ The Android app is in [stance-deck-android](https://github.com/H0dg4m/stance-dec
 
 TCP, frames are a big-endian u16 length plus a Noise message. The first frame
 before authentication is at most 1 KiB; after it, at most 16 KiB. A handshake
-must finish within 5 s. Port 47800 by default; a loopback-only listen option
+must finish within 10 s in total. Port 47800 by default; a loopback-only listen option
 exists for USB users.
 
 ## Handshakes
@@ -24,7 +24,7 @@ The PC key fingerprint shown on both sides is the first 8 characters of its
 base64url public key, as `AbCd-EfGh`.
 
 - **Pairing**: `Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s`. The 32-byte PSK is in
-  the QR, single use, valid 120 s, burned on the first failed attempt. The
+  the QR, single use, valid 120 s, good for 3 handshake attempts and ended by the first successful pairing. The
   phone checks that the PC's static key equals the one in the QR. The PC
   stores the device (name + static public key) only after the handshake
   succeeded and a valid `pair` message arrived.
@@ -92,12 +92,12 @@ server picks the change up and sends a new `hello` to connected phones.
 
 | Threat | Handling |
 | --- | --- |
-| Attacker on the same LAN | Everything is Noise-encrypted and authenticated. Without a paired key or the QR PSK the handshake fails; pre-auth frames are capped at 1 KiB, handshake time 5 s, at most 4 handshakes in flight and 8 sessions. Failed handshakes are limited (10 per IP and 40 overall per minute; the overall limit only blocks IPs that failed themselves, so a flood cannot lock out a paired phone). |
-| Replay | Per-session ephemeral keys plus Noise nonces; any decrypt failure ends the session (no resync). Old recordings fail in a new session. |
+| Attacker on the same LAN | Everything is Noise-encrypted and authenticated. Without a paired key or the QR PSK the handshake fails; pre-auth frames are capped at 1 KiB, the whole handshake must finish within 10 s (each later frame within 5 s), at most 4 handshakes in flight (2 per IP) and 8 sessions; a session that sends no authenticated frame within 20 s, or then stays silent for 60 s, is closed. Failed handshakes are limited (10 per IP and 40 overall per minute; the overall limit only blocks IPs that failed themselves, so a flood cannot lock out a paired phone). |
+| Replay | Per-session ephemeral keys plus Noise nonces; any decrypt failure ends the session (no resync). A replayed first handshake message cannot complete a session (the attacker lacks the keys); it holds a session slot for at most 20 s. |
 | Eavesdropping on pairing | The QR is the out-of-band channel; anyone who sees the QR during the window can pair, so it is shown only while asked, expires in 120 s, is single use and its file is removed at expiry. |
 | Stolen phone | `stance deck unpair NAME` (or the panel) revokes at once and drops live sessions. The reach of a stolen phone is limited to the buttons in `deck.toml`. Keep dangerous buttons out of the file; display changes still ask for confirmation and revert on their own. |
 | Malicious QR (phone side) | It can only point the app at another host; no PC access results. The app shows the PC name and key fingerprint before pairing and treats labels as untrusted text. |
-| DoS | See LAN row; also 10 presses per second per device, actions serialised per device, subprocesses killed at the timeout. |
+| DoS | See LAN row; also 10 presses per second per device, actions run one at a time per session (at most 4 queued; nothing queued runs after the session ends or the phone is unpaired), subprocesses killed at the timeout. |
 | Malicious device name | Cleaned (control characters stripped, 40 chars) before it is stored or shown. |
 | Local process on the PC | Loopback is not exempt from authentication. The pairing control socket and key files are 0600 in private directories. |
 | USB (`adb reverse`) | The phone reaches the PC at 127.0.0.1; same handshakes, no extra trust. The per-IP limit sees loopback only, so it must not be the only guard. |

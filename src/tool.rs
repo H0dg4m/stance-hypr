@@ -9,6 +9,23 @@ use std::time::{Duration, Instant};
 use crate::error::{Error, Result};
 
 /// Finds `name` at `/usr/bin/<name>`, then in absolute PATH entries.
+/// This binary, for spawning itself. After a package upgrade replaced it,
+/// Linux reports `… (deleted)`: use the new file at the same path, or the
+/// old one still reachable through /proc.
+pub fn own_exe() -> Result<PathBuf> {
+    let exe = std::env::current_exe()
+        .map_err(|e| Error::new("io", format!("cannot locate own binary: {e}")))?;
+    Ok(own_exe_from(exe))
+}
+
+fn own_exe_from(exe: PathBuf) -> PathBuf {
+    match exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(p) if Path::new(p).is_file() => PathBuf::from(p),
+        Some(_) => PathBuf::from("/proc/self/exe"),
+        None => exe,
+    }
+}
+
 pub fn find(name: &str) -> Option<PathBuf> {
     if name.is_empty()
         || !name
@@ -123,6 +140,21 @@ pub fn run_tool(path: &Path, args: &[&str], timeout: Duration) -> Result<String>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn own_exe_after_upgrade() {
+        let p = std::env::temp_dir().join(format!("stance-exe-{}", std::process::id()));
+        std::fs::write(&p, b"").unwrap();
+        let deleted = PathBuf::from(format!("{} (deleted)", p.display()));
+        assert_eq!(own_exe_from(deleted), p);
+        std::fs::remove_file(&p).unwrap();
+        let gone = PathBuf::from(format!("{} (deleted)", p.display()));
+        assert_eq!(own_exe_from(gone), PathBuf::from("/proc/self/exe"));
+        assert_eq!(
+            own_exe_from(PathBuf::from("/usr/bin/stance")),
+            PathBuf::from("/usr/bin/stance")
+        );
+    }
+
     use super::*;
 
     #[test]

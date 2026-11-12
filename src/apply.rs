@@ -521,8 +521,7 @@ pub fn satisfies(m: &Monitor, w: &MonitorSpec) -> bool {
 fn spawn_guardian(generation: u64, state_dir: &Path, backend: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
-    let exe = std::env::current_exe()
-        .map_err(|e| Error::new("io", format!("cannot locate own binary: {e}")))?;
+    let exe = crate::tool::own_exe()?;
     Command::new(exe)
         .arg("guardian")
         .arg(generation.to_string())

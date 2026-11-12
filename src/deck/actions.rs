@@ -84,8 +84,7 @@ impl Deck {
     /// `$XDG_CONFIG_HOME/stance/deck.toml`; a missing file gives the default
     /// set (night toggle, keep, revert, one button per mode).
     pub fn load() -> Result<Deck> {
-        let exe = std::env::current_exe()
-            .map_err(|e| Error::new("io", format!("cannot find own binary: {e}")))?;
+        let exe = crate::tool::own_exe()?;
         Self::load_from(&store::config_dir()?.join("deck.toml"), exe)
     }
 

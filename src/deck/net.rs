@@ -8,7 +8,7 @@ use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -34,6 +34,14 @@ const MAX_HANDSHAKES: usize = 4;
 const FAILS_PER_IP: usize = 10;
 const FAILS_GLOBAL: usize = 40;
 const PRESSES_PER_S: usize = 10;
+/// Actions queued per session; more are refused ("too fast").
+const JOBS_MAX: usize = 4;
+/// Connections in their handshake from one IP.
+const HANDSHAKES_PER_IP: usize = 2;
+/// A session must hear an authenticated frame this soon after hello, and
+/// then at least this often (the app pings every 15 s).
+const FIRST_FRAME: Duration = Duration::from_secs(20);
+const SESSION_IDLE: Duration = Duration::from_secs(60);
 const PAIR_MSG_TIMEOUT: Duration = Duration::from_secs(10);
 const TICK: Duration = Duration::from_millis(500);
 
@@ -69,7 +77,13 @@ fn random32() -> Result<[u8; 32]> {
 struct Pairing {
     psk: [u8; 32],
     expires: Instant,
+    /// Handshakes that asked for the PSK so far.
+    tries: u8,
 }
+
+/// Pairing handshakes per window: a stranger on the LAN cannot burn the
+/// code with one bad connection; a successful pairing always ends it.
+const PAIR_TRIES: u8 = 3;
 
 struct Shared {
     key: Keypair,
@@ -79,7 +93,8 @@ struct Shared {
     devices: Mutex<(Option<SystemTime>, pair::Devices)>,
     connected: Mutex<Vec<String>>,
     sessions: AtomicUsize,
-    handshakes: AtomicUsize,
+    /// Connections in their handshake, per peer IP.
+    handshakes: Mutex<HashMap<IpAddr, usize>>,
     limit: Mutex<RateLimit>,
     /// Device name → last connection (unix seconds), kept in the state dir.
     seen: Mutex<HashMap<String, u64>>,
@@ -116,15 +131,52 @@ impl Shared {
             .map(|x| x.name.clone())
     }
 
-    /// One attempt per window: taking the PSK burns it.
+    /// Room for one more handshake from `ip` (counted until `handshake_leave`).
+    fn handshake_enter(&self, ip: IpAddr) -> bool {
+        let mut h = self.handshakes.lock().unwrap_or_else(|e| e.into_inner());
+        let total: usize = h.values().sum();
+        let mine = h.entry(ip).or_insert(0);
+        if total >= MAX_HANDSHAKES || *mine >= HANDSHAKES_PER_IP {
+            return false;
+        }
+        *mine += 1;
+        true
+    }
+
+    fn handshake_leave(&self, ip: IpAddr) {
+        let mut h = self.handshakes.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = h.get_mut(&ip) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                h.remove(&ip);
+            }
+        }
+    }
+
+    /// The PSK for one pairing attempt; the window closes after
+    /// `PAIR_TRIES` attempts, on expiry, or on success (`end_pairing`).
     fn take_psk(&self) -> Option<[u8; 32]> {
-        let p = self
-            .pairing
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()?;
+        let mut g = self.pairing.lock().unwrap_or_else(|e| e.into_inner());
+        let p = g.as_mut()?;
+        if p.expires <= Instant::now() {
+            *g = None;
+            drop(g);
+            let _ = qr_svg_path().map(std::fs::remove_file);
+            return None;
+        }
+        p.tries += 1;
+        let psk = p.psk;
+        if p.tries >= PAIR_TRIES {
+            *g = None;
+            drop(g);
+            let _ = qr_svg_path().map(std::fs::remove_file);
+        }
+        Some(psk)
+    }
+
+    fn end_pairing(&self) {
+        *self.pairing.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let _ = qr_svg_path().map(std::fs::remove_file);
-        (p.expires > Instant::now()).then_some(p.psk)
     }
 
     fn hosts(&self) -> Vec<String> {
@@ -168,6 +220,7 @@ impl Shared {
         *self.pairing.lock().unwrap_or_else(|e| e.into_inner()) = Some(Pairing {
             psk,
             expires: Instant::now() + Duration::from_secs(pair::PAIR_WINDOW_S),
+            tries: 0,
         });
         Ok((text, pair::PAIR_WINDOW_S * 1000))
     }
@@ -247,7 +300,7 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
         devices: Mutex::new((None, pair::Devices::default())),
         connected: Mutex::new(Vec::new()),
         sessions: AtomicUsize::new(0),
-        handshakes: AtomicUsize::new(0),
+        handshakes: Mutex::new(HashMap::new()),
         limit: Mutex::new(RateLimit::default()),
         seen: Mutex::new(load_seen()),
         deck_gen: AtomicUsize::new(0),
@@ -358,18 +411,18 @@ pub fn serve(opts: ServeOpts) -> Result<()> {
         let Ok(peer) = stream.peer_addr() else {
             continue;
         };
-        if shared.handshakes.load(Ordering::Relaxed) >= MAX_HANDSHAKES
-            || !shared
-                .limit
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .allow(peer.ip())
+        // Rate limit first: `handshake_enter` counts until `handshake_leave`.
+        if !shared
+            .limit
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .allow(peer.ip())
+            || !shared.handshake_enter(peer.ip())
         {
             let _ = stream.shutdown(std::net::Shutdown::Both);
             continue;
         }
         let sh = shared.clone();
-        sh.handshakes.fetch_add(1, Ordering::Relaxed);
         std::thread::spawn(move || {
             if let Err(e) = connection(&sh, stream, peer.ip())
                 && e.code != "deck_closed"
@@ -531,7 +584,7 @@ fn connection(sh: &Shared, stream: TcpStream, ip: IpAddr) -> Result<()> {
     let inc = noise::accept(stream, &sh.key, &|k| sh.device_name(k).is_some(), &|| {
         sh.take_psk()
     });
-    sh.handshakes.fetch_sub(1, Ordering::Relaxed);
+    sh.handshake_leave(ip);
     let inc = match inc {
         Ok(i) => i,
         Err(e) => {
@@ -545,6 +598,8 @@ fn connection(sh: &Shared, stream: TcpStream, ip: IpAddr) -> Result<()> {
             (s, name, key)
         }
         Incoming::Paired(mut s, key) => {
+            // The code did its job: no second phone pairs with it.
+            sh.end_pairing();
             let name = match s.recv::<ClientMsg>(PAIR_MSG_TIMEOUT)? {
                 Some(ClientMsg::Pair { name }) => name,
                 _ => return Err(Error::new("deck_proto", "expected a pair message")),
@@ -582,20 +637,15 @@ fn connection(sh: &Shared, stream: TcpStream, ip: IpAddr) -> Result<()> {
 /// A desktop notice for every new pairing, so a pairing nobody expected
 /// (a photographed QR) does not go unnoticed.
 fn notify_paired(name: &str, key: &str) {
-    let Some(tool) = crate::tool::find("notify-send") else {
-        return;
-    };
-    let body = format!(
-        "{name} (key {}). Not you? Unpair it in the panel (Settings, Phone) or with: stance deck unpair \"{name}\"",
-        noise::fingerprint(key)
+    // `transfer::notify` adds `--` (the name is the phone's choice) and
+    // strips control characters.
+    transfer::notify(
+        "stance: phone paired",
+        &format!(
+            "{name} (key {}). Not you? Unpair it in the panel (Settings, Phone) or with: stance deck unpair \"{name}\"",
+            noise::fingerprint(key)
+        ),
     );
-    std::thread::spawn(move || {
-        let _ = crate::tool::run_tool(
-            &tool,
-            &["-a", "stance", "stance: phone paired", &body],
-            Duration::from_secs(3),
-        );
-    });
 }
 
 fn seen_path() -> Option<PathBuf> {
@@ -644,11 +694,18 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
     let mut v2: Option<(Streams, Link)> = None;
     // Button actions run on a worker (one at a time, in order), so the loop
     // keeps reading while an action or its subprocess takes its time.
+    let ended = AtomicBool::new(false);
     let r = std::thread::scope(|sc| {
         let (job_tx, job_rx) = mpsc::channel::<(u32, Job)>();
         let (res_tx, res_rx) = mpsc::channel::<(u32, Result<String>)>();
+        let ended = &ended;
         sc.spawn(move || {
             for (req, job) in job_rx {
+                // Nothing queued runs after the session ended or the phone
+                // was unpaired.
+                if ended.load(Ordering::Relaxed) || sh.device_name(key).is_none() {
+                    break;
+                }
                 // The deck lock covers looking the command up, not running
                 // it: other sessions keep going during a slow action.
                 let prepared = {
@@ -673,7 +730,7 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
             rx: res_rx,
             open: 0,
         };
-        session_loop(
+        let r = session_loop(
             sh,
             s,
             key,
@@ -682,7 +739,9 @@ fn session(sh: &Shared, s: &mut Session, key: &str) -> Result<()> {
             &mut sent_version,
             &mut deck_gen,
             &mut jobs,
-        )
+        );
+        ended.store(true, Ordering::Relaxed);
+        r
         // Dropping `jobs` ends the worker after its current action.
     });
     // Every open stream failed with the session: temp files go, prompts close.
@@ -725,6 +784,8 @@ fn session_loop(
     deck_gen: &mut usize,
     jobs: &mut Jobs,
 ) -> Result<()> {
+    let start = Instant::now();
+    let mut heard: Option<Instant> = None;
     loop {
         if sh.device_name(key).is_none() {
             let _ = s.send(&ServerMsg::Bye {
@@ -776,7 +837,22 @@ fn session_loop(
         } else {
             TICK
         };
-        let msg = match s.recv_any::<ClientMsg>(wait)? {
+        let got = s.recv_any::<ClientMsg>(wait)?;
+        let now = Instant::now();
+        if got.is_some() {
+            heard = Some(now);
+        }
+        let quiet = match heard {
+            None => now.duration_since(start) > FIRST_FRAME,
+            Some(t) => now.duration_since(t) > SESSION_IDLE,
+        };
+        if quiet && jobs.open == 0 {
+            let _ = s.send(&ServerMsg::Bye {
+                reason: "idle".into(),
+            });
+            return Ok(());
+        }
+        let msg = match got {
             None => None,
             Some(Plain::Msg(m)) => Some(m),
             Some(Plain::Stream(m)) => {
@@ -845,7 +921,7 @@ fn session_loop(
                     | ClientMsg::Revert { req } => *req,
                     _ => 0,
                 };
-                if presses.len() >= PRESSES_PER_S {
+                if presses.len() >= PRESSES_PER_S || jobs.open >= JOBS_MAX {
                     s.send(&ServerMsg::Ack {
                         req,
                         ok: false,

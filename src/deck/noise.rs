@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
@@ -26,6 +26,8 @@ pub const MODE_PAIR: u8 = 2;
 pub const PRE_AUTH_MAX: usize = 1024;
 pub const POST_AUTH_MAX: usize = 16 * 1024;
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+/// The whole server-side handshake, however slowly its bytes trickle in.
+pub const HANDSHAKE_TOTAL: Duration = Duration::from_secs(10);
 /// Noise adds a 16-byte tag; one Noise message is at most 65535 bytes.
 const NOISE_MAX: usize = 65535;
 
@@ -104,16 +106,42 @@ pub fn write_frame(s: &mut TcpStream, data: &[u8]) -> Result<()> {
     s.write_all(&buf).map_err(err)
 }
 
+/// One frame, finished within `HANDSHAKE_TIMEOUT` in total.
 pub fn read_frame(s: &mut TcpStream, max: usize) -> Result<Vec<u8>> {
+    read_frame_by(s, max, Instant::now() + HANDSHAKE_TIMEOUT)
+}
+
+/// One frame, finished by `deadline` (a byte every few seconds does not
+/// keep it alive).
+pub fn read_frame_by(s: &mut TcpStream, max: usize, deadline: Instant) -> Result<Vec<u8>> {
     let mut len = [0u8; 2];
-    s.read_exact(&mut len).map_err(err)?;
+    read_exact_by(s, &mut len, deadline)?;
     let len = u16::from_be_bytes(len) as usize;
     if len == 0 || len > max {
         return Err(Error::new("deck", "frame size out of bounds"));
     }
     let mut buf = vec![0u8; len];
-    s.read_exact(&mut buf).map_err(err)?;
+    read_exact_by(s, &mut buf, deadline)?;
     Ok(buf)
+}
+
+fn read_exact_by(s: &mut TcpStream, buf: &mut [u8], deadline: Instant) -> Result<()> {
+    let mut off = 0;
+    while off < buf.len() {
+        let left = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .ok_or_else(|| Error::new("deck", "timed out"))?;
+        s.set_read_timeout(Some(left)).map_err(err)?;
+        let rest = buf.get_mut(off..).unwrap_or_default();
+        match s.read(rest) {
+            Ok(0) => return Err(Error::new("deck_closed", "connection closed")),
+            Ok(n) => off += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(err(e)),
+        }
+    }
+    Ok(())
 }
 
 // ---- session ----------------------------------------------------------------
@@ -200,10 +228,7 @@ impl Session {
             }
             Err(e) => return Err(err(e)),
         }
-        // A frame has started: allow it a little time to finish.
-        self.stream
-            .set_read_timeout(Some(HANDSHAKE_TIMEOUT))
-            .map_err(err)?;
+        // A frame has started: it has `HANDSHAKE_TIMEOUT` in total to finish.
         let frame = read_frame(&mut self.stream, POST_AUTH_MAX)?;
         let mut plain = vec![0u8; frame.len()];
         let n = self
@@ -225,10 +250,10 @@ fn hs_write(hs: &mut HandshakeState, s: &mut TcpStream, payload: &[u8]) -> Resul
     write_frame(s, &buf[..n])
 }
 
-fn hs_read(hs: &mut HandshakeState, s: &mut TcpStream) -> Result<Vec<u8>> {
+fn hs_read(hs: &mut HandshakeState, s: &mut TcpStream, deadline: Instant) -> Result<Vec<u8>> {
     // The server closes without a word when it refuses (unknown device,
     // used or expired pairing code): say that instead of an I/O error.
-    let frame = read_frame(s, PRE_AUTH_MAX).map_err(|_| {
+    let frame = read_frame_by(s, PRE_AUTH_MAX, deadline).map_err(|_| {
         Error::new(
             "deck_auth",
             "the PC refused the connection (not paired, or the pairing code was used or expired)",
@@ -242,10 +267,10 @@ fn hs_read(hs: &mut HandshakeState, s: &mut TcpStream) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn read_mode(s: &mut TcpStream) -> Result<u8> {
+fn read_mode(s: &mut TcpStream, deadline: Instant) -> Result<u8> {
     let mut b = [0u8; 1];
-    s.read_exact(&mut b).map_err(err)?;
-    Ok(b[0])
+    read_exact_by(s, &mut b, deadline)?;
+    Ok(u8::from_be_bytes(b))
 }
 
 // ---- server side ------------------------------------------------------------
@@ -260,7 +285,7 @@ pub enum Incoming {
 
 /// Runs the server side of a handshake. `is_paired(key)` decides whether an
 /// IK initiator's static key belongs to a paired device; `take_psk()` hands
-/// out the current pairing PSK and burns it (one attempt per window).
+/// out the current pairing PSK for one attempt (the caller limits attempts).
 pub fn accept(
     mut stream: TcpStream,
     server: &Keypair,
@@ -273,8 +298,9 @@ pub fn accept(
     stream
         .set_write_timeout(Some(HANDSHAKE_TIMEOUT))
         .map_err(err)?;
+    let deadline = Instant::now() + HANDSHAKE_TOTAL;
     let private = server.private_bytes()?;
-    match read_mode(&mut stream)? {
+    match read_mode(&mut stream, deadline)? {
         MODE_SESSION => {
             let pro = prologue(MODE_SESSION);
             let mut hs = Builder::new(SESSION_PATTERN.parse().map_err(err)?)
@@ -284,7 +310,7 @@ pub fn accept(
                 .map_err(err)?
                 .build_responder()
                 .map_err(err)?;
-            hs_read(&mut hs, &mut stream)?;
+            hs_read(&mut hs, &mut stream, deadline)?;
             let key = hs
                 .get_remote_static()
                 .map(encode_key)
@@ -308,9 +334,9 @@ pub fn accept(
                 .map_err(err)?
                 .build_responder()
                 .map_err(err)?;
-            hs_read(&mut hs, &mut stream)?;
+            hs_read(&mut hs, &mut stream, deadline)?;
             hs_write(&mut hs, &mut stream, &[])?;
-            hs_read(&mut hs, &mut stream)?;
+            hs_read(&mut hs, &mut stream, deadline)?;
             let key = hs
                 .get_remote_static()
                 .map(encode_key)
@@ -346,7 +372,7 @@ pub fn connect_ik(addr: SocketAddr, pc_public: &str, me: &Keypair) -> Result<Ses
         .build_initiator()
         .map_err(err)?;
     hs_write(&mut hs, &mut s, &[])?;
-    hs_read(&mut hs, &mut s)?;
+    hs_read(&mut hs, &mut s, Instant::now() + HANDSHAKE_TIMEOUT)?;
     Session::new(s, hs)
 }
 
@@ -365,7 +391,7 @@ pub fn pair_xx(addr: SocketAddr, pc_public: &str, psk: &[u8; 32], me: &Keypair) 
         .build_initiator()
         .map_err(err)?;
     hs_write(&mut hs, &mut s, &[])?;
-    hs_read(&mut hs, &mut s)?;
+    hs_read(&mut hs, &mut s, Instant::now() + HANDSHAKE_TIMEOUT)?;
     let got = hs.get_remote_static().map(encode_key);
     if got.as_deref() != Some(pc_public) {
         return Err(Error::new(
