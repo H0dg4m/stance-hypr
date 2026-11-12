@@ -77,7 +77,10 @@ pub fn atomic_write(path: &Path, data: &[u8], keep_backup: bool) -> Result<()> {
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| Error::new("io", "bad file name"))?;
-    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    // pid + counter: threads of one process never share a temp name.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.{}.{n}.tmp", std::process::id()));
     let io = |e: std::io::Error| Error::new("io", format!("{}: {e}", path.display()));
     let mut f = OpenOptions::new()
         .write(true)
@@ -120,7 +123,8 @@ pub fn read_checked(path: &Path) -> Result<String> {
         return Err(Error::new(
             "unsafe_path",
             format!(
-                "{} must be owned by you and not group/world writable",
+                "{} must be owned by you and not group/world writable (fix: chmod go-w '{}')",
+                path.display(),
                 path.display()
             ),
         ));

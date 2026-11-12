@@ -15,7 +15,9 @@ use crate::model::{Mode, Monitor, Parser, sanitize};
 use crate::spec::{MonitorSpec, check_connector};
 
 /// Hyprland's event socket (`name>>data` lines) as neutral events.
-struct Socket2(std::io::BufReader<std::os::unix::net::UnixStream>);
+/// Bytes of a line cut by a read timeout stay in the buffer for the next
+/// call; lines need not be UTF-8 (window titles), events are ASCII.
+struct Socket2(std::io::BufReader<std::os::unix::net::UnixStream>, Vec<u8>);
 
 impl super::EventSource for Socket2 {
     fn next(&mut self, timeout: Option<std::time::Duration>) -> Result<Next> {
@@ -24,10 +26,12 @@ impl super::EventSource for Socket2 {
             .get_ref()
             .set_read_timeout(timeout)
             .map_err(|e| Error::new("io", e.to_string()))?;
-        let mut line = String::new();
-        match self.0.read_line(&mut line) {
-            Ok(0) => Ok(Next::Closed),
-            Ok(_) => Ok(parse_event(line.trim_end())),
+        match self.0.read_until(b'\n', &mut self.1) {
+            Ok(0) if self.1.is_empty() => Ok(Next::Closed),
+            Ok(_) => {
+                let line = std::mem::take(&mut self.1);
+                Ok(parse_event(String::from_utf8_lossy(&line).trim_end()))
+            }
             Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
                 Ok(Next::Tick)
             }
@@ -213,7 +217,7 @@ impl Backend for Hyprland {
     }
 
     fn events(&self) -> Result<Box<dyn super::EventSource>> {
-        Ok(Box::new(Socket2(self.instance.events()?)))
+        Ok(Box::new(Socket2(self.instance.events()?, Vec::new())))
     }
 
     fn compat_check(&self) -> Result<()> {

@@ -24,6 +24,8 @@ const VERIFY_FOR: Duration = Duration::from_millis(3000);
 const POLL: Duration = Duration::from_millis(100);
 /// A guardian should act on time; after this grace any stance call does it.
 const SWEEP_GRACE_MS: u64 = 2000;
+/// Failed compositor queries in a row before the guardian gives up.
+const GONE_AFTER: u32 = 5;
 
 /// Everything one change may touch. Monitors not listed stay as they are.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -166,7 +168,7 @@ impl Ctx<'_> {
             self.clear_pending();
             return vec!["dropped pending change from a previous Hyprland session".into()];
         }
-        if now_ms() > p.deadline_ms + SWEEP_GRACE_MS {
+        if now_ms() > p.deadline_ms.saturating_add(SWEEP_GRACE_MS) {
             let r = self.restore(&p);
             return vec![match r {
                 Ok(()) => "an unconfirmed change had expired and was reverted".into(),
@@ -348,7 +350,7 @@ impl Ctx<'_> {
             let (snapshot, generation, active_mode_before) = match prev {
                 Some(p) => (
                     merge(p.snapshot, before),
-                    p.generation + 1,
+                    p.generation.saturating_add(1),
                     p.active_mode_before,
                 ),
                 None => (before, 1, active_before),
@@ -362,8 +364,21 @@ impl Ctx<'_> {
                 snapshot,
                 active_mode_before,
             };
-            self.write_pending(&p)?;
-            spawn_guardian(generation, &self.state_dir, self.backend.name())?;
+            // No safety net (state dir unwritable, guardian not started):
+            // undo the change now rather than leave it unguarded.
+            if let Err(e) = self
+                .write_pending(&p)
+                .and_then(|()| spawn_guardian(generation, &self.state_dir, self.backend.name()))
+            {
+                let undo = self.restore(&p);
+                return Err(Error::new(
+                    e.code,
+                    match undo {
+                        Ok(()) => format!("{} (change undone)", e.message),
+                        Err(u) => format!("{}; undoing failed too: {}", e.message, u.message),
+                    },
+                ));
+            }
             pending = self.pending_info();
         }
         Ok(Outcome {
@@ -395,7 +410,8 @@ impl Ctx<'_> {
         }
     }
 
-    /// Restores a snapshot (verifying, one retry) and clears pending.
+    /// Restores a snapshot (verifying, one retry) and clears pending; a
+    /// failed restore keeps it, so `revert` (or the next sweep) can retry.
     /// Caller holds the lock.
     fn restore(&self, p: &Pending) -> Result<()> {
         // A monitor unplugged during the countdown has nothing to restore;
@@ -412,22 +428,22 @@ impl Ctx<'_> {
             std::thread::sleep(Duration::from_millis(300));
             res = self.execute_inner(&snap, &mut Vec::new());
         }
+        if res.is_err() {
+            self.backend.notify(Notice::RevertFailed);
+            return res;
+        }
         self.clear_pending();
-        if res.is_ok()
-            && let Ok(mons) = self.backend.monitors()
-        {
+        if let Ok(mons) = self.backend.monitors() {
             crate::memory::record(&self.state_dir, &mons);
         }
         let _ = self.set_active(p.active_mode_before.clone().unwrap_or((None, false)));
-        if res.is_err() {
-            self.backend.notify(Notice::RevertFailed);
-        }
         res
     }
 
     /// Body of `stance guardian <generation>`: waits for confirm or the
     /// deadline. Exits as soon as its generation is superseded.
     pub fn guard(&self, generation: u64) -> Result<()> {
+        let mut fails = 0;
         loop {
             let Some(p) = self.read_pending() else {
                 return Ok(());
@@ -448,9 +464,15 @@ impl Ctx<'_> {
                 }
                 return Ok(());
             }
-            // Compositor gone: nothing left to protect.
+            // Compositor gone: nothing left to protect. One failed query
+            // may be a stall during a mode set, so it takes several.
             if self.backend.version().is_err() {
-                return Ok(());
+                fails += 1;
+                if fails >= GONE_AFTER {
+                    return Ok(());
+                }
+            } else {
+                fails = 0;
             }
             std::thread::sleep(Duration::from_millis(150));
         }
@@ -607,6 +629,28 @@ pub(crate) mod tests {
         let e = c.apply("t", &t, 0, None).unwrap_err();
         assert_eq!(e.code, "not_applied");
         assert_eq!(b.mons.borrow()[0].x, 0, "A-1 restored");
+    }
+
+    #[test]
+    fn failed_revert_keeps_pending_for_a_retry() {
+        let mut b = Fake::new();
+        let snap = moved(&b, "B-1", 1920);
+        b.mons.borrow_mut()[1].x = 42;
+        // B-1 ignores changes: the restore cannot be verified.
+        b.ignore = vec!["B-1".into()];
+        let c = ctx(&b, "k");
+        c.write_pending(&Pending {
+            session: "fake".into(),
+            generation: 1,
+            deadline_ms: now_ms() + 60_000,
+            timeout_ms: 0,
+            label: "x".into(),
+            snapshot: snap,
+            active_mode_before: None,
+        })
+        .unwrap();
+        assert!(c.revert().is_err());
+        assert!(c.read_pending().is_some(), "snapshot kept");
     }
 
     #[test]

@@ -427,8 +427,14 @@ impl Themes {
                 format!("`{id}` is built in and cannot be removed"),
             ));
         }
-        self.get(id)?;
-        fs::remove_file(self.path(id)).map_err(|e| Error::new("io", format!("remove theme: {e}")))
+        // Only the id is checked: a broken theme file can still be removed.
+        if !valid_id(id) {
+            return Err(Error::new("usage", format!("`{id}` is not a theme id")));
+        }
+        fs::remove_file(self.path(id)).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Error::new("not_found", format!("no theme `{id}`")),
+            _ => Error::new("io", format!("remove theme: {e}")),
+        })
     }
 }
 
@@ -486,10 +492,15 @@ pub fn export_to(t: &Theme, out: &Path, force: bool) -> Result<()> {
             ));
         }
     }
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
+    // Without --force a file that appeared since the check is not truncated.
+    let mut o = OpenOptions::new();
+    o.write(true);
+    if force {
+        o.create(true).truncate(true);
+    } else {
+        o.create_new(true);
+    }
+    let mut f = o
         .mode(0o644)
         .custom_flags(libc::O_NOFOLLOW)
         .open(out)

@@ -42,10 +42,16 @@ pub fn watch_power(flag: Arc<AtomicBool>) -> bool {
             // SAFETY: buf is valid for buf.len() bytes.
             let n = unsafe { libc::recv(fd, buf.as_mut_ptr().cast(), buf.len(), 0) };
             if n < 0 {
-                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
-                    continue;
+                match std::io::Error::last_os_error().raw_os_error() {
+                    Some(libc::EINTR) => continue,
+                    // Events were dropped while we were slow: one of them
+                    // may have been the charger, so look again.
+                    Some(libc::ENOBUFS) => {
+                        flag.store(true, Ordering::Relaxed);
+                        continue;
+                    }
+                    _ => break,
                 }
-                break;
             }
             if is_power_event(&buf[..n as usize]) {
                 flag.store(true, Ordering::Relaxed);

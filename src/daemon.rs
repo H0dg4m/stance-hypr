@@ -18,6 +18,9 @@ const RELOAD_DEBOUNCE: Duration = Duration::from_millis(400);
 const BURST: usize = 3;
 const BURST_WINDOW: Duration = Duration::from_secs(30);
 const PAUSE: Duration = Duration::from_secs(60);
+/// How often the daemon looks for an expired, unconfirmed change (in case
+/// its guardian was killed, e.g. with the panel's service).
+const SWEEP_POLL: Duration = Duration::from_secs(5);
 
 fn log(msg: &str) {
     eprintln!("stance daemon: {msg}");
@@ -46,6 +49,8 @@ trait Host {
     fn reload(&mut self);
     /// Too many automatic changes: tell the user.
     fn paused(&mut self);
+    /// Reverts an unconfirmed change whose deadline passed long ago.
+    fn sweep(&mut self) {}
 }
 
 /// Debounces hotplug and reload events, remembers new screens, and pauses
@@ -66,10 +71,10 @@ fn event_loop(events: &mut dyn EventSource, host: &mut dyn Host, power_poll: boo
             t.saturating_duration_since(host.now())
                 .max(Duration::from_millis(1))
         });
-        // Wake now and then to look at the power flag (set by a thread).
-        if power_poll {
-            wait = Some(wait.map_or(POWER_POLL, |w| w.min(POWER_POLL)));
-        }
+        // Wake now and then to look at the power flag (set by a thread),
+        // and for expired changes.
+        let poll = if power_poll { POWER_POLL } else { SWEEP_POLL };
+        wait = Some(wait.map_or(poll, |w| w.min(poll)));
 
         match events.next(wait)? {
             Next::Closed => {
@@ -119,6 +124,7 @@ fn event_loop(events: &mut dyn EventSource, host: &mut dyn Host, power_poll: boo
             reload_at = None;
             host.reload();
         }
+        host.sweep();
     }
 }
 
@@ -159,6 +165,20 @@ impl Host for Live<'_> {
 
     fn reload(&mut self) {
         on_reload(&self.ctx);
+    }
+
+    fn sweep(&mut self) {
+        if self.ctx.read_pending().is_none() {
+            return;
+        }
+        match self.ctx.lock() {
+            Ok(_lock) => {
+                for w in self.ctx.sweep() {
+                    log(&w);
+                }
+            }
+            Err(e) => log(&e.message),
+        }
     }
 
     fn paused(&mut self) {

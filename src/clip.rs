@@ -634,7 +634,7 @@ impl Clip {
                 (e.id, false)
             } else {
                 let id = idx.next_id.max(1);
-                idx.next_id = id + 1;
+                idx.next_id = id.saturating_add(1);
                 idx.items.push(Entry {
                     id,
                     kind: p.kind,
@@ -909,7 +909,7 @@ pub fn prune_index(idx: &mut Index, retention_days: u32, at: u64) {
         .collect();
     unpinned.sort();
     let mut count = unpinned.len();
-    let mut bytes: u64 = idx.items.iter().map(|e| e.size).sum();
+    let mut bytes: u64 = idx.items.iter().fold(0u64, |a, e| a.saturating_add(e.size));
     let mut drop = HashSet::new();
     for (_, id, size) in unpinned {
         if count <= MAX_ITEMS && bytes <= MAX_BYTES {

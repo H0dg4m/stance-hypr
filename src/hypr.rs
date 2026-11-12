@@ -52,7 +52,11 @@ pub fn check_private_dir(dir: &Path, uid: u32) -> Result<()> {
     if meta.permissions().mode() & 0o022 != 0 {
         return Err(Error::new(
             "runtime_dir",
-            format!("{} is group/world writable", dir.display()),
+            format!(
+                "{} is group/world writable (fix: chmod go-w '{}')",
+                dir.display(),
+                dir.display()
+            ),
         ));
     }
     Ok(())

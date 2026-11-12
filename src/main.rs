@@ -219,7 +219,15 @@ impl Args {
 }
 
 fn main() -> ExitCode {
-    let raw: Vec<String> = std::env::args().skip(1).collect();
+    // `env::args` panics on non-UTF-8; say so instead.
+    let Ok(raw) = std::env::args_os()
+        .skip(1)
+        .map(|a| a.into_string())
+        .collect::<std::result::Result<Vec<String>, _>>()
+    else {
+        eprintln!("stance: arguments must be valid UTF-8");
+        return ExitCode::from(2);
+    };
     // `stance theme list | head` should end quietly like other CLI tools,
     // not panic. Long-running servers keep Rust's default (ignored SIGPIPE).
     if !matches!(
