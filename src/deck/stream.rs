@@ -249,17 +249,18 @@ impl Streams {
                 let s = self.inbound.remove(&sid).expect("checked");
                 self.close(sid);
                 let ok = hex(&s.hasher.finalize()) == s.sha256;
+                // Finished first: the file is saved before the phone hears "done".
                 Ok(vec![
-                    Out::Send(StreamMsg::Done {
-                        sid,
-                        ok,
-                        error: (!ok).then(|| "checksum mismatch".to_string()),
-                    }),
                     Out::Finished {
                         sid,
                         kind: s.kind,
                         ok,
                     },
+                    Out::Send(StreamMsg::Done {
+                        sid,
+                        ok,
+                        error: (!ok).then(|| "checksum mismatch".to_string()),
+                    }),
                 ])
             }
             StreamMsg::Cancel { sid, .. } => {

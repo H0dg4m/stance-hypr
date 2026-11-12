@@ -406,10 +406,11 @@ impl Part {
                         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                         // No RENAME_NOREPLACE either (old kernel, some FUSE): copy into
                         // a newly created file, still never overwriting.
-                        Err(e) if matches!(
-                            e.raw_os_error(),
-                            Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
-                        ) =>
+                        Err(e)
+                            if matches!(
+                                e.raw_os_error(),
+                                Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
+                            ) =>
                         {
                             match copy_noreplace(&self.tmp, &target) {
                                 Ok(()) => return Ok(target),
